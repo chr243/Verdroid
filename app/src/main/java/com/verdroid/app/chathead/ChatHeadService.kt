@@ -308,8 +308,13 @@ class ChatHeadService : Service(), LifecycleOwner, SavedStateRegistryOwner, View
         params.x = clampX(params.x); params.y = clampY(params.y)
         val content = composeView {
             val conversations by remember { tasks.observeConversations() }.collectAsState(initial = emptyList<Conversation>())
+            val running by agent.runningTaskIds.collectAsState()
             val current = conversations.firstOrNull { it.task.id == taskIdState.longValue }
-            ChatHeadAvatar(task = current?.task, unread = if (expandedState.value) 0 else current?.unreadCount ?: 0)
+            ChatHeadAvatar(
+                task = current?.task,
+                unread = if (expandedState.value) 0 else current?.unreadCount ?: 0,
+                running = taskIdState.longValue in running,
+            )
         }
         val root = TouchInterceptLayout(this, HeadTouchListener()).apply {
             attachOwners()

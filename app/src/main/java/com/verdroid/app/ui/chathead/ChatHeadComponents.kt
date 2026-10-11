@@ -1,6 +1,21 @@
 package com.verdroid.app.ui.chathead
 
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
@@ -32,9 +47,48 @@ import androidx.compose.ui.unit.sp
 import com.verdroid.app.domain.model.Task
 import com.verdroid.app.ui.components.TaskAvatar
 
-/** Floating chat-head avatar with an unread badge. */
+/**
+ * Floating chat-head avatar with an unread badge. While [running], an indeterminate progress ring circles the
+ * bubble in the 6 dp margin around it (fades in/out; the animation only exists while it is shown).
+ */
 @Composable
-fun ChatHeadAvatar(task: Task?, unread: Int) {
+fun ChatHeadAvatar(task: Task?, unread: Int, running: Boolean = false) {
+    Box {
+        androidx.compose.animation.AnimatedVisibility(
+            visible = running,
+            modifier = Modifier.matchParentSize(),
+            enter = fadeIn(tween(220)),
+            exit = fadeOut(tween(320)),
+        ) {
+            ChatHeadProgressRing(Modifier.fillMaxSize())
+        }
+        ChatHeadBubble(task, unread)
+    }
+}
+
+/** Spinning arc whose length breathes, like Material's indeterminate circular indicator, in the theme green. */
+@Composable
+private fun ChatHeadProgressRing(modifier: Modifier = Modifier) {
+    val color = MaterialTheme.colorScheme.primary
+    val transition = rememberInfiniteTransition(label = "headRing")
+    val rotation by transition.animateFloat(
+        0f, 360f, infiniteRepeatable(tween(1100, easing = LinearEasing)), label = "headRingRotation",
+    )
+    val sweep by transition.animateFloat(
+        40f, 250f, infiniteRepeatable(tween(900, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "headRingSweep",
+    )
+    Canvas(modifier) {
+        val stroke = 3.dp.toPx()
+        val inset = 1.dp.toPx() + stroke / 2f
+        val arcSize = Size(size.width - inset * 2, size.height - inset * 2)
+        val topLeft = Offset(inset, inset)
+        drawArc(color.copy(alpha = 0.18f), 0f, 360f, false, topLeft, arcSize, style = Stroke(stroke))
+        drawArc(color, rotation - 90f, sweep, false, topLeft, arcSize, style = Stroke(stroke, cap = StrokeCap.Round))
+    }
+}
+
+@Composable
+private fun ChatHeadBubble(task: Task?, unread: Int) {
     Box(Modifier.padding(6.dp)) {
         Surface(shape = CircleShape, shadowElevation = 6.dp, color = MaterialTheme.colorScheme.surface,
             border = androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary)) {
