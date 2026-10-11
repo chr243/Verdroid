@@ -563,3 +563,10 @@ Chat head: Back and Home/Recents collapse the expanded panel back to the head at
 - **Chat head progress ring:** while the bubble's task is running (`AgentRunner.runningTaskIds`), `ChatHeadAvatar`
   draws an indeterminate spinning arc (theme primary, breathing sweep) in the margin around the bubble. It fades in/out
   and the infinite animation only exists while shown, so an idle head costs nothing.
+
+## v1.0.36
+
+- **Open at the newest message:** opening a chat jumps to the bottom; only user drags toggle stick-to-bottom.
+- **Chat head on fresh chats:** a new chat's route stays `chat/0` after the first send creates the real chat, so the
+  chat head now binds to the real chat id as soon as it exists. The panel shows the thread and the progress ring spins
+  on the first turn.
