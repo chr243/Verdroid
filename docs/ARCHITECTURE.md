@@ -549,3 +549,11 @@ Chat head: Back and Home/Recents collapse the expanded panel back to the head at
   the `memory_save` description now say to save `Task: …` (scope=chat, tags `[task]`) in the same reply as soon as the
   user gives a task *or announces what you'll work on together* (TBD details allowed, update later). Only a single
   question fully answered in that reply skips it.
+
+## v1.0.34
+
+- **Thinking row:** model reasoning (`reasoning`, `reasoning_content`, `reasoning_details`, inline `<think>`, parsed by
+  `ReasoningText`) is stored in `messages.reasoning` (Room DB v6) and shown as a collapsible 💭 Thinking row, like tool
+  tags. It is display-only and never sent back to the model.
+- **No forced scroll while reading:** the chat list only follows new messages when already near the bottom
+  (`ChatAutoScroll.kt`); scrolling up during a running task stays put.
