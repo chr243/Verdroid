@@ -135,11 +135,8 @@ fun VerdroidRoot(
                     onBack = { if (!nav.popBackStack(Routes.CHATS, inclusive = false)) nav.navigate(Routes.CHATS) })
             }
             composable(Routes.CHAT, arguments = listOf(navArgument("taskId") { type = NavType.LongType })) {
-                val chatId = it.arguments?.getLong("taskId")
-                androidx.compose.runtime.DisposableEffect(chatId) {
-                    com.verdroid.app.chathead.VisibleChat.taskId = chatId
-                    onDispose { if (com.verdroid.app.chathead.VisibleChat.taskId == chatId) com.verdroid.app.chathead.VisibleChat.taskId = null }
-                }
+                // VisibleChat is published by ChatDetailScreen from the ViewModel's real id: a new chat's route stays
+                // "chat/0" after the first send creates the task.
                 ChatDetailScreen(onBack = { nav.popBackStack() },
                     onChatMemory = { id -> nav.navigate(Routes.memory(id)) })
             }

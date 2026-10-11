@@ -42,6 +42,12 @@ class ChatViewModel @Inject constructor(
     /** 0 = a brand-new conversation that is created on the first send. */
     private val taskId = MutableStateFlow(savedState.get<Long>("taskId") ?: 0L)
 
+    /**
+     * The real chat id (0 until the first send creates the task). The nav route of a new chat stays "chat/0", so the
+     * screen publishes THIS to [com.verdroid.app.chathead.VisibleChat], never the route argument.
+     */
+    val currentTaskId: StateFlow<Long> = taskId.asStateFlow()
+
     val task: StateFlow<Task?> = taskId.flatMapLatest { if (it == 0L) flowOf(null) else tasks.observeTask(it) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
     val messages: StateFlow<List<ChatMessage>> = taskId.flatMapLatest { if (it == 0L) flowOf(emptyList()) else tasks.observeMessages(it) }
@@ -114,7 +120,13 @@ class ChatViewModel @Inject constructor(
             val id = taskId.value
             if (id == 0L) {
                 val draft = draftPresetsOff.value
-                taskId.value = startConversation(body) { newId -> if (draft.isNotEmpty()) presets.set(newId, draft) }
+                // Bind the new id BEFORE the agent starts, so the chat head (Home → auto head, or the head button)
+                // already points at this chat during its first in-flight turn, not at "chat 0".
+                val newId = startConversation(body) { newId ->
+                    if (draft.isNotEmpty()) presets.set(newId, draft)
+                    taskId.value = newId
+                }
+                taskId.value = newId
                 draftPresetsOff.value = emptySet()
             } else sendMessage(id, body)
             _pendingAttach.value = null

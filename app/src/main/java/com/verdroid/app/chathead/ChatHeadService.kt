@@ -207,6 +207,12 @@ class ChatHeadService : Service(), LifecycleOwner, SavedStateRegistryOwner, View
             stopSelf()
             return START_NOT_STICKY
         }
+        if (taskIdState.longValue == 0L) {
+            // An unsaved chat (id 0) has no thread or running state to show; an empty head would look broken.
+            Log.w(TAG, "no task id; stopping")
+            stopSelf()
+            return START_NOT_STICKY
+        }
         showHead()
         return START_NOT_STICKY
     }

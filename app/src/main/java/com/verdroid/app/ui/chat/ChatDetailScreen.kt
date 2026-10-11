@@ -62,6 +62,14 @@ fun ChatDetailScreen(onBack: () -> Unit, onChatMemory: (Long) -> Unit = {}, vm: 
     val messages by vm.messages.collectAsStateWithLifecycle()
     val toolCalls by vm.toolCalls.collectAsStateWithLifecycle()
     val generating by vm.isGenerating.collectAsStateWithLifecycle()
+    val chatId by vm.currentTaskId.collectAsStateWithLifecycle()
+    // Tell MainActivity (auto chat head on Home) which chat is on screen. Keyed on the REAL id, which changes from 0
+    // to the new task id on a fresh chat's first send (the nav argument would stay 0).
+    DisposableEffect(chatId) {
+        val visible = chatId.takeIf { it != 0L }
+        com.verdroid.app.chathead.VisibleChat.taskId = visible
+        onDispose { if (com.verdroid.app.chathead.VisibleChat.taskId == visible) com.verdroid.app.chathead.VisibleChat.taskId = null }
+    }
     var input by rememberSaveable { mutableStateOf("") }
     val listState = rememberLazyListState()
     val callsByMessage = remember(toolCalls) { toolCalls.groupBy { it.messageId } }
