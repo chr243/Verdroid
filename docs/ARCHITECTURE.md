@@ -557,3 +557,9 @@ Chat head: Back and Home/Recents collapse the expanded panel back to the head at
   tags. It is display-only and never sent back to the model.
 - **No forced scroll while reading:** the chat list only follows new messages when already near the bottom
   (`ChatAutoScroll.kt`); scrolling up during a running task stays put.
+
+## v1.0.35
+
+- **Chat head progress ring:** while the bubble's task is running (`AgentRunner.runningTaskIds`), `ChatHeadAvatar`
+  draws an indeterminate spinning arc (theme primary, breathing sweep) in the margin around the bubble. It fades in/out
+  and the infinite animation only exists while shown, so an idle head costs nothing.
