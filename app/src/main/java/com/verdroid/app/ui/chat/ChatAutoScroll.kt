@@ -1,5 +1,6 @@
 package com.verdroid.app.ui.chat
 
+import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -9,11 +10,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
+import kotlinx.coroutines.launch
 
 /**
  * Stick-to-bottom for the chat list (v1.0.34): new content only scrolls the list when the user was already at (or
  * near) the bottom. Scrolling up to read stops following; scrolling back down resumes it. Sending a message always
- * jumps to the bottom.
+ * jumps to the bottom. Opening a chat starts at the newest message.
  */
 object ChatScroll {
     /** Item scroll offset past any real item height; LazyColumn clamps it to the end of the content. */
@@ -32,18 +34,26 @@ object ChatScroll {
 }
 
 /**
- * "Follow" flag for [state]: only changes while the list is scrolling (user drag/fling, or our own scroll) and once
- * right after it stops, so content growing below the viewport never flips it.
+ * "Follow" flag for [state]. Only a user gesture (drag, plus the fling that follows it) can change it, and it is
+ * re-evaluated when that gesture's scrolling stops. Our own programmatic scrolls (opening a chat at the bottom,
+ * following new output) never flip it, so the list can't get stuck at the top when a chat opens and its messages /
+ * tool calls arrive in separate emissions mid-scroll.
  */
 @Composable
 fun rememberFollowBottom(state: LazyListState): MutableState<Boolean> {
     val follow = remember(state) { mutableStateOf(true) }
     val threshold = with(LocalDensity.current) { 96.dp.roundToPx() }
     LaunchedEffect(state, threshold) {
-        var wasScrolling = false
+        var userGesture = false      // a drag started and its scroll hasn't settled yet
+        var gestureScrolled = false  // isScrollInProgress was seen true during that gesture
+        launch {
+            state.interactionSource.interactions.collect { if (it is DragInteraction.Start) { userGesture = true; gestureScrolled = false } }
+        }
         snapshotFlow { state.isScrollInProgress to ChatScroll.nearBottom(state, threshold) }.collect { (scrolling, near) ->
-            if (scrolling || wasScrolling) follow.value = near
-            wasScrolling = scrolling
+            if (!userGesture) return@collect
+            follow.value = near
+            if (scrolling) gestureScrolled = true
+            else if (gestureScrolled) userGesture = false
         }
     }
     return follow

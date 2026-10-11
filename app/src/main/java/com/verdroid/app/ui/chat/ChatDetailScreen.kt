@@ -122,6 +122,7 @@ fun ChatDetailScreen(onBack: () -> Unit, onChatMemory: (Long) -> Unit = {}, vm: 
     // Only follow new output when already near the bottom (or the user just sent something); reading older messages
     // while a task runs is no longer interrupted.
     val follow = rememberFollowBottom(listState)
+    var openedAtBottom by remember { mutableStateOf(false) }
     val newestId = visible.lastOrNull()?.id
     val newestIsUser = visible.lastOrNull()?.role == MessageRole.USER
     val doneCalls = toolCalls.count { it.status != ToolCallStatus.PENDING }
@@ -130,8 +131,10 @@ fun ChatDetailScreen(onBack: () -> Unit, onChatMemory: (Long) -> Unit = {}, vm: 
         if (newestIsUser) follow.value = true
         if (follow.value) {
             val last = if (generating) rows.size else rows.lastIndex.coerceAtLeast(0)
-            listState.animateScrollToItem(last)
+            // Opening a chat: jump straight to the newest message (no animated trip from the top).
+            if (openedAtBottom) listState.animateScrollToItem(last)
             listState.scrollToItem(last, ChatScroll.TO_END) // tall last item: settle at its bottom, not its top
+            openedAtBottom = true
         }
     }
 
