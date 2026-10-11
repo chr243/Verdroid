@@ -118,9 +118,21 @@ fun ChatDetailScreen(onBack: () -> Unit, onChatMemory: (Long) -> Unit = {}, vm: 
         )
     }
 
-    LaunchedEffect(messages.size) {
-        vm.markOpened()
-        if (visible.isNotEmpty()) listState.animateScrollToItem(rows.size)
+    LaunchedEffect(messages.size) { vm.markOpened() }
+    // Only follow new output when already near the bottom (or the user just sent something); reading older messages
+    // while a task runs is no longer interrupted.
+    val follow = rememberFollowBottom(listState)
+    val newestId = visible.lastOrNull()?.id
+    val newestIsUser = visible.lastOrNull()?.role == MessageRole.USER
+    val doneCalls = toolCalls.count { it.status != ToolCallStatus.PENDING }
+    LaunchedEffect(rows.size, newestId, toolCalls.size, doneCalls, generating) {
+        if (visible.isEmpty()) return@LaunchedEffect
+        if (newestIsUser) follow.value = true
+        if (follow.value) {
+            val last = if (generating) rows.size else rows.lastIndex.coerceAtLeast(0)
+            listState.animateScrollToItem(last)
+            listState.scrollToItem(last, ChatScroll.TO_END) // tall last item: settle at its bottom, not its top
+        }
     }
 
     Scaffold(
@@ -187,7 +199,9 @@ fun ChatDetailScreen(onBack: () -> Unit, onChatMemory: (Long) -> Unit = {}, vm: 
                         m.kind == MessageKind.SUMMARY -> SummaryCard(m)
                         m.role == MessageRole.USER -> UserBubble(m.content.orEmpty())
                         m.role == MessageRole.ASSISTANT -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            if (!m.content.isNullOrBlank()) AgentBubble(m.content, m.model)
+                            val shown = remember(m.content, m.reasoning) { ToolStacks.display(m) }
+                            shown.reasoning?.let { ThinkingCard(it) }
+                            shown.content?.takeIf { it.isNotBlank() }?.let { AgentBubble(it, m.model) }
                             row.groups.forEach { ToolCallGroup(it) }
                         }
                     }

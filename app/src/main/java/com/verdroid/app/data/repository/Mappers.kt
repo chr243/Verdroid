@@ -14,11 +14,11 @@ fun TaskEntity.toDomain() = Task(
 
 fun MessageEntity.toDomain() = ChatMessage(
     id, taskId, MessageRole.entries.firstOrNull { it.apiName == role } ?: MessageRole.SYSTEM, content,
-    enumOr(kind, MessageKind.NORMAL), toolCallsJson, toolCallId, toolName, model, summarized, resumeAt, createdAt,
+    enumOr(kind, MessageKind.NORMAL), toolCallsJson, toolCallId, toolName, model, summarized, resumeAt, createdAt, reasoning,
 )
 
 fun ChatMessage.toEntity() = MessageEntity(
-    id, taskId, role.apiName, content, kind.name, toolCallsJson, toolCallId, toolName, model, summarized, resumeAt, createdAt,
+    id, taskId, role.apiName, content, kind.name, toolCallsJson, toolCallId, toolName, model, summarized, resumeAt, createdAt, reasoning,
 )
 
 fun ToolCallEntity.toDomain() = ToolCallRecord(

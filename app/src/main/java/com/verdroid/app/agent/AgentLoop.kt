@@ -169,7 +169,7 @@ class AgentLoop internal constructor(
                         // Still empty: explain it ourselves, then pause visibly.
                         reportRequested = false
                         tasks.addMessage(ChatMessage(0, taskId, MessageRole.ASSISTANT, LoopMessages.fallback(lastToolError, cp.intermediateResults), MessageKind.NORMAL,
-                            null, null, null, outcome.model, false, null, System.currentTimeMillis()))
+                            null, null, null, outcome.model, false, null, System.currentTimeMillis(), reasoning = c.reasoning))
                         return pauseWithReason(taskId, "Model returned empty replies",
                             "⏸️ Stopped: the model returned empty replies twice${lastToolError?.let { " after a tool error" } ?: ""}. Tap Continue to retry, or send a message with more guidance.")
                     }
@@ -178,7 +178,7 @@ class AgentLoop internal constructor(
                     val msgId = tasks.addMessage(
                         ChatMessage(0, taskId, MessageRole.ASSISTANT, c.content, MessageKind.NORMAL,
                             if (native.isNotEmpty()) json.encodeToString(native.map { ApiToolCall(it.id, "function", ApiFunctionCall(it.name, it.argumentsJson)) }) else null,
-                            null, null, outcome.model, false, null, System.currentTimeMillis())
+                            null, null, outcome.model, false, null, System.currentTimeMillis(), reasoning = c.reasoning)
                     )
                     if (calls.isEmpty()) {
                         if (finish == "length") {

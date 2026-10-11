@@ -96,6 +96,8 @@ data class ParsedCompletion(
     val toolCalls: List<ParsedToolCall>,
     val finishReason: String?,
     val model: String?,
+    /** Model thinking, if the response carried any (see [ReasoningText]); UI-only, never sent back. */
+    val reasoning: String? = null,
 )
 
 object CompletionParser {
@@ -106,7 +108,7 @@ object CompletionParser {
         val root = runCatching { json.parseToJsonElement(body).jsonObject }.getOrNull() ?: return null
         val choice = root["choices"]?.asArrayOrNull()?.firstOrNull()?.asObjectOrNull() ?: return null
         val message = choice["message"]?.asObjectOrNull() ?: return null
-        val content = when (val c = message["content"]) {
+        val rawContent = when (val c = message["content"]) {
             null, is JsonNull -> null
             is JsonPrimitive -> c.contentOrNull
             is JsonArray -> c.mapNotNull { part -> part.asObjectOrNull()?.get("text")?.primitiveContent() }.joinToString("")
@@ -123,7 +125,9 @@ object CompletionParser {
             }
             ParsedToolCall(o["id"]?.primitiveContent() ?: "call_${System.currentTimeMillis()}_$i", name, args)
         }
-        return ParsedCompletion(content, calls, choice["finish_reason"]?.primitiveContent(), root["model"]?.primitiveContent())
+        val split = ReasoningText.splitInline(rawContent)
+        val reasoning = ReasoningText.merge(ReasoningText.fromMessage(message), split.reasoning)
+        return ParsedCompletion(split.content, calls, choice["finish_reason"]?.primitiveContent(), root["model"]?.primitiveContent(), reasoning)
     }
 }
 

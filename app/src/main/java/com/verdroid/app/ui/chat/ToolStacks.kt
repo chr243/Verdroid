@@ -17,6 +17,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.verdroid.app.data.network.ReasoningText
 import com.verdroid.app.domain.model.ChatMessage
 import com.verdroid.app.domain.model.MessageKind
 import com.verdroid.app.domain.model.MessageRole
@@ -41,7 +42,7 @@ object ToolStacks {
             val calls = if (m.role == MessageRole.ASSISTANT) callsByMessage[m.id].orEmpty() else emptyList()
             val onlyName = calls.map { it.name }.distinct().singleOrNull()
             val foldable = m.role == MessageRole.ASSISTANT && m.kind == MessageKind.NORMAL && m.content.isNullOrBlank() &&
-                onlyName != null && onlyName in STACKABLE
+                m.reasoning.isNullOrBlank() && onlyName != null && onlyName in STACKABLE
             val lastGroup = out.lastOrNull()?.second?.lastOrNull()
             if (foldable && lastGroup != null && lastGroup.last().name == onlyName) {
                 lastGroup += calls
@@ -55,6 +56,19 @@ object ToolStacks {
             out += m to groups
         }
         return out.map { (m, g) -> Row(m, g) }
+    }
+
+    /**
+     * Text + thinking to show for an assistant message. Messages saved before v1.0.34 have no reasoning column value but
+     * may still carry inline `<think>…</think>` in content; those are split here so old chats look the same.
+     */
+    fun display(m: ChatMessage): ReasoningText.Split =
+        if (!m.reasoning.isNullOrBlank()) ReasoningText.Split(m.content, m.reasoning) else ReasoningText.splitInline(m.content)
+
+    /** Collapsed-row preview: first non-blank line of the thinking, shortened. */
+    fun thinkingPreview(reasoning: String, max: Int = 60): String {
+        val line = reasoning.lineSequence().map { it.trim().trimStart('#', '*', '-', ' ') }.firstOrNull { it.isNotEmpty() }.orEmpty()
+        return if (line.length > max) line.take(max - 1).trimEnd() + "…" else line
     }
 
     /** Status of a stack: pending if any call runs, else error if any failed, else success. */
@@ -94,6 +108,43 @@ internal fun ToolCallGroup(calls: List<ToolCallRecord>) {
             AnimatedVisibility(expanded) {
                 Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     calls.forEach { ToolCallCard(it) }
+                }
+            }
+        }
+    }
+}
+
+/** Collapsible "Thinking" row (model reasoning), styled like the tool cards: one-line preview, full text on tap. */
+@Composable
+internal fun ThinkingCard(reasoning: String) {
+    var expanded by remember { mutableStateOf(false) }
+    val preview = remember(reasoning) { ToolStacks.thinkingPreview(reasoning) }
+    Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceContainer,
+        contentColor = MaterialTheme.colorScheme.onSurface, modifier = Modifier.fillMaxWidth().padding(end = 32.dp)) {
+        Column(Modifier.clickable { expanded = !expanded }.padding(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("💭", fontSize = 14.sp); Spacer(Modifier.width(6.dp))
+                Text("Thinking", fontWeight = FontWeight.SemiBold)
+                if (!expanded && preview.isNotEmpty()) {
+                    Spacer(Modifier.width(8.dp))
+                    Text(preview, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                } else Spacer(Modifier.weight(1f))
+                Spacer(Modifier.width(6.dp))
+                Text(if (expanded) "▲" else "▼", fontSize = 12.sp)
+            }
+            AnimatedVisibility(expanded) {
+                Column(Modifier.padding(top = 8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("${reasoning.length} chars", style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.weight(1f))
+                        com.verdroid.app.ui.components.CopyButton(reasoning)
+                    }
+                    Box(Modifier.fillMaxWidth().clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surface).padding(8.dp)) {
+                        androidx.compose.foundation.text.selection.SelectionContainer {
+                            Text(reasoning, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
                 }
             }
         }

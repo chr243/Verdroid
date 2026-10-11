@@ -87,6 +87,8 @@ data class ChatMessage(
     val summarized: Boolean,
     val resumeAt: Long?,
     val createdAt: Long,
+    /** v6 (v1.0.34): model thinking for this assistant turn, shown as a collapsible Thinking row. */
+    val reasoning: String? = null,
 )
 
 enum class ToolCallStatus { PENDING, SUCCESS, ERROR }

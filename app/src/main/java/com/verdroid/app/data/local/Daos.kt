@@ -160,7 +160,7 @@ interface MemoryDao {
 
 @Database(
     entities = [TaskEntity::class, MessageEntity::class, ToolCallEntity::class, RateLimitEventEntity::class, NotificationEntity::class, MemoryEntity::class],
-    version = 5,
+    version = 6,
     exportSchema = true,
 )
 abstract class VerdroidDatabase : RoomDatabase() {

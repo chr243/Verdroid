@@ -36,4 +36,25 @@ class ToolStacksTest {
         val rows = ToolStacks.rows(visible, calls)
         assertEquals(2, rows.size); assertEquals(listOf(1, 1), rows[0].groups.map { it.size })
     }
+
+    @Test fun `a turn with thinking is not folded into the previous stack`() {
+        val visible = listOf(msg(1, MessageRole.ASSISTANT), msg(2, MessageRole.ASSISTANT).copy(reasoning = "why"))
+        val calls = listOf(call(1, 1, "termux_run"), call(2, 2, "termux_run")).groupBy { it.messageId }
+        assertEquals(listOf(1L, 2L), ToolStacks.rows(visible, calls).map { it.key })
+    }
+
+    @Test fun `display splits legacy inline think and prefers stored reasoning`() {
+        assertEquals("old" to "Hi", ToolStacks.display(msg(1, MessageRole.ASSISTANT, "<think>old</think>Hi")).let { it.reasoning to it.content })
+        assertEquals("r" to "Hi", ToolStacks.display(msg(1, MessageRole.ASSISTANT, "Hi").copy(reasoning = "r")).let { it.reasoning to it.content })
+        assertEquals("First line", ToolStacks.thinkingPreview("\n## First line\nmore"))
+    }
+}
+
+class ChatScrollTest {
+    @Test fun `near bottom only when last item is visible and its bottom is close to the viewport end`() {
+        assertTrue(ChatScroll.nearBottom(null, 0, 0, 1000, 100))
+        assertTrue(ChatScroll.nearBottom(9, 10, 1050, 1000, 100))
+        assertFalse(ChatScroll.nearBottom(9, 10, 1500, 1000, 100)) // tall last item, user is reading its top
+        assertFalse(ChatScroll.nearBottom(6, 10, 1000, 1000, 100)) // scrolled up
+    }
 }

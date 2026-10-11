@@ -127,7 +127,7 @@ class ArchiveDaoTest {
             assertEquals(listOf(7L), migrated.taskDao().observeConversations().first().map { it.task.id })
             migrated.openHelper.readableDatabase.query("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'index_tasks_archivedAt'")
                 .use { assertTrue(it.moveToFirst()) }
-            assertEquals(5, migrated.openHelper.readableDatabase.version)
+            assertEquals(6, migrated.openHelper.readableDatabase.version)
         } finally { migrated.close() }
     }
 
@@ -135,8 +135,24 @@ class ArchiveDaoTest {
         createFromSchema(DB, 1)
         val migrated = openMigrated(DB)
         try {
-            assertEquals(5, migrated.openHelper.writableDatabase.version) // Room throws here if a migration left a schema mismatch
+            assertEquals(6, migrated.openHelper.writableDatabase.version) // Room throws here if a migration left a schema mismatch
             assertTrue(migrated.taskDao().archivedIds().isEmpty())
+        } finally { migrated.close() }
+    }
+
+    @Test fun `migration 5 to 6 adds message reasoning and keeps rows`() = runBlocking {
+        createFromSchema(DB, 5)
+        SQLiteDatabase.openDatabase(ApplicationProvider.getApplicationContext<Application>().getDatabasePath(DB).path, null, SQLiteDatabase.OPEN_READWRITE).use {
+            it.execSQL("INSERT INTO tasks (id, title, prompt, type, status, subtitle, currentStep, createdAt, updatedAt, lastOpenedAt, attempt) " +
+                "VALUES (7, 'Old chat', 'p', 'CHAT', 'COMPLETED', 's', 0, 1, 2, 0, 0)")
+            it.execSQL("INSERT INTO messages (id, taskId, role, content, kind, summarized, createdAt) VALUES (3, 7, 'assistant', 'hi', 'NORMAL', 0, 1)")
+        }
+        val migrated = openMigrated(DB)
+        try {
+            val old = migrated.messageDao().getAll(7).single()
+            assertEquals("hi", old.content); assertNull(old.reasoning)
+            val id = migrated.messageDao().insert(old.copy(id = 0, content = "ok", reasoning = "Let me think"))
+            assertEquals("Let me think", migrated.messageDao().getAll(7).first { it.id == id }.reasoning)
         } finally { migrated.close() }
     }
 

@@ -47,6 +47,8 @@ data class MessageEntity(
     val summarized: Boolean = false,
     val resumeAt: Long? = null,
     val createdAt: Long,
+    /** v6: model thinking (reasoning) for assistant turns; UI-only. */
+    val reasoning: String? = null,
 )
 
 @Entity(
