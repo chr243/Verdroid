@@ -15,6 +15,8 @@ import androidx.compose.ui.unit.dp
 /** Material 3 "emphasized" easing approximation used for container transform and shared axis. */
 val EmphasizedEasing = CubicBezierEasing(0.2f, 0f, 0f, 1f)
 const val MOTION_MS = 300
+/** Container transform (chat row <-> chat) runs a bit longer so the morph reads clearly. */
+const val CONTAINER_MS = 400
 
 @OptIn(ExperimentalSharedTransitionApi::class)
 val LocalSharedTransitionScope = compositionLocalOf<SharedTransitionScope?> { null }
@@ -36,9 +38,14 @@ fun Modifier.chatContainer(taskId: Long): Modifier {
         this@chatContainer.sharedBounds(
             rememberSharedContentState(chatContainerKey(taskId)),
             animatedVisibilityScope = anim,
-            boundsTransform = BoundsTransform { _, _ -> tween(MOTION_MS, easing = EmphasizedEasing) },
-            resizeMode = SharedTransitionScope.ResizeMode.RemeasureToBounds,
+            boundsTransform = BoundsTransform { _, _ -> tween(CONTAINER_MS, easing = EmphasizedEasing) },
+            // ScaleToBounds: no per-frame remeasure of the whole chat (RemeasureToBounds dropped most frames on device).
+            resizeMode = SharedTransitionScope.ResizeMode.ScaleToBounds(),
             clipInOverlayDuringTransition = OverlayClip(RoundedCornerShape(12.dp)),
         )
     }
 }
+
+/** True while the enclosing NavHost destination is still animating in/out (false outside the NavHost). */
+@Composable
+fun navTransitionRunning(): Boolean = LocalNavAnimatedScope.current?.transition?.isRunning == true

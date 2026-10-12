@@ -127,7 +127,9 @@ fun ChatDetailScreen(onBack: () -> Unit, onChatMemory: (Long) -> Unit = {}, vm: 
         )
     }
 
-    LaunchedEffect(messages.size) { vm.markOpened() }
+    // Hold DB writes until the container transform settles so nothing re-emits mid-morph.
+    val transitioning = com.verdroid.app.ui.navTransitionRunning()
+    LaunchedEffect(messages.size, transitioning) { if (!transitioning) vm.markOpened() }
     // Only follow new output when already near the bottom (or the user just sent something); reading older messages
     // while a task runs is no longer interrupted.
     val follow = rememberFollowBottom(listState)

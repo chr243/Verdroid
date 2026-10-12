@@ -576,3 +576,12 @@ Chat head: Back and Home/Recents collapse the expanded panel back to the head at
 - **Container transform:** tapping a chat row morphs it into the chat screen and back (`SharedTransitionLayout` +
   `sharedBounds`, 300ms emphasized easing; `Modifier.chatContainer` in `ui/Motion.kt` is a no-op outside the NavHost).
 - **Shared axis X:** Settings and sub-pages slide 30dp + fade (300ms emphasized), replacing the old nudge/fade.
+
+## v1.0.38
+
+- **Container transform fix:** the morph showed ~3 frames then snapped. `RemeasureToBounds` re-measured the whole
+  chat (Scaffold + message list) every frame, so the debug build dropped almost every frame. It now uses
+  `ScaleToBounds()`, runs 400ms emphasized, and `markOpened` waits until the nav transition settles.
+- **Fallback:** chat route enter/exit is fade + scale (0.92→1) so a visible motion plays even when bounds don't match.
+- Logs a warning (`VerdroidMotion`) when the system animator scale is 0, which turns every animation into a cut.
+- Unit test for shared-bounds key generation (`MotionKeyTest`).

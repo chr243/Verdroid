@@ -14,6 +14,8 @@ import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
@@ -85,8 +87,12 @@ private object NavMotion {
     fun popExit(px: Int): ExitTransition = exit(-px)
     fun slidePx(d: Density) = with(d) { SLIDE.roundToPx() }
 
-    val fadeEnter: EnterTransition = fadeIn(tween(MOTION_MS, easing = LinearOutSlowInEasing))
-    val fadeExit: ExitTransition = fadeOut(tween(MOTION_MS, easing = FastOutLinearInEasing))
+    // Chat swaps: the container transform carries the motion; this fade+scale is also the visible fallback when the
+    // shared bounds don't match (stories row, Archive, Notifications, new chats).
+    val fadeEnter: EnterTransition = fadeIn(tween(CONTAINER_MS, easing = LinearOutSlowInEasing)) +
+        scaleIn(tween(CONTAINER_MS, easing = EmphasizedEasing), initialScale = 0.92f)
+    val fadeExit: ExitTransition = fadeOut(tween(CONTAINER_MS, easing = FastOutLinearInEasing)) +
+        scaleOut(tween(CONTAINER_MS, easing = EmphasizedEasing), targetScale = 0.96f)
 }
 
 @HiltViewModel
@@ -113,6 +119,12 @@ fun VerdroidRoot(
 
     // No bottom bar (v0.9.18): the chat list is home; Settings opens from its gear.
     val px = NavMotion.slidePx(LocalDensity.current)
+    LaunchedEffect(Unit) {
+        // Compose honours the system animator scale: 0 (HyperOS "remove animations", dev options, some battery
+        // savers) turns every transition, including the container transform, into a hard cut.
+        if (!android.animation.ValueAnimator.areAnimatorsEnabled())
+            android.util.Log.w("VerdroidMotion", "System animator duration scale is 0: all animations disabled")
+    }
     fun AnimatedContentTransitionScope<NavBackStackEntry>.chatSwap() =
         initialState.destination.route == Routes.CHAT || targetState.destination.route == Routes.CHAT
     SharedTransitionLayout {
