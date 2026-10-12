@@ -604,10 +604,15 @@ Chat head: Back and Home/Recents collapse the expanded panel back to the head at
 - **Start-up update panel:** a silent GitHub check on launch (quiet offline); if newer, a dialog shows version + notes
   snippet with Update (downloads, then opens installer) / Later (once per session).
 
-## Unreleased: on-device self-test
+## v1.0.41: on-device self-test
 
 - **Settings → App → Self-test** (`data/selftest/SelfTestRunner.kt`, `ui/selftest/SelfTestScreen.kt`): safe, non-destructive
   per-feature checks with pass/fail/skip, detail and duration. Copy/Share, saved to `Documents/Verdroid/selftest-<ts>.md`.
   No installs, trades or model calls; missing apps/permissions → SKIP; 25s timeout per check.
 - **Rule for new features/tools:** register a self-test check (or an exemption with a reason) in
   `SelfTestCoverage`. `SelfTestCoverageTest` scans `agent/tools` for tool names and fails the build otherwise.
+- **`self_test` agent tool:** same checks, returns the Markdown report (optional `only` filter); lazily resolves the
+  runner via `Provider` (runner depends on the registry). Coverage-exempt and skipped by `tool_registry` (no recursion).
+- **Floating chat window (chat head):** bubble tap opens a draggable (top grip) and resizable (bottom-right grip)
+  window, ~85% x 60% by default, focusable for the keyboard; header Fullscreen opens the chat in the app. Outside
+  tap / Back / Home collapse it with a scale+fade toward the bubble. Geometry in `FloatingWindowGeometry` (tested).
