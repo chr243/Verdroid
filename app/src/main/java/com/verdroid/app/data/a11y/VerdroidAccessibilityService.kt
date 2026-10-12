@@ -20,6 +20,7 @@ class VerdroidAccessibilityService : AccessibilityService() {
     override fun onServiceConnected() {
         super.onServiceConnected()
         instance = this
+        launchers = resolveLaunchers()
     }
 
     override fun onUnbind(intent: android.content.Intent?): Boolean {
@@ -32,7 +33,23 @@ class VerdroidAccessibilityService : AccessibilityService() {
         super.onDestroy()
     }
 
-    override fun onAccessibilityEvent(event: AccessibilityEvent?) { /* polled on demand, no event handling */ }
+    /** Default launcher package(s), refreshed on connect (HyperOS: com.miui.home). */
+    private var launchers: Set<String> = emptySet()
+
+    private fun resolveLaunchers(): Set<String> = runCatching {
+        val home = android.content.Intent(android.content.Intent.ACTION_MAIN).addCategory(android.content.Intent.CATEGORY_HOME)
+        packageManager.queryIntentActivities(home, 0).mapNotNull { it.activityInfo?.packageName }
+            .filter { it != packageName && it != "com.android.settings" }.toSet()
+    }.getOrDefault(emptySet())
+
+    /** Tools poll the node tree on demand; events are only used for the instant Home signal (chat-head window). */
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        val l = com.verdroid.app.chathead.HomeSignal.listener ?: return
+        if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
+        val pkg = event.packageName?.toString()
+        if (launchers.isEmpty()) launchers = resolveLaunchers()
+        if (com.verdroid.app.chathead.HomeSignal.isHomeOrRecents(pkg, launchers)) l(pkg!!)
+    }
     override fun onInterrupt() {}
 
     suspend fun tap(x: Float, y: Float): Boolean = gesture(buildPath(x, y), 0, 60)

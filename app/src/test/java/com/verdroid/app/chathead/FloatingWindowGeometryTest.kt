@@ -36,3 +36,13 @@ class FocusTrackerTest {
         assertEquals(true, t.onFocusChanged(false))
     }
 }
+
+class HomeSignalTest {
+    @Test fun launcherAndRecentsOnly() {
+        val l = setOf("com.miui.home")
+        assertEquals(true, HomeSignal.isHomeOrRecents("com.miui.home", l))
+        assertEquals(true, HomeSignal.isHomeOrRecents("com.android.quickstep", l))
+        assertEquals(false, HomeSignal.isHomeOrRecents("com.whatsapp", l))
+        assertEquals(false, HomeSignal.isHomeOrRecents(null, l))
+    }
+}

@@ -158,6 +158,12 @@ class ChatHeadService : Service(), LifecycleOwner, SavedStateRegistryOwner, View
          * delivered late on HyperOS (often seconds). Brief focus blips (IME, our own popups) are filtered by re-checking
          * after [ChatHeadPanelPolicy.FOCUS_LOSS_CONFIRM_MS]; the keyboard never takes window focus.
          */
+        /** Some ROMs hide overlays on Home/Recents → collapse at once. */
+        override fun onWindowVisibilityChanged(visibility: Int) {
+            super.onWindowVisibilityChanged(visibility)
+            if (visibility != View.VISIBLE && isAttachedToWindow) onFocusLost()
+        }
+
         override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
             super.onWindowFocusChanged(hasWindowFocus)
             if (focus.onFocusChanged(hasWindowFocus)) postDelayed({
@@ -182,7 +188,7 @@ class ChatHeadService : Service(), LifecycleOwner, SavedStateRegistryOwner, View
     private val homeReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             val reason = intent.getStringExtra("reason")
-            Log.d(TAG, "CLOSE_SYSTEM_DIALOGS reason=$reason")
+            Log.d(TAG, "CLOSE_SYSTEM_DIALOGS reason=$reason (fallback path)")
             if (panelView != null && ChatHeadPanelPolicy.collapseOnSystemDialogs(reason)) collapse()
         }
     }
@@ -578,6 +584,13 @@ class ChatHeadService : Service(), LifecycleOwner, SavedStateRegistryOwner, View
         windowManager.addView(view, params)
         view.post { view.requestFocus() }
         registerHomeReceiver()
+        val armedAt = android.os.SystemClock.uptimeMillis() + HomeSignal.ARM_DELAY_MS
+        HomeSignal.listener = { pkg ->
+            if (android.os.SystemClock.uptimeMillis() >= armedAt) mainHandler.post {
+                Log.d(TAG, "a11y Home signal ($pkg) → collapse")
+                if (panelView != null) collapse()
+            }
+        }
         Log.d(TAG, "window expanded; head removed at saved (${p.x}, ${p.y})")
     }
 
@@ -597,6 +610,7 @@ class ChatHeadService : Service(), LifecycleOwner, SavedStateRegistryOwner, View
 
     /** Animated: the window scales/fades toward the bubble, then [finishCollapse] removes it. */
     private fun collapse() {
+        if (removingPanel) return
         if (panelView == null) { finishCollapse(); return }
         if (closingState.value) return
         val p = headParams
@@ -611,8 +625,14 @@ class ChatHeadService : Service(), LifecycleOwner, SavedStateRegistryOwner, View
         panelView?.postDelayed({ if (closingState.value) finishCollapse() }, COLLAPSE_MS + 250L)
     }
 
+    private val mainHandler by lazy { android.os.Handler(android.os.Looper.getMainLooper()) }
+
+    private var removingPanel = false
+
     private fun finishCollapse() {
-        panelView?.let { runCatching { windowManager.removeView(it) } }
+        HomeSignal.listener = null
+        removingPanel = true
+        try { panelView?.let { runCatching { windowManager.removeView(it) } } } finally { removingPanel = false }
         panelView = null
         panelParams = null
         closingState.value = false
@@ -669,6 +689,7 @@ class ChatHeadService : Service(), LifecycleOwner, SavedStateRegistryOwner, View
     }
 
     override fun onDestroy() {
+        HomeSignal.listener = null
         stopSpring()
         unregisterHomeReceiver()
         listOfNotNull(panelView, dismissView, headView).forEach { v -> runCatching { windowManager.removeView(v) } }
