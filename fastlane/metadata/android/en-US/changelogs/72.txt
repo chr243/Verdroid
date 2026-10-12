@@ -1,0 +1,3 @@
+- Floating window closes as soon as you press Home or Recents (3-button navigation)
+- New Settings > App > Debug log to copy floating-window events
+- If Home still lags: turn Verdroid's Accessibility off and on once
