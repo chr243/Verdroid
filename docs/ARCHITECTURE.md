@@ -616,3 +616,12 @@ Chat head: Back and Home/Recents collapse the expanded panel back to the head at
 - **Floating chat window (chat head):** bubble tap opens a draggable (top grip) and resizable (bottom-right grip)
   window, ~85% x 60% by default, focusable for the keyboard; header Fullscreen opens the chat in the app. Outside
   tap / Back / Home collapse it with a scale+fade toward the bubble. Geometry in `FloatingWindowGeometry` (tested).
+
+## v1.0.42
+
+- **Opt-in GitHub updater** (IzzyOnDroid policy): Settings → App → *Check for updates on GitHub*, OFF for fresh installs.
+  `AppUpdater.resolveEnabled` migrates once: if update prefs from an earlier version exist, it stays ON
+  (`UpdaterMigrationTest`). Start-up check/dialog and the self-test `updater` check run only when enabled.
+- **Chat-head window Home collapse** (`5615aeb`): collapses on window focus loss (confirmed after 60ms, ignored before
+  first focus) instead of waiting for the late `ACTION_CLOSE_SYSTEM_DIALOGS` on HyperOS; collapse anim 170ms.
+- Cleartext only to localhost/127.0.0.1; README Permissions section + Obtainium/GitHub badges; `fastlane/metadata`.

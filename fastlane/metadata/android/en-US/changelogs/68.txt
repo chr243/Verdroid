@@ -1,0 +1,3 @@
+- GitHub update checks are now opt-in (off for new installs, kept on for existing ones)
+- Chat-head window collapses instantly on Home/Recents
+- Permissions explained in README; fastlane metadata for app stores
