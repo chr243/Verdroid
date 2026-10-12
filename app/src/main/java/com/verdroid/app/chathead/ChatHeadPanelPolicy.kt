@@ -36,3 +36,29 @@ class HeadPositionStore(private val read: (String) -> Int?, private val write: (
         const val KEY_Y = "y"
     }
 }
+
+/** Floating chat window geometry (pure, unit-tested): default size/placement, drag and resize clamping. */
+object FloatingWindowGeometry {
+    data class Rect(val x: Int, val y: Int, val w: Int, val h: Int)
+
+    const val DEFAULT_W = 0.85f
+    const val DEFAULT_H = 0.60f
+
+    /** ~85% x 60% of the usable area, centred horizontally, a bit above centre (room for the keyboard). */
+    fun default(areaW: Int, areaH: Int, top: Int = 0): Rect {
+        val w = (areaW * DEFAULT_W).toInt(); val h = (areaH * DEFAULT_H).toInt()
+        return Rect((areaW - w) / 2, top + ((areaH - h) * 0.35f).toInt(), w, h)
+    }
+
+    /** Keeps at least [grip] px of the window on screen so it can always be dragged back. */
+    fun move(r: Rect, dx: Int, dy: Int, areaW: Int, areaH: Int, top: Int, grip: Int): Rect =
+        r.copy(x = (r.x + dx).coerceIn(grip - r.w, areaW - grip), y = (r.y + dy).coerceIn(top, top + areaH - grip))
+
+    /** Bottom-right corner resize, between [minW]x[minH] and the screen edge. */
+    fun resize(r: Rect, dw: Int, dh: Int, areaW: Int, areaH: Int, top: Int, minW: Int, minH: Int): Rect =
+        r.copy(w = (r.w + dw).coerceIn(minW, maxOf(minW, areaW - r.x)), h = (r.h + dh).coerceIn(minH, maxOf(minH, top + areaH - r.y)))
+
+    /** Transform origin (0..1 within the window) pointing at the bubble centre, for the collapse/expand scale. */
+    fun pivot(r: Rect, headCx: Int, headCy: Int): Pair<Float, Float> =
+        ((headCx - r.x).toFloat() / r.w).coerceIn(0f, 1f) to ((headCy - r.y).toFloat() / r.h).coerceIn(0f, 1f)
+}

@@ -56,6 +56,7 @@ import com.verdroid.app.domain.repository.TaskRepository
 import com.verdroid.app.domain.usecase.SendMessageUseCase
 import com.verdroid.app.ui.chathead.ChatHeadAvatar
 import com.verdroid.app.ui.chathead.CompactChatPanel
+import com.verdroid.app.ui.chathead.FloatingChatWindow
 import com.verdroid.app.ui.chathead.DismissTarget
 import com.verdroid.app.ui.theme.VerdroidTheme
 import dagger.hilt.android.AndroidEntryPoint
@@ -513,6 +514,15 @@ class ChatHeadService : Service(), LifecycleOwner, SavedStateRegistryOwner, View
      * kept the old position until the next redraw, so the head was drawn over the clock while touches there went
      * through to the app below (and the first touch made it "teleport").
      */
+    // v1.0.41: floating chat window (draggable header, resizable corner) instead of the fixed bottom panel.
+    private var panelParams: WindowManager.LayoutParams? = null
+    private var windowRect = FloatingWindowGeometry.Rect(0, 0, 0, 0)
+    private val closingState = mutableStateOf(false)
+    private val pivotState = mutableStateOf(0.5f to 0.5f)
+
+    private fun areaTop() = safeInsets().top
+    private fun areaH() = screenHeight - safeInsets().top - safeInsets().bottom
+
     @SuppressLint("ClickableViewAccessibility")
     private fun expand() {
         val p = headParams ?: return
@@ -521,19 +531,26 @@ class ChatHeadService : Service(), LifecycleOwner, SavedStateRegistryOwner, View
         savePosition(p)
         headView?.let { v -> if (v.isAttachedToWindow) runCatching { windowManager.removeViewImmediate(v) }.onFailure { Log.w(TAG, "remove head failed", it) } }
 
-        val params = overlayParams(
-            WindowManager.LayoutParams.MATCH_PARENT, (screenHeight * 0.62f).toInt(),
-            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
+        windowRect = FloatingWindowGeometry.default(screenWidth, areaH(), areaTop())
+        pivotState.value = FloatingWindowGeometry.pivot(windowRect, p.x + headWidth() / 2, p.y + headHeight() / 2)
+        closingState.value = false
+        // Focusable (no FLAG_NOT_FOCUSABLE) so the composer gets the keyboard; NOT_TOUCH_MODAL lets outside touches
+        // through and WATCH_OUTSIDE_TOUCH reports them so the window collapses.
+        val params = overlayParams(windowRect.w, windowRect.h,
+            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
         ).apply {
-            gravity = Gravity.BOTTOM
+            gravity = Gravity.TOP or Gravity.START
+            x = windowRect.x; y = windowRect.y
             softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
         }
+        panelParams = params
         val content = composeView { PanelContent() }
         val view = OutsideTouchLayout(this, onOutside = { _ ->
-            Log.d(TAG, "panel ACTION_OUTSIDE")
+            Log.d(TAG, "window ACTION_OUTSIDE")
             collapse()
         }, onBack = {
-            Log.d(TAG, "panel Back")
+            Log.d(TAG, "window Back")
             collapse()
         }).apply {
             attachOwners()
@@ -544,12 +561,43 @@ class ChatHeadService : Service(), LifecycleOwner, SavedStateRegistryOwner, View
         windowManager.addView(view, params)
         view.post { view.requestFocus() }
         registerHomeReceiver()
-        Log.d(TAG, "panel expanded; head removed at saved (${p.x}, ${p.y})")
+        Log.d(TAG, "window expanded; head removed at saved (${p.x}, ${p.y})")
     }
 
+    private fun applyWindowRect(r: FloatingWindowGeometry.Rect) {
+        val v = panelView ?: return
+        val lp = panelParams ?: return
+        windowRect = r
+        lp.x = r.x; lp.y = r.y; lp.width = r.w; lp.height = r.h
+        runCatching { windowManager.updateViewLayout(v, lp) }
+    }
+
+    private fun moveWindow(dx: Float, dy: Float) = applyWindowRect(
+        FloatingWindowGeometry.move(windowRect, dx.toInt(), dy.toInt(), screenWidth, areaH(), areaTop(), dp(96)))
+
+    private fun resizeWindow(dw: Float, dh: Float) = applyWindowRect(
+        FloatingWindowGeometry.resize(windowRect, dw.toInt(), dh.toInt(), screenWidth, areaH(), areaTop(), dp(240), dp(280)))
+
+    /** Animated: the window scales/fades toward the bubble, then [finishCollapse] removes it. */
     private fun collapse() {
+        if (panelView == null) { finishCollapse(); return }
+        val p = headParams
+        if (p != null) {
+            val i = safeInsets()
+            val (hx, hy) = positions.restore(p.x, p.y, HeadPositionStore.Bounds(i.left, screenWidth - i.right - headWidth(),
+                i.top + dp(8), screenHeight - i.bottom - headHeight() - dp(8)))
+            pivotState.value = FloatingWindowGeometry.pivot(windowRect, hx + headWidth() / 2, hy + headHeight() / 2)
+        }
+        closingState.value = true
+        // Safety net if the composition doesn't finish the animation (e.g. detached).
+        panelView?.postDelayed({ if (closingState.value) finishCollapse() }, COLLAPSE_MS + 250L)
+    }
+
+    private fun finishCollapse() {
         panelView?.let { runCatching { windowManager.removeView(it) } }
         panelView = null
+        panelParams = null
+        closingState.value = false
         unregisterHomeReceiver()
         if (!expandedState.value) return
         expandedState.value = false
@@ -574,21 +622,32 @@ class ChatHeadService : Service(), LifecycleOwner, SavedStateRegistryOwner, View
         val messages by remember(id) { tasks.observeMessages(id) }.collectAsState(initial = emptyList<ChatMessage>())
         val toolCalls by remember(id) { tasks.observeToolCalls(id) }.collectAsState(initial = emptyList<ToolCallRecord>())
         val running by agent.runningTaskIds.collectAsState()
-        CompactChatPanel(
-            task = task,
-            messages = messages,
-            toolCalls = toolCalls,
-            generating = id in running,
-            onSend = { text -> lifecycleScope.launch { sendMessage(id, text) } },
-            onStop = { agent.stop(id) },
-            onResume = { agent.start(id) },
-            onOpenFull = {
-                collapse()
-                startActivity(MainActivity.openTaskIntent(this, id))
-            },
-            onCollapse = { collapse() },
-            onSeen = { lifecycleScope.launch { tasks.markOpened(id) } },
-        )
+        val closing by closingState
+        val pivot by pivotState
+        FloatingChatWindow(
+            closing = closing,
+            pivot = pivot,
+            durationMs = COLLAPSE_MS.toInt(),
+            onClosed = { finishCollapse() },
+            onDrag = ::moveWindow,
+            onResize = ::resizeWindow,
+        ) {
+            CompactChatPanel(
+                task = task,
+                messages = messages,
+                toolCalls = toolCalls,
+                generating = id in running,
+                onSend = { text -> lifecycleScope.launch { sendMessage(id, text) } },
+                onStop = { agent.stop(id) },
+                onResume = { agent.start(id) },
+                onOpenFull = {
+                    finishCollapse()
+                    startActivity(MainActivity.openTaskIntent(this, id))
+                },
+                onCollapse = { collapse() },
+                onSeen = { lifecycleScope.launch { tasks.markOpened(id) } },
+            )
+        }
     }
 
     override fun onDestroy() {
@@ -611,6 +670,7 @@ class ChatHeadService : Service(), LifecycleOwner, SavedStateRegistryOwner, View
         private const val TAG = "ChatHead"
         private const val FGS_NOTIFICATION_ID = 4242
         private const val HEAD_SIZE_DP = 72
+        private const val COLLAPSE_MS = 220L
         private const val EDGE_MARGIN_DP = 4
         private const val DISMISS_SIZE_DP = 76
         private const val DISMISS_BOTTOM_DP = 48
