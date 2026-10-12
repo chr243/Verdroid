@@ -66,12 +66,38 @@ data class StatusColors(val ok: Color, val warn: Color, val error: Color, val on
 val LocalStatusColors = staticCompositionLocalOf { StatusColors(StatusGreen, StatusYellow, StatusRed, Color.White) }
 
 /** Theme choice, saved in SharedPreferences; one process-wide flow so every Compose root (app, bubbles, chat head) updates at once. */
+/** Font size setting: 85%–130% in 5% steps, default 100%. Pure (unit-tested). */
+object FontScale {
+    const val MIN = 0.85f
+    const val MAX = 1.30f
+    const val DEFAULT = 1.0f
+    const val STEP = 0.05f
+    /** Slider steps between the end points (Material Slider `steps`). */
+    val STEPS: Int = Math.round((MAX - MIN) / STEP) - 1
+
+    /** Clamps and snaps to the nearest 5%; NaN → default. */
+    fun clamp(v: Float): Float {
+        if (v.isNaN()) return DEFAULT
+        val snapped = Math.round(v.coerceIn(MIN, MAX) / STEP) * STEP
+        return (Math.round(snapped * 100f) / 100f).coerceIn(MIN, MAX)
+    }
+
+    /** Effective fontScale = phone setting × app setting. */
+    fun effective(system: Float, app: Float): Float = system * clamp(app)
+
+    fun label(v: Float): String = "${Math.round(clamp(v) * 100)}%"
+}
+
 class ThemeStore private constructor(context: Context) {
     private val prefs = context.getSharedPreferences("theme_prefs", Context.MODE_PRIVATE)
     private val _mode = MutableStateFlow(runCatching { ThemeMode.valueOf(prefs.getString("mode", null)!!) }.getOrDefault(ThemeMode.SYSTEM))
     private val _palette = MutableStateFlow(runCatching { Palette.valueOf(prefs.getString("palette", null)!!) }.getOrDefault(Palette.FOREST))
     val mode: StateFlow<ThemeMode> = _mode.asStateFlow()
     val palette: StateFlow<Palette> = _palette.asStateFlow()
+    private val _fontScale = MutableStateFlow(FontScale.clamp(prefs.getFloat("font_scale", FontScale.DEFAULT)))
+    /** App text size multiplier (on top of the phone's own font size). */
+    val fontScale: StateFlow<Float> = _fontScale.asStateFlow()
+    fun setFontScale(v: Float) { val c = FontScale.clamp(v); prefs.edit().putFloat("font_scale", c).apply(); _fontScale.value = c }
 
     fun setMode(m: ThemeMode) { prefs.edit().putString("mode", m.name).apply(); _mode.value = m }
     fun setPalette(p: Palette) { prefs.edit().putString("palette", p.name).apply(); _palette.value = p }
@@ -194,11 +220,16 @@ fun VerdroidTheme(content: @Composable () -> Unit) {
     val store = remember { ThemeStore.get(context) }
     val mode by store.mode.collectAsState()
     val palette by store.palette.collectAsState()
+    val fontScale by store.fontScale.collectAsState()
+    val density = androidx.compose.ui.platform.LocalDensity.current
     val dark = when (mode) { ThemeMode.SYSTEM -> isSystemInDarkTheme(); ThemeMode.LIGHT -> false; ThemeMode.DARK -> true }
     val scheme = remember(palette, dark) { Palettes.scheme(palette, dark, context) }
     val status = remember(scheme, dark) { Palettes.status(scheme, dark) }
     SystemBarsEffect(scheme, dark)
-    CompositionLocalProvider(LocalBubbleColors provides Palettes.bubbles(scheme), LocalStatusColors provides status) {
+    // Applies app-wide (activity, bubble activity and the floating chat window all use VerdroidTheme): every sp scales.
+    val scaled = androidx.compose.ui.unit.Density(density.density, FontScale.effective(density.fontScale, fontScale))
+    CompositionLocalProvider(LocalBubbleColors provides Palettes.bubbles(scheme), LocalStatusColors provides status,
+        androidx.compose.ui.platform.LocalDensity provides scaled) {
         MaterialTheme(colorScheme = scheme, content = content)
     }
 }

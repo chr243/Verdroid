@@ -172,6 +172,13 @@ class SelfTestRunner @Inject constructor(
             if (!com.verdroid.app.data.a11y.VerdroidAccessibilityService.isRunning) throw SkipCheck("Accessibility service not enabled")
             "service running"
         },
+        "font_scale" to {
+            val store = com.verdroid.app.ui.theme.ThemeStore.get(context)
+            val v = store.fontScale.value
+            check(v in com.verdroid.app.ui.theme.FontScale.MIN..com.verdroid.app.ui.theme.FontScale.MAX) { "stored scale $v out of range" }
+            check(com.verdroid.app.ui.theme.FontScale.clamp(5f) == com.verdroid.app.ui.theme.FontScale.MAX) { "clamp broken" }
+            "font size ${com.verdroid.app.ui.theme.FontScale.label(v)}"
+        },
         "overlay" to { if (Settings.canDrawOverlays(context)) "overlay allowed" else throw SkipCheck("overlay permission not granted") },
         "git" to {
             val dir = File(context.cacheDir, "selftest-git-${System.nanoTime()}")
