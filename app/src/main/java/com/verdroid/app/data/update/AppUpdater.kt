@@ -60,6 +60,9 @@ class AppUpdater @Inject constructor(@ApplicationContext private val context: Co
 
     val currentVersion: String = BuildConfig.VERSION_NAME
 
+    /** Start-up "update available" panel: shown at most once per process (Later / Update both dismiss it). */
+    @Volatile var startupPromptDismissed: Boolean = false
+
     private val _state = MutableStateFlow<UpdateState>(UpdateState.Idle)
     val state: StateFlow<UpdateState> = _state.asStateFlow()
 

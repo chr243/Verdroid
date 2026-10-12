@@ -96,7 +96,10 @@ private object NavMotion {
 }
 
 @HiltViewModel
-class RootViewModel @Inject constructor(notifications: NotificationRepository) : ViewModel() {
+class RootViewModel @Inject constructor(
+    notifications: NotificationRepository,
+    val updater: com.verdroid.app.data.update.AppUpdater,
+) : ViewModel() {
     val unread = notifications.observeUnreadCount().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 }
 
@@ -118,6 +121,7 @@ fun VerdroidRoot(
     }
 
     // No bottom bar (v0.9.18): the chat list is home; Settings opens from its gear.
+    StartupUpdatePrompt(vm.updater)
     val px = NavMotion.slidePx(LocalDensity.current)
     LaunchedEffect(Unit) {
         // Compose honours the system animator scale: 0 (HyperOS "remove animations", dev options, some battery

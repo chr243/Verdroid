@@ -29,3 +29,8 @@ secrets.properties
 *.ap_
 *.dex
 __pycache__/
+
+# Release signing (kept outside repo, but never commit if copied in)
+*-keystore.properties
+verdroid-keystore.properties
+secrets/

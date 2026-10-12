@@ -38,16 +38,26 @@ object UpdateLogic {
         }
     }
 
+    /** First ~[max] chars of release notes for the start-up panel (markdown headers/bullets stripped lightly). */
+    fun notesSnippet(notes: String, max: Int = 240): String {
+        val t = notes.lines().map { it.trim().trimStart('#', '-', '*', ' ') }.filter { it.isNotBlank() }.joinToString("\n")
+        return if (t.length <= max) t else t.take(max).trimEnd() + "…"
+    }
+
     fun isNewer(latest: String, current: String): Boolean = (compare(latest, current) ?: 0) > 0
 
     /**
-     * The APK to install: `Verdroid-*.apk` of the installed build type (debug → `-debug.apk`), else any `Verdroid-*.apk`,
+     * The APK to install: `Verdroid-*.apk` of the installed build type (debug → `-debug.apk`; release → `-release.apk` or plain
+     * `Verdroid-v<ver>.apk`), else any `Verdroid-*.apk`,
      * else any `.apk`. Assets with size 0 or no URL are skipped.
      */
     fun pickAsset(assets: List<ApkAsset>, buildType: String = "debug"): ApkAsset? {
         val apks = assets.filter { it.name.endsWith(".apk", ignoreCase = true) && it.url.startsWith("https://") && it.size > 0 }
         val verdroid = apks.filter { it.name.startsWith("Verdroid-", ignoreCase = true) }
-        return verdroid.firstOrNull { it.name.endsWith("-$buildType.apk", ignoreCase = true) } ?: verdroid.firstOrNull() ?: apks.firstOrNull()
+        val exact = verdroid.firstOrNull { it.name.endsWith("-$buildType.apk", ignoreCase = true) }
+        // v1.0.40+: release assets are plain `Verdroid-v<ver>.apk` (no build-type suffix).
+        val plainRelease = verdroid.firstOrNull { !it.name.endsWith("-debug.apk", ignoreCase = true) }
+        return exact ?: (if (buildType == "release") plainRelease else null) ?: verdroid.firstOrNull() ?: apks.firstOrNull()
     }
 
     fun parseRelease(body: String, buildType: String = "debug"): ReleaseInfo? {

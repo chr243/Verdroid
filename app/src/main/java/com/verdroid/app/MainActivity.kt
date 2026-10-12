@@ -69,7 +69,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Silent update check (at most every 6 h; the gear and Settings > App update show a dot when one exists).
-        if (savedInstanceState == null) lifecycleScope.launch { runCatching { updater.autoCheck() } }
+        if (savedInstanceState == null) lifecycleScope.launch { runCatching { updater.check(silent = true) } } // quiet offline; feeds the start-up panel
         enableEdgeToEdge()
         if (savedInstanceState == null) openTaskId.value = taskIdFrom(intent)
         addOnNewIntentListener { newIntent -> taskIdFrom(newIntent)?.let { openTaskId.value = it } }

@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -6,6 +8,24 @@ plugins {
     alias(libs.plugins.ksp)
     alias(libs.plugins.hilt)
     alias(libs.plugins.room)
+}
+
+// Release signing (v1.0.40): keystore lives OUTSIDE the repo. Path of the properties file comes from
+// VERDROID_KEYSTORE_PROPS (default /home/box/secrets/verdroid-keystore.properties), or env vars
+// VERDROID_STORE_FILE / VERDROID_STORE_PASSWORD / VERDROID_KEY_ALIAS / VERDROID_KEY_PASSWORD.
+// Without either, release builds fall back to the debug key so others/CI can still build.
+val releaseSigning: Map<String, String>? = run {
+    val f = file(System.getenv("VERDROID_KEYSTORE_PROPS") ?: "/home/box/secrets/verdroid-keystore.properties")
+    val props = Properties()
+    if (f.isFile) f.inputStream().use { props.load(it) }
+    fun v(prop: String, env: String) = props.getProperty(prop) ?: System.getenv(env)
+    val m = mapOf(
+        "storeFile" to v("storeFile", "VERDROID_STORE_FILE"),
+        "storePassword" to v("storePassword", "VERDROID_STORE_PASSWORD"),
+        "keyAlias" to v("keyAlias", "VERDROID_KEY_ALIAS"),
+        "keyPassword" to v("keyPassword", "VERDROID_KEY_PASSWORD"),
+    )
+    if (m.values.all { !it.isNullOrBlank() } && file(m["storeFile"]!!).isFile) m.mapValues { it.value!! } else null
 }
 
 android {
@@ -17,15 +37,25 @@ android {
         applicationId = "com.verdroid.app"
         minSdk = 30
         targetSdk = 35
-        versionCode = 65
-        versionName = "1.0.39"
+        versionCode = 66
+        versionName = "1.0.40"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
     }
 
+    signingConfigs {
+        if (releaseSigning != null) create("release") {
+            storeFile = file(releaseSigning.getValue("storeFile"))
+            storePassword = releaseSigning.getValue("storePassword")
+            keyAlias = releaseSigning.getValue("keyAlias")
+            keyPassword = releaseSigning.getValue("keyPassword")
+        }
+    }
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            signingConfig = if (releaseSigning != null) signingConfigs.getByName("release") else signingConfigs.getByName("debug")
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
         }
     }
@@ -49,11 +79,11 @@ android {
             pickFirsts += listOf("plugin.properties")
         }
     }
-    // APK file name: Verdroid-v<version>-<buildType>.apk
+    // APK file name: Verdroid-v<version>.apk (release), Verdroid-v<version>-<buildType>.apk otherwise
     applicationVariants.all {
         outputs.all {
             (this as com.android.build.gradle.internal.api.BaseVariantOutputImpl).outputFileName =
-                "Verdroid-v${versionName}-${buildType.name}.apk"
+                if (buildType.name == "release") "Verdroid-v${versionName}.apk" else "Verdroid-v${versionName}-${buildType.name}.apk"
         }
     }
     // v1.0.12: Room DAO + migration tests run on the JVM via Robolectric (old schemas read from /schemas).

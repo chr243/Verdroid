@@ -592,3 +592,14 @@ Chat head: Back and Home/Recents collapse the expanded panel back to the head at
   bar, background, composer) is inside the container transform. The message list composes after
   `transition.isRunning` turns false, fades in over 120ms, and jumps to the newest message without animation.
   The flag latches, so the close morph still carries the full content.
+
+## v1.0.40
+
+- **Signed, optimized release builds:** APKs are now `assembleRelease` with R8 minify + resource shrinking
+  (`app/proguard-rules.pro`), signed with a release key kept outside the repo (`/home/box/secrets/`, or
+  `VERDROID_KEYSTORE_PROPS` / `VERDROID_STORE_*` env). Without a keystore, release falls back to the debug key.
+  Asset name: `Verdroid-v<ver>.apk`. **One-time reinstall:** the signature changed from the debug key, so the
+  previous debug install must be uninstalled first (export chats/settings you need).
+- **Updater:** release builds pick the plain `Verdroid-v<ver>.apk` asset (still accept `-release`/`-debug`).
+- **Start-up update panel:** a silent GitHub check on launch (quiet offline); if newer, a dialog shows version + notes
+  snippet with Update (downloads, then opens installer) / Later (once per session).

@@ -29,6 +29,9 @@ class UpdateLogicTest {
         assertNull(UpdateLogic.pickAsset(listOf(a("Verdroid-v1.0.6-debug.apk", size = 0), a("source.zip"))))
         assertNull(UpdateLogic.pickAsset(listOf(ApkAsset("Verdroid-v1-debug.apk", "http://insecure/x.apk", 10))))
         assertNull(UpdateLogic.pickAsset(emptyList()))
+        assertEquals("Verdroid-v1.0.40.apk",
+            UpdateLogic.pickAsset(listOf(a("Verdroid-v1.0.40-debug.apk"), a("Verdroid-v1.0.40.apk")), "release")!!.name)
+        assertEquals("Verdroid-v1.0.39-debug.apk", UpdateLogic.pickAsset(listOf(a("Verdroid-v1.0.39-debug.apk")), "release")!!.name)
     }
 
     @Test fun parsesGithubLatestRelease() {
