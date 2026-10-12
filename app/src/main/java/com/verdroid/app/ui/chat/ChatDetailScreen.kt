@@ -1,5 +1,6 @@
 package com.verdroid.app.ui.chat
 
+import com.verdroid.app.ui.chatContainer
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
@@ -147,6 +148,7 @@ fun ChatDetailScreen(onBack: () -> Unit, onChatMemory: (Long) -> Unit = {}, vm: 
     }
 
     Scaffold(
+        modifier = Modifier.chatContainer(chatId),
         topBar = {
             TopAppBar(
                 navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },

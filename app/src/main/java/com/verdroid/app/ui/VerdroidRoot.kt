@@ -1,8 +1,16 @@
 package com.verdroid.app.ui
 
+import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.ExperimentalSharedTransitionApi
+import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
+import androidx.navigation.NavBackStackEntry
 import androidx.compose.animation.ExitTransition
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -59,31 +67,26 @@ object Routes {
 }
 
 /**
- * Subtle Material "shared axis X"-style motion for every screen (chats, Settings and its sub-pages):
- * the new screen fades in while sliding a short distance from the right; the old one fades out and
- * drifts slightly left. Back (pop) runs the same motion in reverse. Short and small on purpose.
+ * Material motion (v1.0.37):
+ * - Shared axis X for Settings and its sub-pages: ~30dp slide + fade-through style fade, 300ms emphasized.
+ * - Chat list <-> chat: container transform (sharedBounds in [chatContainer]); the screens themselves only fade.
  */
 private object NavMotion {
-    private const val DURATION_MS = 260
-    private const val FADE_OUT_MS = 120
-    private const val FADE_IN_DELAY_MS = 60
+    private const val FADE_OUT_MS = 90 // ~35% of the duration: outgoing fades fast, incoming fades in after
+    private val SLIDE = 30.dp
 
-    // Fractions of the screen width: a nudge, not a full page slide.
-    private fun near(width: Int) = width / 10
-    private fun far(width: Int) = width / 20
+    fun enter(px: Int): EnterTransition =
+        fadeIn(tween(MOTION_MS - FADE_OUT_MS, delayMillis = FADE_OUT_MS, easing = LinearOutSlowInEasing)) +
+            slideInHorizontally(tween(MOTION_MS, easing = EmphasizedEasing)) { px }
+    fun exit(px: Int): ExitTransition =
+        fadeOut(tween(FADE_OUT_MS, easing = FastOutLinearInEasing)) +
+            slideOutHorizontally(tween(MOTION_MS, easing = EmphasizedEasing)) { -px }
+    fun popEnter(px: Int): EnterTransition = enter(-px)
+    fun popExit(px: Int): ExitTransition = exit(-px)
+    fun slidePx(d: Density) = with(d) { SLIDE.roundToPx() }
 
-    val enter: EnterTransition =
-        fadeIn(tween(DURATION_MS - FADE_IN_DELAY_MS, delayMillis = FADE_IN_DELAY_MS, easing = LinearOutSlowInEasing)) +
-            slideInHorizontally(tween(DURATION_MS, easing = FastOutSlowInEasing)) { near(it) }
-    val exit: ExitTransition =
-        fadeOut(tween(FADE_OUT_MS, easing = FastOutSlowInEasing)) +
-            slideOutHorizontally(tween(DURATION_MS, easing = FastOutSlowInEasing)) { -far(it) }
-    val popEnter: EnterTransition =
-        fadeIn(tween(DURATION_MS - FADE_IN_DELAY_MS, delayMillis = FADE_IN_DELAY_MS, easing = LinearOutSlowInEasing)) +
-            slideInHorizontally(tween(DURATION_MS, easing = FastOutSlowInEasing)) { -far(it) }
-    val popExit: ExitTransition =
-        fadeOut(tween(FADE_OUT_MS, easing = FastOutSlowInEasing)) +
-            slideOutHorizontally(tween(DURATION_MS, easing = FastOutSlowInEasing)) { near(it) }
+    val fadeEnter: EnterTransition = fadeIn(tween(MOTION_MS, easing = LinearOutSlowInEasing))
+    val fadeExit: ExitTransition = fadeOut(tween(MOTION_MS, easing = FastOutLinearInEasing))
 }
 
 @HiltViewModel
@@ -91,6 +94,7 @@ class RootViewModel @Inject constructor(notifications: NotificationRepository) :
     val unread = notifications.observeUnreadCount().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 }
 
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun VerdroidRoot(
     openTaskId: Long? = null,
@@ -108,17 +112,21 @@ fun VerdroidRoot(
     }
 
     // No bottom bar (v0.9.18): the chat list is home; Settings opens from its gear.
-    run {
-        // Subtle fade + short horizontal slide on open/back (see NavMotion).
+    val px = NavMotion.slidePx(LocalDensity.current)
+    fun AnimatedContentTransitionScope<NavBackStackEntry>.chatSwap() =
+        initialState.destination.route == Routes.CHAT || targetState.destination.route == Routes.CHAT
+    SharedTransitionLayout {
+      CompositionLocalProvider(LocalSharedTransitionScope provides this) {
         NavHost(
             nav,
             startDestination = Routes.CHATS,
-            enterTransition = { NavMotion.enter },
-            exitTransition = { NavMotion.exit },
-            popEnterTransition = { NavMotion.popEnter },
-            popExitTransition = { NavMotion.popExit },
+            enterTransition = { if (chatSwap()) NavMotion.fadeEnter else NavMotion.enter(px) },
+            exitTransition = { if (chatSwap()) NavMotion.fadeExit else NavMotion.exit(px) },
+            popEnterTransition = { if (chatSwap()) NavMotion.fadeEnter else NavMotion.popEnter(px) },
+            popExitTransition = { if (chatSwap()) NavMotion.fadeExit else NavMotion.popExit(px) },
         ) {
             composable(Routes.CHATS) {
+              CompositionLocalProvider(LocalNavAnimatedScope provides this) {
                 ChatsScreen(
                     onOpenChat = { nav.navigate(Routes.chat(it)) },
                     onNewChat = { nav.navigate(Routes.chat(0)) },
@@ -126,6 +134,7 @@ fun VerdroidRoot(
                     onOpenKeys = { nav.navigate(Routes.KEYS) },
                     onOpenModels = { nav.navigate(Routes.MODELS) },
                 )
+              }
             }
             composable(Routes.NOTIFICATIONS) {
                 NotificationsScreen(onOpenChat = { nav.navigate(Routes.chat(it)) }, onBack = { nav.popBackStack() })
@@ -137,8 +146,10 @@ fun VerdroidRoot(
             composable(Routes.CHAT, arguments = listOf(navArgument("taskId") { type = NavType.LongType })) {
                 // VisibleChat is published by ChatDetailScreen from the ViewModel's real id: a new chat's route stays
                 // "chat/0" after the first send creates the task.
+              CompositionLocalProvider(LocalNavAnimatedScope provides this) {
                 ChatDetailScreen(onBack = { nav.popBackStack() },
                     onChatMemory = { id -> nav.navigate(Routes.memory(id)) })
+              }
             }
             composable(Routes.KEYS) { ApiKeysScreen(onBack = { nav.popBackStack() }) }
             composable(Routes.MODELS) { ModelPriorityScreen(onBack = { nav.popBackStack() }) }
@@ -161,5 +172,6 @@ fun VerdroidRoot(
             composable(Routes.THEME) { com.verdroid.app.ui.theme.ThemeScreen(onBack = { nav.popBackStack() }) }
             composable(Routes.CHAT_HEADS) { ChatHeadSettingsScreen(onBack = { nav.popBackStack() }) }
         }
+      }
     }
 }

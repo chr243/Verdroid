@@ -29,6 +29,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.verdroid.app.domain.model.Conversation
 import com.verdroid.app.ui.components.*
+import com.verdroid.app.ui.chatContainer
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -192,7 +193,7 @@ private fun ArchivableRow(c: Conversation, onOpen: () -> Unit, onArchive: () -> 
             Text("Archive", color = MaterialTheme.colorScheme.onErrorContainer)
         }
     }) {
-        Box(Modifier.background(MaterialTheme.colorScheme.surface)) {
+        Box(Modifier.chatContainer(c.task.id).background(MaterialTheme.colorScheme.surface)) {
             ConversationRow(c, onClick = onOpen, onLongClick = { menu = true })
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                 DropdownMenuItem(text = { Text("Open") }, onClick = { menu = false; onOpen() })
