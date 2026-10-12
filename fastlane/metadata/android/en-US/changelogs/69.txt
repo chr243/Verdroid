@@ -1,0 +1,1 @@
+- Chat-head window collapses instantly on Home/Recents (with the Accessibility service on)

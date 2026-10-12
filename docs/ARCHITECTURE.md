@@ -625,3 +625,12 @@ Chat head: Back and Home/Recents collapse the expanded panel back to the head at
 - **Chat-head window Home collapse** (`5615aeb`): collapses on window focus loss (confirmed after 60ms, ignored before
   first focus) instead of waiting for the late `ACTION_CLOSE_SYSTEM_DIALOGS` on HyperOS; collapse anim 170ms.
 - Cleartext only to localhost/127.0.0.1; README Permissions section + Obtainium/GitHub badges; `fastlane/metadata`.
+
+## v1.0.43
+
+- **Home collapse, take 2:** overlay windows keep input focus when the launcher comes forward (they sit above it), so
+  the v1.0.42 focus-loss path rarely fired, leaving only the late `ACTION_CLOSE_SYSTEM_DIALOGS` on HyperOS. Now, while
+  the window is open, `HomeSignal` listens to the Accessibility service's `TYPE_WINDOW_STATE_CHANGED` for the default
+  launcher (resolved via CATEGORY_HOME; com.miui.home on HyperOS) / recents → instant collapse (armed 400ms after
+  open). Fallbacks: window visibility change, focus loss, the broadcast. Without the Accessibility service enabled,
+  Home still depends on the system broadcast.
