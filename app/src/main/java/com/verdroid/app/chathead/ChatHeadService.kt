@@ -148,8 +148,22 @@ class ChatHeadService : Service(), LifecycleOwner, SavedStateRegistryOwner, View
      */
     @SuppressLint("ViewConstructor")
     private class OutsideTouchLayout(context: Context, private val onOutside: (MotionEvent) -> Unit,
-                                     private val onBack: () -> Unit) : FrameLayout(context) {
+                                     private val onBack: () -> Unit,
+                                     private val onFocusLost: () -> Unit = {}) : FrameLayout(context) {
         init { isFocusable = true; isFocusableInTouchMode = true }
+        private val focus = ChatHeadPanelPolicy.FocusTracker()
+
+        /**
+         * Home/Recents/another app taking focus → collapse right away. ACTION_CLOSE_SYSTEM_DIALOGS (the old path) is
+         * delivered late on HyperOS (often seconds). Brief focus blips (IME, our own popups) are filtered by re-checking
+         * after [ChatHeadPanelPolicy.FOCUS_LOSS_CONFIRM_MS]; the keyboard never takes window focus.
+         */
+        override fun onWindowFocusChanged(hasWindowFocus: Boolean) {
+            super.onWindowFocusChanged(hasWindowFocus)
+            if (focus.onFocusChanged(hasWindowFocus)) postDelayed({
+                if (isAttachedToWindow && !hasWindowFocus()) onFocusLost()
+            }, ChatHeadPanelPolicy.FOCUS_LOSS_CONFIRM_MS)
+        }
 
         override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
             if (ev.actionMasked == MotionEvent.ACTION_OUTSIDE) { onOutside(ev); return true }
@@ -552,6 +566,9 @@ class ChatHeadService : Service(), LifecycleOwner, SavedStateRegistryOwner, View
         }, onBack = {
             Log.d(TAG, "window Back")
             collapse()
+        }, onFocusLost = {
+            Log.d(TAG, "window focus lost (Home/Recents/other app)")
+            collapse()
         }).apply {
             attachOwners()
             addView(content, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
@@ -581,6 +598,7 @@ class ChatHeadService : Service(), LifecycleOwner, SavedStateRegistryOwner, View
     /** Animated: the window scales/fades toward the bubble, then [finishCollapse] removes it. */
     private fun collapse() {
         if (panelView == null) { finishCollapse(); return }
+        if (closingState.value) return
         val p = headParams
         if (p != null) {
             val i = safeInsets()
@@ -670,7 +688,7 @@ class ChatHeadService : Service(), LifecycleOwner, SavedStateRegistryOwner, View
         private const val TAG = "ChatHead"
         private const val FGS_NOTIFICATION_ID = 4242
         private const val HEAD_SIZE_DP = 72
-        private const val COLLAPSE_MS = 220L
+        private const val COLLAPSE_MS = 170L
         private const val EDGE_MARGIN_DP = 4
         private const val DISMISS_SIZE_DP = 76
         private const val DISMISS_BOTTOM_DP = 48

@@ -27,3 +27,12 @@ class FloatingWindowGeometryTest {
         assertEquals(1f to 0.5f, g.pivot(FloatingWindowGeometry.Rect(100, 100, 500, 500), 900, 350))
     }
 }
+
+class FocusTrackerTest {
+    @Test fun ignoresLossBeforeFirstFocus() {
+        val t = ChatHeadPanelPolicy.FocusTracker()
+        assertEquals(false, t.onFocusChanged(false))
+        assertEquals(false, t.onFocusChanged(true))
+        assertEquals(true, t.onFocusChanged(false))
+    }
+}

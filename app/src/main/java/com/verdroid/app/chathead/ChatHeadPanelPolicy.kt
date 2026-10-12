@@ -19,6 +19,19 @@ object ChatHeadPanelPolicy {
         else -> KeyDecision.CONSUME
     }
 
+    /** Focus loss must persist this long before collapsing (filters transient blips). */
+    const val FOCUS_LOSS_CONFIRM_MS = 60L
+
+    /** Collapse only on a focus LOSS after the window actually had focus (the first callbacks may be false). */
+    class FocusTracker {
+        private var hadFocus = false
+        /** @return true when the caller should (after confirming) collapse. */
+        fun onFocusChanged(has: Boolean): Boolean {
+            if (has) { hadFocus = true; return false }
+            return hadFocus
+        }
+    }
+
     fun collapseOnSystemDialogs(reason: String?): Boolean = reason != null && reason in HOME_REASONS
 }
 
