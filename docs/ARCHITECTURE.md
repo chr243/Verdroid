@@ -585,3 +585,10 @@ Chat head: Back and Home/Recents collapse the expanded panel back to the head at
 - **Fallback:** chat route enter/exit is fade + scale (0.92→1) so a visible motion plays even when bounds don't match.
 - Logs a warning (`VerdroidMotion`) when the system animator scale is 0, which turns every animation into a cut.
 - Unit test for shared-bounds key generation (`MotionKeyTest`).
+
+## v1.0.39
+
+- **Light shell during the open morph:** while the chat route's enter transition runs, only the Scaffold shell (top
+  bar, background, composer) is inside the container transform. The message list composes after
+  `transition.isRunning` turns false, fades in over 120ms, and jumps to the newest message without animation.
+  The flag latches, so the close morph still carries the full content.

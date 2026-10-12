@@ -1,5 +1,6 @@
 package com.verdroid.app.ui.chat
 
+import androidx.compose.ui.graphics.graphicsLayer
 import com.verdroid.app.ui.chatContainer
 import android.Manifest
 import android.content.pm.PackageManager
@@ -129,6 +130,11 @@ fun ChatDetailScreen(onBack: () -> Unit, onChatMemory: (Long) -> Unit = {}, vm: 
 
     // Hold DB writes until the container transform settles so nothing re-emits mid-morph.
     val transitioning = com.verdroid.app.ui.navTransitionRunning()
+    // Latches true once the enter transition settles (and stays true so the close morph keeps the content).
+    var contentReady by remember { mutableStateOf(!transitioning) }
+    LaunchedEffect(transitioning) { if (!transitioning) contentReady = true }
+    val listAlpha by androidx.compose.animation.core.animateFloatAsState(
+        if (contentReady) 1f else 0f, androidx.compose.animation.core.tween(120), label = "chatListFade")
     LaunchedEffect(messages.size, transitioning) { if (!transitioning) vm.markOpened() }
     // Only follow new output when already near the bottom (or the user just sent something); reading older messages
     // while a task runs is no longer interrupted.
@@ -137,8 +143,8 @@ fun ChatDetailScreen(onBack: () -> Unit, onChatMemory: (Long) -> Unit = {}, vm: 
     val newestId = visible.lastOrNull()?.id
     val newestIsUser = visible.lastOrNull()?.role == MessageRole.USER
     val doneCalls = toolCalls.count { it.status != ToolCallStatus.PENDING }
-    LaunchedEffect(rows.size, newestId, toolCalls.size, doneCalls, generating) {
-        if (visible.isEmpty()) return@LaunchedEffect
+    LaunchedEffect(rows.size, newestId, toolCalls.size, doneCalls, generating, contentReady) {
+        if (!contentReady || visible.isEmpty()) return@LaunchedEffect
         if (newestIsUser) follow.value = true
         if (follow.value) {
             val last = if (generating) rows.size else rows.lastIndex.coerceAtLeast(0)
@@ -198,7 +204,11 @@ fun ChatDetailScreen(onBack: () -> Unit, onChatMemory: (Long) -> Unit = {}, vm: 
         },
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).imePadding()) {
-            LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = listState,
+            // Open morph: only a light shell (bars + background) rides the container transform; the message list
+            // composes after the nav transition settles, then fades in fast (v1.0.39).
+            Box(Modifier.weight(1f).fillMaxWidth()) {
+            if (contentReady)
+            LazyColumn(Modifier.fillMaxSize().graphicsLayer { alpha = listAlpha }, state = listState,
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (visible.isEmpty()) {
                     item {
@@ -225,6 +235,7 @@ fun ChatDetailScreen(onBack: () -> Unit, onChatMemory: (Long) -> Unit = {}, vm: 
                     Text("● ${task?.subtitle ?: "Thinking..."}", color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(start = 8.dp, top = 4.dp))
                 }
+            }
             }
             val status = task?.status
             if (task?.archived == true) {
