@@ -64,6 +64,7 @@ fun SettingsScreen(onNavigate: (String) -> Unit, onBack: () -> Unit, unreadNotif
             ))
             SettingsGroup("Models", listOf(
                 item("API keys", "Add, reorder and choose the primary OpenRouter key", Routes.KEYS),
+                item("LLM provider", "OpenAI, Groq, DeepSeek, Together, Ollama/LM Studio or any OpenAI-compatible API", Routes.PROVIDER),
                 item("Model priority", "Ordered list of free models used for fallback", Routes.MODELS),
                 item("Rate limits & quota", "RPM, daily limit, cooldown, low-quota warning, context budget", Routes.LIMITS),
                 { i ->

@@ -41,6 +41,7 @@ class OpenRouterClient @Inject constructor(
     private val cooldowns: CooldownTracker,
     private val rateLimitLog: RateLimitRepository,
     private val kilo: KiloProvider,
+    private val custom: CustomLlmClient,
     private val appPrefs: com.verdroid.app.data.prefs.AppPrefs,
     private val vision: ModelCapabilities,
 ) {
@@ -66,9 +67,10 @@ class OpenRouterClient @Inject constructor(
     ): ChatOutcome {
         val models = settings.currentModels().ifEmpty { com.verdroid.app.domain.model.DefaultModels.list }
         val kiloModels = models.filter(ModelIds::isKilo)
-        val orModels = models.filterNot(ModelIds::isKilo)
+        val customModels = models.filter(ModelIds::isCustom)
+        val orModels = models.filter(ModelIds::isOpenRouter)
         val keys = apiKeys.orderedForUse()
-        if (keys.isEmpty() && kiloModels.isEmpty()) return ChatOutcome.NoApiKey
+        if (keys.isEmpty() && kiloModels.isEmpty() && customModels.isEmpty()) return ChatOutcome.NoApiKey
         val cooldownMs = settings.currentLimits().modelCooldownSeconds.coerceAtLeast(1) * 1000L
         var kiloMiss: KiloResult.Unavailable? = null
 
@@ -87,12 +89,24 @@ class OpenRouterClient @Inject constructor(
             }
         }
 
-        val kiloFirst = ModelIds.isKilo(models.first())
+        var customMiss: KiloResult.Unavailable? = null
+        suspend fun tryCustom(): ChatOutcome? {
+            if (customModels.isEmpty()) return null
+            return when (val r = custom.complete(customModels, messages, tools, cooldownMs, status, ::forModel)) {
+                is KiloResult.Success -> { _lastModel.value = r.id; ChatOutcome.Success(r.completion, r.label, "Custom provider") }
+                is KiloResult.Unavailable -> { customMiss = r; null }
+            }
+        }
+        // Custom provider first when it heads the priority list; otherwise it is the last fallback.
+        val customFirst = ModelIds.isCustom(models.first())
+        if (customFirst) tryCustom()?.let { return it }
+        val kiloFirst = ModelIds.isKilo(models.first()) || (customFirst && models.firstOrNull { !ModelIds.isCustom(it) }?.let(ModelIds::isKilo) == true)
         if (kiloFirst) tryKilo()?.let { return it }
         val orOutcome = if (keys.isNotEmpty() && orModels.isNotEmpty()) completeOpenRouter(keys, orModels, messages, tools, taskId, status) else null
         if (orOutcome is ChatOutcome.Success) return orOutcome
         if (!kiloFirst) tryKilo()?.let { return it }
-        val miss = kiloMiss
+        if (!customFirst) tryCustom()?.let { return it }
+        val miss = kiloMiss ?: customMiss
         return when {
             orOutcome == null && miss == null -> ChatOutcome.NoApiKey
             orOutcome == null -> if (miss!!.resumeAt != null) ChatOutcome.RateLimited(miss.resumeAt!!, miss.message)

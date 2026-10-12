@@ -9,14 +9,16 @@ import okhttp3.Response
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** Adds the OpenRouter attribution headers to every request. */
+/** Adds the OpenRouter attribution headers — only to openrouter.ai (not Kilo or custom providers). */
 class OpenRouterHeadersInterceptor : Interceptor {
-    override fun intercept(chain: Interceptor.Chain): Response = chain.proceed(
-        chain.request().newBuilder()
+    override fun intercept(chain: Interceptor.Chain): Response {
+        val req = chain.request()
+        if (!ProviderUrls.isOpenRouterHost(req.url.host)) return chain.proceed(req)
+        return chain.proceed(req.newBuilder()
             .header("HTTP-Referer", OpenRouterApi.REFERER)
             .header("X-Title", OpenRouterApi.TITLE)
-            .build()
-    )
+            .build())
+    }
 }
 
 data class RateLimitSnapshot(

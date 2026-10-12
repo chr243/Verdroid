@@ -46,6 +46,8 @@ class SelfTestRunner @Inject constructor(
     private val shared: com.verdroid.app.data.storage.SharedFolder,
     private val termux: com.verdroid.app.data.termux.TermuxManager,
     private val updater: AppUpdater,
+    private val customLlm: com.verdroid.app.data.network.CustomLlmClient,
+    private val customStore: com.verdroid.app.data.network.CustomProviderStore,
 ) {
     private val http = OkHttpClient.Builder().connectTimeout(8, TimeUnit.SECONDS).readTimeout(10, TimeUnit.SECONDS).build()
     private fun tool(name: String): AgentTool = registry.tools.firstOrNull { it.name == name } ?: throw IllegalStateException("$name not registered")
@@ -123,7 +125,10 @@ class SelfTestRunner @Inject constructor(
             val or = get("https://openrouter.ai/api/v1/models")
             val kilo = runCatching { get("https://api.kilo.ai/api/gateway/models") }.getOrElse { -1 }
             check(or in 200..299) { "OpenRouter models HTTP $or" }
-            "OpenRouter models $or, Kilo models $kilo"
+            val c = customStore.config.value
+            val custom = if (!c.configured) "custom: not set" else customLlm.listModels().fold(
+                { "custom ${c.label}: ${it.size} models" }, { e -> throw IllegalStateException("custom ${c.baseUrl}models: ${e.message}") })
+            "OpenRouter models $or, Kilo models $kilo, $custom"
         },
         "web_fetch" to { run("web_fetch", args("url" to "https://example.com", "format" to "markdown")); "example.com fetched" },
         "web_search" to { run("web_search", args("query" to "android", "max_results" to 3)); "search ok" },

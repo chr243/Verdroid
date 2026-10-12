@@ -14,7 +14,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /** Where a model in the priority list is served from. */
-enum class ModelProvider(val label: String) { OPENROUTER("OpenRouter"), KILO("Kilo") }
+enum class ModelProvider(val label: String) { OPENROUTER("OpenRouter"), KILO("Kilo"), CUSTOM("Custom") }
 
 /**
  * Model ids in the priority list: plain ids are OpenRouter; `kilo:<id>` is the Kilo Gateway (no key needed for its free
@@ -24,12 +24,21 @@ object ModelIds {
     const val KILO_PREFIX = "kilo:"
     const val KILO_AUTO_FREE = "kilo:kilo-auto/free"
 
-    fun provider(id: String): ModelProvider = if (id.trim().startsWith(KILO_PREFIX)) ModelProvider.KILO else ModelProvider.OPENROUTER
+    /** `custom:<model>` → the custom OpenAI-compatible provider (Settings → LLM provider). */
+    const val CUSTOM_PREFIX = "custom:"
+
+    fun provider(id: String): ModelProvider = id.trim().let {
+        when { it.startsWith(KILO_PREFIX) -> ModelProvider.KILO; it.startsWith(CUSTOM_PREFIX) -> ModelProvider.CUSTOM; else -> ModelProvider.OPENROUTER }
+    }
     fun isKilo(id: String) = provider(id) == ModelProvider.KILO
+    fun isCustom(id: String) = provider(id) == ModelProvider.CUSTOM
+    fun isOpenRouter(id: String) = provider(id) == ModelProvider.OPENROUTER
     /** The id the provider's API expects (prefix removed). */
-    fun bare(id: String): String = id.trim().removePrefix(KILO_PREFIX)
-    /** Label for chats / lists: "kilo-auto/free (Kilo)", OpenRouter ids unchanged. */
-    fun label(id: String): String = if (isKilo(id)) "${bare(id)} (Kilo)" else id
+    fun bare(id: String): String = id.trim().removePrefix(KILO_PREFIX).removePrefix(CUSTOM_PREFIX)
+    /** Label for chats / lists: "kilo-auto/free (Kilo)", "llama3 (Custom)", OpenRouter ids unchanged. */
+    fun label(id: String): String = when (provider(id)) {
+        ModelProvider.KILO -> "${bare(id)} (Kilo)"; ModelProvider.CUSTOM -> "${bare(id)} (Custom)"; else -> id
+    }
     /** One-time migration for existing installs: Kilo Auto Free on top unless a Kilo model is already listed. */
     fun withKiloFirst(models: List<String>): List<String> = if (models.any(::isKilo)) models else listOf(KILO_AUTO_FREE) + models
 }

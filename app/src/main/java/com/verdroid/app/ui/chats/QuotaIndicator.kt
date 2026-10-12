@@ -15,7 +15,7 @@ data class QuotaDot(val level: QuotaLevel, val activeModel: String, val line: St
 
 object QuotaIndicator {
     /** OpenRouter models with a free daily quota: `…:free` and the `openrouter/free` router. */
-    fun isOpenRouterFree(id: String): Boolean = !ModelIds.isKilo(id) && id.trim().let { it.endsWith(":free") || it == "openrouter/free" }
+    fun isOpenRouterFree(id: String): Boolean = ModelIds.isOpenRouter(id) && id.trim().let { it.endsWith(":free") || it == "openrouter/free" }
 
     /** Green > 50 % left, yellow 15–50 %, red < 15 % or rate-limited right now. */
     fun level(remaining: Int, limit: Int, rateLimited: Boolean): QuotaLevel {

@@ -1,9 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- HTTPS only; cleartext allowed just for on-device localhost services (e.g. a local MCP/LLM server in Termux). -->
+<!-- HTTPS by default. Cleartext only for on-device/LAN LLM servers (Ollama, LM Studio, llama.cpp).
+     LAN IP ranges can't be expressed as domains here, so the app additionally refuses http:// to any non-local host
+     (ProviderUrls.cleartextAllowed) before sending. -->
 <network-security-config>
     <base-config cleartextTrafficPermitted="false" />
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="false">localhost</domain>
         <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="true">local</domain>
     </domain-config>
 </network-security-config>

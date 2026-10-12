@@ -1,5 +1,5 @@
 <p>Verdroid is an AI agent that runs on your phone and actually does things. You chat with it in a Messenger-style app; it plans, calls tools and reports back.</p>
-<p><b>Models:</b> Verdroid uses <b>free cloud models</b> from OpenRouter and Kilo with your own API key (not a local model). It falls back across models and keys automatically and recovers from rate limits. There is no Verdroid server: the app talks to the model providers directly and keys are stored encrypted on the device.</p>
+<p><b>Models:</b> Verdroid works with <b>any OpenAI-compatible API</b>: free cloud models from OpenRouter and Kilo out of the box, presets for OpenAI, Groq, DeepSeek and Together, or your own Ollama / LM Studio server. It falls back across models and keys automatically and recovers from rate limits. There is no Verdroid server: the app talks to the model providers directly and keys are stored encrypted on the device.</p>
 <p><b>What it can do</b></p>
 <ul>
 <li>Web search (keyless, multi-engine) and web page/API fetching</li>
