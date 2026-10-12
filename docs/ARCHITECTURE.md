@@ -570,3 +570,9 @@ Chat head: Back and Home/Recents collapse the expanded panel back to the head at
 - **Chat head on fresh chats:** a new chat's route stays `chat/0` after the first send creates the real chat, so the
   chat head now binds to the real chat id as soon as it exists. The panel shows the thread and the progress ring spins
   on the first turn.
+
+## v1.0.37
+
+- **Container transform:** tapping a chat row morphs it into the chat screen and back (`SharedTransitionLayout` +
+  `sharedBounds`, 300ms emphasized easing; `Modifier.chatContainer` in `ui/Motion.kt` is a no-op outside the NavHost).
+- **Shared axis X:** Settings and sub-pages slide 30dp + fade (300ms emphasized), replacing the old nudge/fade.
