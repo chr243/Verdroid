@@ -80,7 +80,8 @@ fun SettingsScreen(onNavigate: (String) -> Unit, onBack: () -> Unit, unreadNotif
             ))
             SettingsGroup("Appearance", listOf(item("Theme", "Light / dark mode and color palette", Routes.THEME)))
             SettingsGroup("App", listOf({ i -> AppUpdateRow(vm.updater, i) },
-                item("Self-test", "Check every feature on this phone (pass/fail/skip report, copy/share, saved to Documents/Verdroid)", Routes.SELF_TEST)))
+                item("Self-test", "Check every feature on this phone (pass/fail/skip report, copy/share, saved to Documents/Verdroid)", Routes.SELF_TEST),
+                item("Debug log", "Recent floating-window events (Home/Recents signals) with Copy", Routes.DEBUG_LOG)))
             Text("Verdroid v${com.verdroid.app.BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 28.dp, top = 16.dp))
         }

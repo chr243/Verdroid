@@ -23,6 +23,11 @@
 
     <queries>
         <package android:name="com.termux" />
+        <!-- Resolve the default launcher (Home signal); without this queryIntentActivities(HOME) can be empty on API 30+. -->
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.HOME" />
+        </intent>
     </queries>
 
     <application

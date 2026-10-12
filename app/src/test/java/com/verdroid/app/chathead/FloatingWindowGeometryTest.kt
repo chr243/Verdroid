@@ -46,3 +46,11 @@ class HomeSignalTest {
         assertEquals(false, HomeSignal.isHomeOrRecents(null, l))
     }
 }
+
+class HomeSignalKeysTest {
+    @org.junit.Test fun leaveKeys() {
+        org.junit.Assert.assertTrue(com.verdroid.app.chathead.HomeSignal.isLeaveKey(android.view.KeyEvent.KEYCODE_HOME))
+        org.junit.Assert.assertTrue(com.verdroid.app.chathead.HomeSignal.isLeaveKey(android.view.KeyEvent.KEYCODE_APP_SWITCH))
+        org.junit.Assert.assertFalse(com.verdroid.app.chathead.HomeSignal.isLeaveKey(android.view.KeyEvent.KEYCODE_BACK))
+    }
+}

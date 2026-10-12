@@ -542,7 +542,7 @@ class ChatHeadService : Service(), LifecycleOwner, SavedStateRegistryOwner, View
     private var windowRect: FloatingWindowGeometry.Rect
         get() = rectState.value
         set(v) { rectState.value = v }
-    private fun headLog(msg: String) = Log.d(HEAD_TAG, "${android.os.SystemClock.uptimeMillis()} $msg")
+    private fun headLog(msg: String) = HeadLog.d(msg)
     private val closingState = mutableStateOf(false)
     private val pivotState = mutableStateOf(0.5f to 0.5f)
 
@@ -572,7 +572,7 @@ class ChatHeadService : Service(), LifecycleOwner, SavedStateRegistryOwner, View
         panelParams = params
         val content = composeView { PanelContent() }
         val view = OutsideTouchLayout(this, onOutside = { _ ->
-            Log.d(TAG, "window ACTION_OUTSIDE")
+            Log.d(TAG, "window ACTION_OUTSIDE"); headLog("scrim/outside tap")
             collapse()
         }, onBack = {
             Log.d(TAG, "window Back")
@@ -596,6 +596,7 @@ class ChatHeadService : Service(), LifecycleOwner, SavedStateRegistryOwner, View
                 if (panelView != null) { headLog("collapseNow (a11y)"); collapseNow() }
             }
         }
+        headLog("window expanded; a11y=${com.verdroid.app.data.a11y.VerdroidAccessibilityService.isRunning}")
         Log.d(TAG, "window expanded; head removed at saved (${p.x}, ${p.y})")
     }
 

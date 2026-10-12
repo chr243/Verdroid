@@ -21,6 +21,29 @@ class VerdroidAccessibilityService : AccessibilityService() {
         super.onServiceConnected()
         instance = this
         launchers = resolveLaunchers()
+        // Make sure key filtering + all window events are on even if the XML of an older install is cached.
+        runCatching {
+            serviceInfo = serviceInfo.apply {
+                eventTypes = eventTypes or AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED or AccessibilityEvent.TYPE_WINDOWS_CHANGED
+                flags = flags or android.accessibilityservice.AccessibilityServiceInfo.FLAG_REQUEST_FILTER_KEY_EVENTS or
+                    android.accessibilityservice.AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS
+                notificationTimeout = 0
+            }
+        }.onFailure { HeadLog.d("a11y serviceInfo update failed: ${it.message}") }
+        val si = serviceInfo
+        HeadLog.d("a11y connected events=0x${Integer.toHexString(si?.eventTypes ?: 0)} flags=0x${Integer.toHexString(si?.flags ?: 0)} " +
+            "caps=0x${Integer.toHexString(si?.capabilities ?: 0)} pkgs=${si?.packageNames?.toList()} launchers=$launchers")
+    }
+
+    /** 3-button nav: HOME/RECENTS keys reach a11y key filters before the system acts → earliest possible signal. Never consumed. */
+    override fun onKeyEvent(event: android.view.KeyEvent?): Boolean {
+        val e = event ?: return false
+        val l = com.verdroid.app.chathead.HomeSignal.listener
+        if (l != null) HeadLog.d("a11y key ${android.view.KeyEvent.keyCodeToString(e.keyCode)} action=${e.action}")
+        if (l != null && e.action == android.view.KeyEvent.ACTION_DOWN && com.verdroid.app.chathead.HomeSignal.isLeaveKey(e.keyCode)) {
+            l("key:" + android.view.KeyEvent.keyCodeToString(e.keyCode))
+        }
+        return false
     }
 
     override fun onUnbind(intent: android.content.Intent?): Boolean {
@@ -46,14 +69,26 @@ class VerdroidAccessibilityService : AccessibilityService() {
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         val l = com.verdroid.app.chathead.HomeSignal.listener ?: return
         val type = event?.eventType ?: return
+        if (type == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED) return
         val pkg = when (type) {
             AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> event.packageName?.toString()
-            // Often earlier than STATE_CHANGED during the Home gesture; active window = what's in front now.
-            AccessibilityEvent.TYPE_WINDOWS_CHANGED -> runCatching { rootInActiveWindow?.packageName?.toString() }.getOrNull()
+            // Our focusable overlay is the *active* window, so rootInActiveWindow is always us. Use the topmost
+            // application window instead (windows are ordered top → bottom).
+            AccessibilityEvent.TYPE_WINDOWS_CHANGED -> topAppPackage()
             else -> return
         }
+        HeadLog.d("a11y ${AccessibilityEvent.eventTypeToString(type)} pkg=${event.packageName} top=$pkg")
         if (launchers.isEmpty()) launchers = resolveLaunchers()
         if (com.verdroid.app.chathead.HomeSignal.isHomeOrRecents(pkg, launchers)) l(pkg!!)
+    }
+
+    private fun topAppPackage(): String? = runCatching {
+        windows.firstOrNull { it.type == android.view.accessibility.AccessibilityWindowInfo.TYPE_APPLICATION && it.root?.packageName?.toString() != packageName }
+            ?.root?.packageName?.toString()
+    }.getOrNull()
+
+    private object HeadLog {
+        fun d(m: String) = com.verdroid.app.chathead.HeadLog.d(m)
     }
     override fun onInterrupt() {}
 
