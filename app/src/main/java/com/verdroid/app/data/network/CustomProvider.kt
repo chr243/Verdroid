@@ -27,7 +27,12 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /** A preset for the custom OpenAI-compatible provider (Settings → LLM provider). */
-data class ProviderPreset(val id: String, val label: String, val baseUrl: String, val needsKey: Boolean, val note: String = "", val keyUrl: String? = null)
+data class ProviderPreset(val id: String, val label: String, val baseUrl: String, val needsKey: Boolean, val note: String = "", val keyUrl: String? = null) {
+    /** "Ollama (local)" → "Ollama"; used in model labels like "llama3 (Ollama)". */
+    val shortName: String get() = label.substringBefore(" (")
+    /** Local servers and Custom need a URL the user can see/edit; cloud presets hide it under Advanced. */
+    val urlEditable: Boolean get() = !needsKey
+}
 
 object ProviderPresets {
     val ALL = listOf(
@@ -35,11 +40,12 @@ object ProviderPresets {
         ProviderPreset("groq", "Groq", "https://api.groq.com/openai/v1/", true, keyUrl = "https://console.groq.com/keys"),
         ProviderPreset("deepseek", "DeepSeek", "https://api.deepseek.com/v1/", true, keyUrl = "https://platform.deepseek.com/api_keys"),
         ProviderPreset("together", "Together", "https://api.together.xyz/v1/", true, keyUrl = "https://api.together.ai/settings/api-keys"),
-        ProviderPreset("ollama", "Ollama (local)", "http://localhost:11434/v1/", false, "Ollama on this phone (Termux) or your LAN IP"),
-        ProviderPreset("lmstudio", "LM Studio (local)", "http://localhost:1234/v1/", false, "LM Studio server; use the PC's LAN IP"),
-        ProviderPreset("custom", "Custom (OpenAI-compatible)", "", false),
+        ProviderPreset("ollama", "Ollama (local)", "http://localhost:11434/v1/", false, "Ollama server on this phone (e.g. in Termux) or another device"),
+        ProviderPreset("lmstudio", "LM Studio (local)", "http://localhost:1234/v1/", false, "LM Studio's local server on a computer"),
+        ProviderPreset("custom", "Custom", "", false, "Any service with an OpenAI-compatible API"),
     )
     fun byId(id: String?) = ALL.firstOrNull { it.id == id } ?: ALL.last()
+    fun find(id: String?) = ALL.firstOrNull { it.id == id }
 }
 
 /** Pure URL / header rules (unit-tested). */
@@ -120,30 +126,34 @@ class CustomProviderStore @Inject constructor(@ApplicationContext private val co
             EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV, EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM)
     }
     init { runCatching { migrate(prefs, secure) } }
+    /** Bumped on every save so screens re-read per-provider values. */
+    private val _version = MutableStateFlow(0)
+    val version: StateFlow<Int> = _version.asStateFlow()
 
-    private val _config = MutableStateFlow(read())
-    val config: StateFlow<CustomProviderConfig> = _config.asStateFlow()
+    /** Provider that legacy `custom:<model>` ids (v1.0.44) route to: the one that was active then. */
+    val legacyActive: String get() = prefs.getString(KEY_ACTIVE, null) ?: "custom"
 
-    /** The active (used for `custom:` models) provider's config. */
-    private fun read(): CustomProviderConfig {
-        val id = prefs.getString(KEY_ACTIVE, null) ?: "custom"
-        return CustomProviderConfig(id, baseFor(id), ProviderUrls.parseHeaders(headersFor(id)))
-    }
-
-    /** Per-provider saved values (each preset remembers its own base URL, headers and key). */
-    fun baseFor(id: String): String = prefs.getString("base_$id", null) ?: ""
+    /** Saved base URL override, else the preset's default. */
+    fun baseFor(id: String): String = prefs.getString("base_$id", null)?.takeIf { it.isNotBlank() } ?: ProviderPresets.find(id)?.baseUrl.orEmpty()
     fun headersFor(id: String): String = prefs.getString("headers_$id", null) ?: ""
     fun keyFor(id: String): String? = runCatching { secure.getString("key_$id", null) }.getOrNull()?.takeIf { it.isNotBlank() }
 
-    val headersText: String get() = headersFor(config.value.presetId)
-    /** Key of the active provider. */
-    val apiKey: String? get() = keyFor(config.value.presetId)
+    fun configFor(id: String) = CustomProviderConfig(id, baseFor(id), ProviderUrls.parseHeaders(headersFor(id)))
 
-    /** Saves a provider's values and makes it the active one. */
+    /** Ready to use: cloud presets need a key; local/custom need a base URL. */
+    fun isConfigured(id: String): Boolean {
+        val p = ProviderPresets.find(id) ?: return false
+        return if (p.needsKey) keyFor(id) != null else baseFor(id).isNotBlank() && (p.id != "custom" || prefs.contains("base_$id"))
+    }
+
+    /** Saves one provider's values (independent of the others). Blank base = preset default. */
     fun save(presetId: String, baseUrl: String, headersText: String, key: String?) {
-        prefs.edit().putString(KEY_ACTIVE, presetId).putString("base_$presetId", baseUrl).putString("headers_$presetId", headersText).apply()
+        val def = ProviderPresets.find(presetId)?.baseUrl.orEmpty()
+        prefs.edit().apply { if (baseUrl.isBlank() || baseUrl == def) remove("base_$presetId") else putString("base_$presetId", baseUrl) }
+            .putString("headers_$presetId", headersText).apply()
+        if (presetId == "custom" && baseUrl.isNotBlank()) prefs.edit().putString("base_custom", baseUrl).apply()
         runCatching { secure.edit().apply { if (key.isNullOrBlank()) remove("key_$presetId") else putString("key_$presetId", key.trim()) }.apply() }
-        _config.value = read()
+        _version.value++
     }
 
     companion object {
@@ -166,7 +176,7 @@ class CustomProviderStore @Inject constructor(@ApplicationContext private val co
     }
 }
 
-/** Calls the custom OpenAI-compatible endpoint (`custom:<model>` ids in the priority list). */
+/** Calls OpenAI-compatible providers; each `prov:<provider>:<model>` id goes to its own provider. */
 @Singleton
 class CustomLlmClient @Inject constructor(private val store: CustomProviderStore, private val json: Json) {
     private val http = OkHttpClient.Builder().connectTimeout(20, TimeUnit.SECONDS).readTimeout(180, TimeUnit.SECONDS).build()
@@ -174,21 +184,25 @@ class CustomLlmClient @Inject constructor(private val store: CustomProviderStore
     @Synchronized fun cooldownUntil(id: String) = cooldowns[id] ?: 0L
     @Synchronized private fun cool(id: String, until: Long) { cooldowns[id] = until }
 
-    private fun request(url: String): Request.Builder {
-        val c = store.config.value
-        if (!ProviderUrls.cleartextAllowed(url)) throw IOException("http:// is only allowed for localhost/LAN; use https")
+    /** Provider id for a model id (legacy `custom:` → the provider that was active in v1.0.44). */
+    fun providerOf(modelId: String): String = ModelIds.providerIdOf(modelId) ?: store.legacyActive
+
+    private fun request(providerId: String, url: String): Request.Builder {
+        if (!ProviderUrls.cleartextAllowed(url)) throw IOException("http:// only works for this phone (localhost) or *.local names; use https")
+        val c = store.configFor(providerId)
         return Request.Builder().url(url).apply {
-            ProviderUrls.requestHeaders(store.apiKey, c.headers).forEach { (k, v) -> header(k, v) }
+            ProviderUrls.requestHeaders(store.keyFor(providerId), c.headers).forEach { (k, v) -> header(k, v) }
             header("User-Agent", "Verdroid")
         }
     }
 
-    /** GET {base}models; empty list when unsupported. */
-    suspend fun listModels(): Result<List<String>> = withContext(Dispatchers.IO) {
+    /** GET {base}models for one provider. Also used as "Test connection". */
+    suspend fun listModels(providerId: String): Result<List<String>> = withContext(Dispatchers.IO) {
         runCatching {
-            val base = store.config.value.baseUrl.ifBlank { throw IOException("No base URL set") }
-            http.newCall(request(base + "models").get().build()).execute().use { r ->
+            val base = store.baseFor(providerId).ifBlank { throw IOException("No server address set") }
+            http.newCall(request(providerId, base + "models").get().build()).execute().use { r ->
                 val body = r.body?.string().orEmpty()
+                if (r.code == 401 || r.code == 403) throw IOException("the key was rejected (HTTP ${r.code})")
                 if (!r.isSuccessful) throw IOException("HTTP ${r.code}: ${body.take(160)}")
                 ProviderUrls.parseModels(body)
             }
@@ -198,10 +212,11 @@ class CustomLlmClient @Inject constructor(private val store: CustomProviderStore
     suspend fun complete(models: List<String>, messages: List<ApiMessage>, tools: JsonArray?, cooldownMs: Long,
                          status: suspend (String) -> Unit = {},
                          prepare: suspend (String, List<ApiMessage>) -> List<ApiMessage> = { _, m -> m }): KiloResult {
-        val c = store.config.value
-        if (!c.configured) return KiloResult.Unavailable("Custom provider has no base URL (Settings → LLM provider)", null, false)
-        var lastError = "No custom model available"
+        var lastError = "No model from your other providers is available"
         for (id in models) {
+            val pid = providerOf(id)
+            val base = store.baseFor(pid)
+            if (base.isBlank()) { lastError = "${ModelIds.label(id)}: ${ProviderPresets.byId(pid).shortName} has no server address (Settings → LLM providers)"; continue }
             val now = System.currentTimeMillis()
             if (cooldownUntil(id) > now) { lastError = "${ModelIds.label(id)} is cooling down"; continue }
             val model = ModelIds.bare(id)
@@ -210,7 +225,7 @@ class CustomLlmClient @Inject constructor(private val store: CustomProviderStore
                 ChatRequest(model = model, messages = prepare(id, messages), tools = tools, toolChoice = if (tools != null) "auto" else null))
             val (code, body) = try {
                 withContext(Dispatchers.IO) {
-                    http.newCall(request(c.baseUrl + "chat/completions").post(payload.toRequestBody(JSON)).build()).execute()
+                    http.newCall(request(pid, base + "chat/completions").post(payload.toRequestBody(JSON)).build()).execute()
                         .use { it.code to it.body?.string() }
                 }
             } catch (e: CancellationException) { throw e } catch (e: IOException) {
@@ -228,4 +243,17 @@ class CustomLlmClient @Inject constructor(private val store: CustomProviderStore
     }
 
     companion object { private val JSON = "application/json".toMediaType() }
+}
+
+/** v1.0.45: rewrites legacy `custom:<model>` entries in Model priority to `prov:<active provider>:<model>`, once. */
+@Singleton
+class ProviderModelMigration @Inject constructor(
+    private val store: CustomProviderStore,
+    private val settings: com.verdroid.app.domain.repository.SettingsRepository,
+) {
+    suspend fun run() {
+        val cur = settings.currentModels()
+        val next = ModelIds.migrateLegacyCustom(cur, store.legacyActive)
+        if (next != cur) settings.setModelPriority(next)
+    }
 }

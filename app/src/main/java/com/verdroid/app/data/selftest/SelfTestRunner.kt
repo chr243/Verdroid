@@ -125,9 +125,10 @@ class SelfTestRunner @Inject constructor(
             val or = get("https://openrouter.ai/api/v1/models")
             val kilo = runCatching { get("https://api.kilo.ai/api/gateway/models") }.getOrElse { -1 }
             check(or in 200..299) { "OpenRouter models HTTP $or" }
-            val c = customStore.config.value
-            val custom = if (!c.configured) "custom: not set" else customLlm.listModels().fold(
-                { "custom ${c.label}: ${it.size} models" }, { e -> throw IllegalStateException("custom ${c.baseUrl}models: ${e.message}") })
+            val configured = com.verdroid.app.data.network.ProviderPresets.ALL.filter { customStore.isConfigured(it.id) }
+            val custom = if (configured.isEmpty()) "no other providers set up" else buildList {
+                for (p in configured) add(customLlm.listModels(p.id).fold({ "${p.shortName}: ${it.size} models" }, { e -> throw IllegalStateException("${p.shortName}: ${e.message}") }))
+            }.joinToString(", ")
             "OpenRouter models $or, Kilo models $kilo, $custom"
         },
         "web_fetch" to { run("web_fetch", args("url" to "https://example.com", "format" to "markdown")); "example.com fetched" },

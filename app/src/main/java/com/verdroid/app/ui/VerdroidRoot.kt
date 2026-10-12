@@ -169,7 +169,7 @@ fun VerdroidRoot(
                     onChatMemory = { id -> nav.navigate(Routes.memory(id)) })
               }
             }
-            composable(Routes.KEYS) { com.verdroid.app.ui.provider.ProviderScreen(onBack = { nav.popBackStack() }, initial = "openrouter") }
+            composable(Routes.KEYS) { com.verdroid.app.ui.provider.ProviderScreen(onBack = { nav.popBackStack() }, initial = "openrouter", onOpenModels = { nav.navigate(Routes.MODELS) }) }
             composable(Routes.MODELS) { ModelPriorityScreen(onBack = { nav.popBackStack() }) }
             composable(Routes.LIMITS) { RateLimitSettingsScreen(onBack = { nav.popBackStack() }) }
             composable(Routes.SHIZUKU) { DeviceControlScreen(onBack = { nav.popBackStack() }) }
@@ -188,7 +188,7 @@ fun VerdroidRoot(
                 com.verdroid.app.ui.archive.ArchiveScreen(onBack = { nav.popBackStack() }, onOpenChat = { nav.navigate(Routes.chat(it)) })
             }
             composable(Routes.THEME) { com.verdroid.app.ui.theme.ThemeScreen(onBack = { nav.popBackStack() }) }
-            composable(Routes.PROVIDER) { com.verdroid.app.ui.provider.ProviderScreen(onBack = { nav.popBackStack() }) }
+            composable(Routes.PROVIDER) { com.verdroid.app.ui.provider.ProviderScreen(onBack = { nav.popBackStack() }, onOpenModels = { nav.navigate(Routes.MODELS) }) }
             composable(Routes.SELF_TEST) { com.verdroid.app.ui.selftest.SelfTestScreen(onBack = { nav.popBackStack() }) }
             composable(Routes.CHAT_HEADS) { ChatHeadSettingsScreen(onBack = { nav.popBackStack() }) }
         }

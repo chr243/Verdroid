@@ -24,20 +24,36 @@ object ModelIds {
     const val KILO_PREFIX = "kilo:"
     const val KILO_AUTO_FREE = "kilo:kilo-auto/free"
 
-    /** `custom:<model>` → the custom OpenAI-compatible provider (Settings → LLM provider). */
+    /** Legacy (v1.0.44) single custom provider: `custom:<model>`; migrated to [PROV_PREFIX]. */
     const val CUSTOM_PREFIX = "custom:"
+    /** v1.0.45: OpenAI-compatible providers, `prov:<providerId>:<model>` (e.g. prov:groq:llama-3.1-8b-instant). */
+    const val PROV_PREFIX = "prov:"
+
+    fun prov(providerId: String, model: String) = "$PROV_PREFIX$providerId:${model.trim()}"
+    /** Provider id of a `prov:` id, else null. */
+    fun providerIdOf(id: String): String? = id.trim().takeIf { it.startsWith(PROV_PREFIX) }?.removePrefix(PROV_PREFIX)
+        ?.substringBefore(':', "")?.takeIf { it.isNotEmpty() }
+    fun migrateLegacyCustom(models: List<String>, activeProvider: String): List<String> =
+        models.map { if (it.trim().startsWith(CUSTOM_PREFIX)) prov(activeProvider, it.trim().removePrefix(CUSTOM_PREFIX)) else it }.distinct()
 
     fun provider(id: String): ModelProvider = id.trim().let {
-        when { it.startsWith(KILO_PREFIX) -> ModelProvider.KILO; it.startsWith(CUSTOM_PREFIX) -> ModelProvider.CUSTOM; else -> ModelProvider.OPENROUTER }
+        when { it.startsWith(KILO_PREFIX) -> ModelProvider.KILO; it.startsWith(CUSTOM_PREFIX) || it.startsWith(PROV_PREFIX) -> ModelProvider.CUSTOM; else -> ModelProvider.OPENROUTER }
     }
     fun isKilo(id: String) = provider(id) == ModelProvider.KILO
     fun isCustom(id: String) = provider(id) == ModelProvider.CUSTOM
     fun isOpenRouter(id: String) = provider(id) == ModelProvider.OPENROUTER
     /** The id the provider's API expects (prefix removed). */
-    fun bare(id: String): String = id.trim().removePrefix(KILO_PREFIX).removePrefix(CUSTOM_PREFIX)
-    /** Label for chats / lists: "kilo-auto/free (Kilo)", "llama3 (Custom)", OpenRouter ids unchanged. */
+    fun bare(id: String): String = id.trim().let { t ->
+        when {
+            t.startsWith(PROV_PREFIX) -> t.removePrefix(PROV_PREFIX).substringAfter(':')
+            else -> t.removePrefix(KILO_PREFIX).removePrefix(CUSTOM_PREFIX)
+        }
+    }
+    /** Label for chats / lists: "kilo-auto/free (Kilo)", "llama3 (Groq)", OpenRouter ids unchanged. */
     fun label(id: String): String = when (provider(id)) {
-        ModelProvider.KILO -> "${bare(id)} (Kilo)"; ModelProvider.CUSTOM -> "${bare(id)} (Custom)"; else -> id
+        ModelProvider.KILO -> "${bare(id)} (Kilo)"
+        ModelProvider.CUSTOM -> "${bare(id)} (${providerIdOf(id)?.let { ProviderPresets.byId(it).shortName } ?: "Custom"})"
+        else -> id
     }
     /** One-time migration for existing installs: Kilo Auto Free on top unless a Kilo model is already listed. */
     fun withKiloFirst(models: List<String>): List<String> = if (models.any(::isKilo)) models else listOf(KILO_AUTO_FREE) + models

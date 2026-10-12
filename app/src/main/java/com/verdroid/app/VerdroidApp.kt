@@ -20,6 +20,7 @@ class VerdroidApp : Application(), Configuration.Provider {
     @Inject lateinit var keepAlive: KeepAliveController
     @Inject lateinit var agent: com.verdroid.app.domain.repository.AgentController
     @Inject lateinit var sharedFolder: com.verdroid.app.data.storage.SharedFolder
+    @Inject lateinit var providerMigration: com.verdroid.app.data.network.ProviderModelMigration
 
     override val workManagerConfiguration: Configuration
         get() = Configuration.Builder().setWorkerFactory(workerFactory).build()
@@ -39,6 +40,8 @@ class VerdroidApp : Application(), Configuration.Provider {
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch { scheduler.recover() }
         QuotaPollWorker.schedule(this)
         removeLegacyAdb()
+        // v1.0.45: custom:<model> → prov:<provider>:<model> in Model priority (once; no-op afterwards).
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch { runCatching { providerMigration.run() } }
         // Documents/Verdroid with Input/ and Output/ (no-op until All files access is granted; Tools re-checks it).
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch { runCatching { sharedFolder.ensure() } }
         // v0.9.19: the keep-alive service runs only while a task is running (no idle notification).
