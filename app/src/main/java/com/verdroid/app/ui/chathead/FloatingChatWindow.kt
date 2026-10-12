@@ -5,6 +5,7 @@ import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
@@ -29,6 +30,8 @@ private val EmphasizedAccel = CubicBezierEasing(0.3f, 0f, 0.8f, 0.15f)
  */
 @Composable
 fun FloatingChatWindow(
+    rect: com.verdroid.app.chathead.FloatingWindowGeometry.Rect,
+    onScrimTap: () -> Unit,
     closing: Boolean,
     pivot: Pair<Float, Float>,
     durationMs: Int,
@@ -43,11 +46,21 @@ fun FloatingChatWindow(
         else progress.animateTo(1f, tween(durationMs + 80, easing = Emphasized))
     }
     val origin = TransformOrigin(pivot.first, pivot.second)
+    // Full-window transparent scrim: consumes outside taps (no pass-through to apps below) and collapses.
+    BoxWithConstraints(Modifier.fillMaxSize().pointerInput(Unit) { detectTapGestures { onScrimTap() } }) {
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val maxWpx = constraints.maxWidth; val maxHpx = constraints.maxHeight // shrinks with the keyboard (ADJUST_RESIZE)
+    val hPx = rect.h.coerceAtMost(maxHpx)
+    val yPx = rect.y.coerceIn(0, (maxHpx - hPx).coerceAtLeast(0))
     Surface(
         shape = RoundedCornerShape(20.dp),
         tonalElevation = 3.dp,
         shadowElevation = 8.dp,
-        modifier = Modifier.fillMaxSize().padding(4.dp).graphicsLayer {
+        modifier = Modifier
+            .offset { androidx.compose.ui.unit.IntOffset(rect.x, yPx) }
+            .size(with(density) { rect.w.coerceAtMost(maxWpx).toDp() }, with(density) { hPx.toDp() })
+            .pointerInput(Unit) { detectTapGestures { } } // taps on the card never reach the scrim
+            .padding(4.dp).graphicsLayer {
             val p = progress.value
             alpha = p.coerceIn(0f, 1f)
             scaleX = 0.2f + 0.8f * p; scaleY = 0.2f + 0.8f * p
@@ -80,4 +93,5 @@ fun FloatingChatWindow(
             }
         }
     }
+}
 }

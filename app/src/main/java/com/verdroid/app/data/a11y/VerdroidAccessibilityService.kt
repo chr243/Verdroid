@@ -45,8 +45,13 @@ class VerdroidAccessibilityService : AccessibilityService() {
     /** Tools poll the node tree on demand; events are only used for the instant Home signal (chat-head window). */
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         val l = com.verdroid.app.chathead.HomeSignal.listener ?: return
-        if (event?.eventType != AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED) return
-        val pkg = event.packageName?.toString()
+        val type = event?.eventType ?: return
+        val pkg = when (type) {
+            AccessibilityEvent.TYPE_WINDOW_STATE_CHANGED -> event.packageName?.toString()
+            // Often earlier than STATE_CHANGED during the Home gesture; active window = what's in front now.
+            AccessibilityEvent.TYPE_WINDOWS_CHANGED -> runCatching { rootInActiveWindow?.packageName?.toString() }.getOrNull()
+            else -> return
+        }
         if (launchers.isEmpty()) launchers = resolveLaunchers()
         if (com.verdroid.app.chathead.HomeSignal.isHomeOrRecents(pkg, launchers)) l(pkg!!)
     }

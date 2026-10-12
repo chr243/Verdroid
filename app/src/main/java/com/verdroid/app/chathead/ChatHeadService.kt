@@ -189,7 +189,8 @@ class ChatHeadService : Service(), LifecycleOwner, SavedStateRegistryOwner, View
         override fun onReceive(context: Context, intent: Intent) {
             val reason = intent.getStringExtra("reason")
             Log.d(TAG, "CLOSE_SYSTEM_DIALOGS reason=$reason (fallback path)")
-            if (panelView != null && ChatHeadPanelPolicy.collapseOnSystemDialogs(reason)) collapse()
+            headLog("CLOSE_SYSTEM_DIALOGS reason=$reason")
+            if (panelView != null && ChatHeadPanelPolicy.collapseOnSystemDialogs(reason)) collapseNow()
         }
     }
     private var homeReceiverRegistered = false
@@ -536,7 +537,12 @@ class ChatHeadService : Service(), LifecycleOwner, SavedStateRegistryOwner, View
      */
     // v1.0.41: floating chat window (draggable header, resizable corner) instead of the fixed bottom panel.
     private var panelParams: WindowManager.LayoutParams? = null
-    private var windowRect = FloatingWindowGeometry.Rect(0, 0, 0, 0)
+    // Card rect in screen coords; the overlay window itself is full screen (transparent scrim eats outside taps).
+    private val rectState = mutableStateOf(FloatingWindowGeometry.Rect(0, 0, 0, 0))
+    private var windowRect: FloatingWindowGeometry.Rect
+        get() = rectState.value
+        set(v) { rectState.value = v }
+    private fun headLog(msg: String) = Log.d(HEAD_TAG, "${android.os.SystemClock.uptimeMillis()} $msg")
     private val closingState = mutableStateOf(false)
     private val pivotState = mutableStateOf(0.5f to 0.5f)
 
@@ -554,14 +560,13 @@ class ChatHeadService : Service(), LifecycleOwner, SavedStateRegistryOwner, View
         windowRect = FloatingWindowGeometry.default(screenWidth, areaH(), areaTop())
         pivotState.value = FloatingWindowGeometry.pivot(windowRect, p.x + headWidth() / 2, p.y + headHeight() / 2)
         closingState.value = false
-        // Focusable (no FLAG_NOT_FOCUSABLE) so the composer gets the keyboard; NOT_TOUCH_MODAL lets outside touches
-        // through and WATCH_OUTSIDE_TOUCH reports them so the window collapses.
-        val params = overlayParams(windowRect.w, windowRect.h,
-            WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL or WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH or
-                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+        // v1.0.44: full-screen, focusable window. The transparent area around the card is a scrim that CONSUMES taps
+        // and only collapses (v1.0.41-43 used a card-sized NOT_TOUCH_MODAL window, so outside taps launched apps below).
+        val params = overlayParams(WindowManager.LayoutParams.MATCH_PARENT, WindowManager.LayoutParams.MATCH_PARENT,
+            WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            x = windowRect.x; y = windowRect.y
+            x = 0; y = 0
             softInputMode = WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE
         }
         panelParams = params
@@ -573,8 +578,8 @@ class ChatHeadService : Service(), LifecycleOwner, SavedStateRegistryOwner, View
             Log.d(TAG, "window Back")
             collapse()
         }, onFocusLost = {
-            Log.d(TAG, "window focus lost (Home/Recents/other app)")
-            collapse()
+            headLog("focus/visibility lost → instant collapse")
+            collapseNow()
         }).apply {
             attachOwners()
             addView(content, FrameLayout.LayoutParams(FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT))
@@ -586,21 +591,18 @@ class ChatHeadService : Service(), LifecycleOwner, SavedStateRegistryOwner, View
         registerHomeReceiver()
         val armedAt = android.os.SystemClock.uptimeMillis() + HomeSignal.ARM_DELAY_MS
         HomeSignal.listener = { pkg ->
-            if (android.os.SystemClock.uptimeMillis() >= armedAt) mainHandler.post {
-                Log.d(TAG, "a11y Home signal ($pkg) → collapse")
-                if (panelView != null) collapse()
+            headLog("a11y Home signal ($pkg) armed=${android.os.SystemClock.uptimeMillis() >= armedAt}")
+            if (android.os.SystemClock.uptimeMillis() >= armedAt) mainHandler.postAtFrontOfQueue {
+                if (panelView != null) { headLog("collapseNow (a11y)"); collapseNow() }
             }
         }
         Log.d(TAG, "window expanded; head removed at saved (${p.x}, ${p.y})")
     }
 
-    private fun applyWindowRect(r: FloatingWindowGeometry.Rect) {
-        val v = panelView ?: return
-        val lp = panelParams ?: return
-        windowRect = r
-        lp.x = r.x; lp.y = r.y; lp.width = r.w; lp.height = r.h
-        runCatching { windowManager.updateViewLayout(v, lp) }
-    }
+    private fun applyWindowRect(r: FloatingWindowGeometry.Rect) { windowRect = r } // card moves inside the window
+
+    /** Home/Recents/other app: no animation (nobody watches it), remove at once. */
+    private fun collapseNow() { if (!removingPanel && panelView != null) finishCollapse() }
 
     private fun moveWindow(dx: Float, dy: Float) = applyWindowRect(
         FloatingWindowGeometry.move(windowRect, dx.toInt(), dy.toInt(), screenWidth, areaH(), areaTop(), dp(96)))
@@ -662,7 +664,10 @@ class ChatHeadService : Service(), LifecycleOwner, SavedStateRegistryOwner, View
         val running by agent.runningTaskIds.collectAsState()
         val closing by closingState
         val pivot by pivotState
+        val rect by rectState
         FloatingChatWindow(
+            rect = rect,
+            onScrimTap = { headLog("scrim tap → collapse"); collapse() },
             closing = closing,
             pivot = pivot,
             durationMs = COLLAPSE_MS.toInt(),
@@ -707,6 +712,7 @@ class ChatHeadService : Service(), LifecycleOwner, SavedStateRegistryOwner, View
         const val ACTION_START = "com.verdroid.app.chathead.START"
         const val ACTION_STOP = "com.verdroid.app.chathead.STOP"
         private const val TAG = "ChatHead"
+        private const val HEAD_TAG = "VerdroidHead"
         private const val FGS_NOTIFICATION_ID = 4242
         private const val HEAD_SIZE_DP = 72
         private const val COLLAPSE_MS = 170L
