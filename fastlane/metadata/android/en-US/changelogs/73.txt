@@ -1,0 +1,2 @@
+- Floating window fits landscape: tall and centred instead of a thin strip
+- The window remembers your size and position (separately for portrait and landscape)

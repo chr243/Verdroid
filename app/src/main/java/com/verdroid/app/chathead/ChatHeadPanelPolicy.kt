@@ -57,10 +57,33 @@ object FloatingWindowGeometry {
     const val DEFAULT_W = 0.85f
     const val DEFAULT_H = 0.60f
 
-    /** ~85% x 60% of the usable area, centred horizontally, a bit above centre (room for the keyboard). */
-    fun default(areaW: Int, areaH: Int, top: Int = 0): Rect {
-        val w = (areaW * DEFAULT_W).toInt(); val h = (areaH * DEFAULT_H).toInt()
-        return Rect((areaW - w) / 2, top + ((areaH - h) * 0.35f).toInt(), w, h)
+    const val LAND_H = 0.88f
+    const val LAND_MAX_W = 0.60f
+    const val MIN_W_DP = 280
+    const val MIN_H_DP = 240
+    const val LAND_MIN_W_DP = 360
+
+    fun isLandscape(areaW: Int, areaH: Int) = areaW > areaH
+
+    /**
+     * Orientation-aware default. Portrait: ~85% x 60% of the usable area, a bit above centre (room for the keyboard).
+     * Landscape: ~88% of the (short) height and min(60% width, max(height, 360dp)) wide, centred, so it reads like a
+     * portrait window instead of a thin strip. [saved] = size the user resized to in this orientation (clamped).
+     */
+    fun default(areaW: Int, areaH: Int, top: Int = 0, density: Float = 1f, saved: Pair<Int, Int>? = null, savedPos: Pair<Int, Int>? = null): Rect {
+        val land = isLandscape(areaW, areaH)
+        val minW = minOf((MIN_W_DP * density).toInt(), areaW); val minH = minOf((MIN_H_DP * density).toInt(), areaH)
+        var w: Int; var h: Int
+        if (land) {
+            h = (areaH * LAND_H).toInt()
+            w = minOf((areaW * LAND_MAX_W).toInt(), maxOf(h, (LAND_MIN_W_DP * density).toInt()))
+        } else { w = (areaW * DEFAULT_W).toInt(); h = (areaH * DEFAULT_H).toInt() }
+        if (saved != null) { w = saved.first; h = saved.second }
+        w = w.coerceIn(minW, areaW); h = h.coerceIn(minH, areaH)
+        val y = if (land) (areaH - h) / 2 else ((areaH - h) * 0.35f).toInt()
+        if (savedPos != null) // remembered position, kept fully on screen
+            return Rect(savedPos.first.coerceIn(0, areaW - w), savedPos.second.coerceIn(top, top + areaH - h), w, h)
+        return Rect((areaW - w) / 2, top + y, w, h)
     }
 
     /** Keeps at least [grip] px of the window on screen so it can always be dragged back. */

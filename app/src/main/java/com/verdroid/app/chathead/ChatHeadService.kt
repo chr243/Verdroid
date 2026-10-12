@@ -557,7 +557,7 @@ class ChatHeadService : Service(), LifecycleOwner, SavedStateRegistryOwner, View
         savePosition(p)
         headView?.let { v -> if (v.isAttachedToWindow) runCatching { windowManager.removeViewImmediate(v) }.onFailure { Log.w(TAG, "remove head failed", it) } }
 
-        windowRect = FloatingWindowGeometry.default(screenWidth, areaH(), areaTop())
+        windowRect = defaultRect()
         pivotState.value = FloatingWindowGeometry.pivot(windowRect, p.x + headWidth() / 2, p.y + headHeight() / 2)
         closingState.value = false
         // v1.0.44: full-screen, focusable window. The transparent area around the card is a scrim that CONSUMES taps
@@ -605,11 +605,38 @@ class ChatHeadService : Service(), LifecycleOwner, SavedStateRegistryOwner, View
     /** Home/Recents/other app: no animation (nobody watches it), remove at once. */
     private fun collapseNow() { if (!removingPanel && panelView != null) finishCollapse() }
 
-    private fun moveWindow(dx: Float, dy: Float) = applyWindowRect(
-        FloatingWindowGeometry.move(windowRect, dx.toInt(), dy.toInt(), screenWidth, areaH(), areaTop(), dp(96)))
+    private fun moveWindow(dx: Float, dy: Float) {
+        applyWindowRect(FloatingWindowGeometry.move(windowRect, dx.toInt(), dy.toInt(), screenWidth, areaH(), areaTop(), dp(96)))
+        saveWindowPos()
+    }
 
-    private fun resizeWindow(dw: Float, dh: Float) = applyWindowRect(
-        FloatingWindowGeometry.resize(windowRect, dw.toInt(), dh.toInt(), screenWidth, areaH(), areaTop(), dp(240), dp(280)))
+    private fun resizeWindow(dw: Float, dh: Float) {
+        applyWindowRect(FloatingWindowGeometry.resize(windowRect, dw.toInt(), dh.toInt(), screenWidth, areaH(), areaTop(), dp(240), dp(280)))
+        // Remember the manual size per orientation (portrait / landscape separately); restored on reopen.
+        val o = orientKey()
+        sizePrefs.edit().putInt("w_$o", windowRect.w).putInt("h_$o", windowRect.h).apply()
+    }
+
+    private fun saveWindowPos() {
+        val o = orientKey()
+        sizePrefs.edit().putInt("x_$o", windowRect.x).putInt("y_$o", windowRect.y).apply()
+    }
+
+    private val sizePrefs by lazy { getSharedPreferences("chathead_window", MODE_PRIVATE) }
+    private fun orientKey() = if (FloatingWindowGeometry.isLandscape(screenWidth, areaH())) "land" else "port"
+    private fun defaultRect(): FloatingWindowGeometry.Rect {
+        val o = orientKey()
+        val w = sizePrefs.getInt("w_$o", -1); val h = sizePrefs.getInt("h_$o", -1)
+        val x = sizePrefs.getInt("x_$o", Int.MIN_VALUE); val y = sizePrefs.getInt("y_$o", Int.MIN_VALUE)
+        return FloatingWindowGeometry.default(screenWidth, areaH(), areaTop(), resources.displayMetrics.density,
+            if (w > 0 && h > 0) w to h else null, if (x != Int.MIN_VALUE && y != Int.MIN_VALUE) x to y else null)
+    }
+
+    /** Rotation: re-fit the open window to the new orientation (its own default or remembered size). */
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        if (panelView != null) mainHandler.post { if (panelView != null) { windowRect = defaultRect(); headLog("rotation -> ${orientKey()} $windowRect") } }
+    }
 
     /** Animated: the window scales/fades toward the bubble, then [finishCollapse] removes it. */
     private fun collapse() {

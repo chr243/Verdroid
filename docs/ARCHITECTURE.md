@@ -659,3 +659,8 @@ Chat head: Back and Home/Recents collapse the expanded panel back to the head at
 - **Home collapse root cause:** logcat showed only the late `CLOSE_SYSTEM_DIALOGS reason=homekey` (sent after HyperOS's app-to-home animation) and no a11y lines. The a11y path could not fire: `TYPE_WINDOWS_CHANGED` read `rootInActiveWindow`, which is our own focusable overlay, and the launcher set came from `queryIntentActivities(HOME)`, which can be empty on API 30+ without a `<queries>` entry.
 - **Fix:** `VerdroidAccessibilityService.onKeyEvent` (`canRequestFilterKeyEvents` + `FLAG_REQUEST_FILTER_KEY_EVENTS`, also set at runtime in `onServiceConnected`) collapses on `KEYCODE_HOME`/`KEYCODE_APP_SWITCH` key-down (3-button nav) and never consumes the key. `WINDOWS_CHANGED` now uses the topmost `TYPE_APPLICATION` window that isn't ours. A HOME `<queries>` intent was added. The broadcast stays as the fallback.
 - **Diagnostics:** the `HeadLog` ring buffer (400 lines, also logged under `VerdroidHead`) records a11y connect/serviceInfo, every event and key while the window is open, and outside taps. It's shown in Settings → App → Debug log with Copy and Clear.
+
+## v1.0.47
+
+- **Orientation-aware floating window:** `FloatingWindowGeometry.default(areaW, areaH, top, density, saved, savedPos)`. Portrait is 85%×60%. Landscape is 88% of the height, width = min(60% of width, max(height, 360dp)), centred. Minimum size is 280×240dp, always clamped to the usable area (minus system bars).
+- **Remembered per orientation:** the user's resized size and dragged position are saved in the `chathead_window` prefs (`w_/h_/x_/y_` + `port`/`land`) and restored, clamped, when the window reopens. `ChatHeadService.onConfigurationChanged` re-fits an open window after rotation.
