@@ -44,6 +44,9 @@ object UpdateLogic {
         return if (t.length <= max) t else t.take(max).trimEnd() + "…"
     }
 
+    /** GitHub updater default: off for fresh installs, on when an earlier version already used it. */
+    fun defaultEnabled(hadPriorUpdaterState: Boolean): Boolean = hadPriorUpdaterState
+
     fun isNewer(latest: String, current: String): Boolean = (compare(latest, current) ?: 0) > 0
 
     /**

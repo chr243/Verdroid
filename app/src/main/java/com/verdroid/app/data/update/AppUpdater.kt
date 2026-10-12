@@ -43,6 +43,17 @@ class AppUpdater @Inject constructor(@ApplicationContext private val context: Co
     private val http = OkHttpClient.Builder().connectTimeout(20, TimeUnit.SECONDS).readTimeout(60, TimeUnit.SECONDS)
         .followRedirects(true).followSslRedirects(true).build()
     private val prefs = context.getSharedPreferences("app_update", Context.MODE_PRIVATE)
+
+    /**
+     * Opt-in GitHub updater (IzzyOnDroid/F-Droid policy): OFF for new installs. Existing installs (an earlier version
+     * already checked GitHub, so update prefs exist) keep it ON. Migrated once into [KEY_ENABLED].
+     */
+    private val _enabled = MutableStateFlow(resolveEnabled(prefs))
+    val enabled: StateFlow<Boolean> = _enabled.asStateFlow()
+    fun setEnabled(on: Boolean) {
+        prefs.edit().putBoolean(KEY_ENABLED, on).apply(); _enabled.value = on
+        if (!on) { _available.value = false; reset() }
+    }
     private val lock = Mutex()
     /** v1.0.7: check/download run here, not in the Settings composable's scope, so leaving the screen doesn't stop them. */
     private val appScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.IO)
@@ -67,7 +78,7 @@ class AppUpdater @Inject constructor(@ApplicationContext private val context: Co
     val state: StateFlow<UpdateState> = _state.asStateFlow()
 
     /** Dot on the gear / the Settings row: an update newer than the installed version is known (survives restarts). */
-    private val _available = MutableStateFlow(prefs.getString(KEY_LATEST, null)?.let { UpdateLogic.isNewer(it, currentVersion) } == true)
+    private val _available = MutableStateFlow(prefs.getBoolean(KEY_ENABLED, false) && prefs.getString(KEY_LATEST, null)?.let { UpdateLogic.isNewer(it, currentVersion) } == true)
     val updateAvailable: StateFlow<Boolean> = _available.asStateFlow()
 
     /** Silent check on app start, at most every 6 h; errors are ignored. */
@@ -154,8 +165,18 @@ class AppUpdater @Inject constructor(@ApplicationContext private val context: Co
 
     fun reset() { if (_state.value !is UpdateState.Downloading) _state.value = UpdateState.Idle }
 
-    private companion object {
+    companion object {
         const val KEY_LAST_CHECK = "last_check_ms"
         const val KEY_LATEST = "latest_version"
+        const val KEY_ENABLED = "github_updates_enabled"
+
+        /** One-time migration: no flag yet → ON if an earlier version already checked GitHub, else OFF (fresh install). */
+        fun resolveEnabled(prefs: android.content.SharedPreferences): Boolean {
+            if (!prefs.contains(KEY_ENABLED)) {
+                val on = UpdateLogic.defaultEnabled(prefs.contains(KEY_LAST_CHECK) || prefs.contains(KEY_LATEST))
+                prefs.edit().putBoolean(KEY_ENABLED, on).commit()
+            }
+            return prefs.getBoolean(KEY_ENABLED, false)
+        }
     }
 }

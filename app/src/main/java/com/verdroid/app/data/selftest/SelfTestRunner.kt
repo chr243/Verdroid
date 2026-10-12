@@ -176,6 +176,7 @@ class SelfTestRunner @Inject constructor(
         },
         "crypto_public" to { run("crypto_ticker", args("pair" to "BTC-USD")); "Coinbase public ticker ok" },
         "updater" to {
+            if (!updater.enabled.value) throw SkipCheck("GitHub update checks are off (Settings → App)")
             when (val st = updater.check(silent = true)) {
                 is UpdateState.Available -> "latest v${st.release.version} (newer), asset=${st.release.asset?.name}"
                 is UpdateState.UpToDate -> "up to date (v${st.latest})"

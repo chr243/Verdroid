@@ -25,6 +25,7 @@ fun UpdateDot(modifier: Modifier = Modifier) {
 fun AppUpdateRow(updater: AppUpdater, index: Int) {
     val state by updater.state.collectAsStateWithLifecycle()
     val available by updater.updateAvailable.collectAsStateWithLifecycle()
+    val enabled by updater.enabled.collectAsStateWithLifecycle()
     // Download runs in the updater's app scope; the installer opens by itself only while this row is visible.
     var autoInstall by remember { mutableStateOf(false) }
     val context = LocalContext.current
@@ -53,10 +54,19 @@ fun AppUpdateRow(updater: AppUpdater, index: Int) {
                     Text("Installed: v${updater.currentVersion}", style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                OutlinedButton(enabled = state !is UpdateState.Checking && state !is UpdateState.Downloading,
+                OutlinedButton(enabled = enabled && state !is UpdateState.Checking && state !is UpdateState.Downloading,
                     onClick = { updater.startCheck() }) { Text("Check for updates") }
             }
-            when (val st = state) {
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
+                Column(Modifier.weight(1f)) {
+                    Text("Check for updates on GitHub", style = MaterialTheme.typography.bodyMedium)
+                    Text("Off by default. When on, Verdroid asks api.github.com for the latest release on start and downloads " +
+                        "APKs from github.com/chr243/Verdroid/releases (installed only after you confirm).",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Switch(checked = enabled, onCheckedChange = { updater.setEnabled(it) })
+            }
+            if (enabled) when (val st = state) {
                 UpdateState.Idle -> {}
                 UpdateState.Checking -> { Spacer(Modifier.height(8.dp)); LinearProgressIndicator(Modifier.fillMaxWidth()) }
                 is UpdateState.UpToDate -> Status("Up to date (latest: v${st.latest})")

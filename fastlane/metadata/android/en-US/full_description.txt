@@ -1,0 +1,16 @@
+<p>Verdroid is an AI agent that runs on your phone and actually does things. You chat with it in a Messenger-style app; it plans, calls tools and reports back.</p>
+<p><b>Models:</b> Verdroid uses <b>free cloud models</b> from OpenRouter and Kilo with your own API key (not a local model). It falls back across models and keys automatically and recovers from rate limits. There is no Verdroid server: the app talks to the model providers directly and keys are stored encrypted on the device.</p>
+<p><b>What it can do</b></p>
+<ul>
+<li>Web search (keyless, multi-engine) and web page/API fetching</li>
+<li>Run bash and Python in Termux (optional), including headless Chromium + Selenium</li>
+<li>Run shell commands through Shizuku or rish (optional)</li>
+<li>Control other apps through an Accessibility service (optional, only when you ask)</li>
+<li>Read, edit, merge and annotate PDFs; translate ebooks</li>
+<li>Work with files in Documents/Verdroid (Input/Output) and Git repositories (JGit)</li>
+<li>Memory, reusable skills, AGENTS.md instructions, per-chat tool presets, MCP servers</li>
+<li>Chat heads / floating chat window, charts, on-device self-test of every feature</li>
+</ul>
+<p><b>Privacy and permissions:</b> every sensitive permission (Accessibility, Shizuku, overlay, All files access, Termux RUN_COMMAND, notifications) is optional and explained in the app. Packages are only installed in Termux after you agree in chat.</p>
+<p><b>Updates:</b> an optional GitHub update check is off by default; when enabled it downloads APKs from github.com/chr243/Verdroid releases and installs only after you confirm.</p>
+<p>Crypto market tools are experimental. Licensed GPL-3.0-only.</p>

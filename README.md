@@ -1,5 +1,11 @@
 # Verdroid
 
+[![Get it on Obtainium](docs/images/badge_obtainium.png)](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.verdroid.app%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2Fchr243%2FVerdroid%22%2C%22author%22%3A%22chr243%22%2C%22name%22%3A%22Verdroid%22%7D)
+[![GitHub release](https://img.shields.io/github/v/release/chr243/Verdroid?label=GitHub%20release)](https://github.com/chr243/Verdroid/releases/latest)
+[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
+
+Also listed in [ARK-Store](https://github.com/topics/arkstore) (GitHub topic `arkstore`).
+
 **An on-device AI agent for Android that actually does things:** it searches the web and fetches pages and APIs over HTTP, runs bash and Python in Termux (optionally with headless Chromium + Selenium), runs shell commands through Shizuku or rish, drives apps with Accessibility, translates ebooks, works with files in `Documents/Verdroid` and Git, and reads crypto market data (work in progress), all tuned to work well on **free OpenRouter / Kilo models**, with automatic model and key fallback and rate-limit recovery. No server and no cloud backend: your keys stay encrypted on your phone.
 
 | Chats | Chat thread |
@@ -31,11 +37,13 @@
 
 ### 1. Install the app
 
-Download `Verdroid-v<version>-debug.apk` from [Releases](https://github.com/chr243/Verdroid/releases) and open it on the phone (Android 11+, minSdk 30), or with adb:
+Download `Verdroid-v<version>.apk` from [Releases](https://github.com/chr243/Verdroid/releases) (or add the repo to [Obtainium](https://github.com/ImranR98/Obtainium)) and open it on the phone (Android 11+, minSdk 30), or with adb:
 
 ```bash
-adb install -r Verdroid-v<version>-debug.apk
+adb install -r Verdroid-v<version>.apk
 ```
+
+Releases since v1.0.40 are R8-optimized and signed with a release key. Coming from an older `-debug` build, uninstall it once first (different signature). The in-app GitHub update check is **off by default** (Settings → App → *Check for updates on GitHub*); when on, it downloads APKs from this repo's releases and installs only after you confirm.
 
 Then open Verdroid → **Menu → API keys** and add an OpenRouter key (`sk-or-…`) and/or a Kilo key.
 
@@ -66,7 +74,26 @@ git clone https://github.com/chr243/Verdroid.git && cd Verdroid
 echo "sdk.dir=$ANDROID_HOME" > local.properties   # never commit this file
 ./gradlew assembleDebug testDebugUnitTest lint
 # APK: app/build/outputs/apk/debug/Verdroid-v<version>-debug.apk
+# Release (minified; debug-key signed unless you configure VERDROID_KEYSTORE_PROPS): ./gradlew assembleRelease
 ```
+
+## Permissions
+
+Everything beyond Internet is optional and only used for the feature that needs it (Settings → Phone → Permissions shows status and a Grant button for each):
+
+| Permission | Why | When |
+|---|---|---|
+| `INTERNET`, `ACCESS_NETWORK_STATE` | Talk to OpenRouter/Kilo, web search/fetch, Git, optional update check | Always (HTTPS only; cleartext only to `localhost`) |
+| Accessibility service (`BIND_ACCESSIBILITY_SERVICE`) | `screen_*` tools read and tap other apps' UI | Only if you enable it in Android settings; used only when a task asks for it |
+| Shizuku / rish | `run_shell` / `rish_run` as the adb shell user | Only if Shizuku is installed and you grant it |
+| `SYSTEM_ALERT_WINDOW` (overlay) | Chat heads / floating chat window in Overlay mode | Only if you pick Overlay chat heads |
+| `POST_NOTIFICATIONS` | Task progress, completions, Bubbles | Android 13+, asked when needed |
+| `com.termux.permission.RUN_COMMAND` | Run bash/Python in Termux (`termux_*`, PDF, ebook tools) | Only if Termux is installed and you allow it |
+| `MANAGE_EXTERNAL_STORAGE` (All files access) | The shared `Documents/Verdroid` folder (Input/Output) | Optional; workspace tools stay inside that folder |
+| `REQUEST_INSTALL_PACKAGES` | Install an update downloaded by the opt-in GitHub updater | Only when you tap Install |
+| `FOREGROUND_SERVICE*`, `RECEIVE_BOOT_COMPLETED`, `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS` | Keep a running task and chat heads alive in the background | Only while a task / chat head runs |
+
+No analytics, no ads, no Verdroid backend. Termux packages and Python modules are installed only after you agree in chat.
 
 ## Documentation
 
@@ -76,7 +103,7 @@ echo "sdk.dir=$ANDROID_HOME" > local.properties   # never commit this file
 
 ## Status and limitations
 
-Personal project, debug-signed builds only. There is no in-app browser and no X/Facebook tools (removed). Pages that need JavaScript can be read with the optional headless Chromium + Selenium add-on in Termux; pages behind a login are not supported. All crypto/Coinbase features (market data, backtest, trading) are work in progress and still on the todo list. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#known-limitations).
+Personal project; release builds are signed with the project's own key. There is no in-app browser and no X/Facebook tools (removed). Pages that need JavaScript can be read with the optional headless Chromium + Selenium add-on in Termux; pages behind a login are not supported. All crypto/Coinbase features (market data, backtest, trading) are work in progress and still on the todo list. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#known-limitations).
 
 ## License
 

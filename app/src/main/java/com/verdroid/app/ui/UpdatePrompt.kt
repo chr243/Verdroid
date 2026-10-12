@@ -31,8 +31,9 @@ fun StartupUpdatePrompt(updater: AppUpdater) {
         }
     }
 
+    val enabled by updater.enabled.collectAsStateWithLifecycle()
     val st = state
-    if (dismissed || st !is UpdateState.Available) return
+    if (!enabled || dismissed || st !is UpdateState.Available) return
     val r = st.release
     fun dismiss() { updater.startupPromptDismissed = true; dismissed = true }
     AlertDialog(

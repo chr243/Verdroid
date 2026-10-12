@@ -11,3 +11,10 @@ class NotesSnippetTest {
         assertTrue(long.endsWith("…") && long.length == 11)
     }
 }
+
+class UpdaterOptInTest {
+    @Test fun freshInstallOffExistingOn() {
+        assertEquals(false, UpdateLogic.defaultEnabled(false))
+        assertEquals(true, UpdateLogic.defaultEnabled(true))
+    }
+}
