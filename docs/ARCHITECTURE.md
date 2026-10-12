@@ -648,3 +648,8 @@ Chat head: Back and Home/Recents collapse the expanded panel back to the head at
   timestamps under tag `VerdroidHead` (`adb logcat -s VerdroidHead`).
 - **Custom LLM providers** (`ae59ce4`): Settings → LLM provider (presets + OpenAI-compatible base URL/key/headers,
   fetch models, `custom:` ids in Model priority); OpenRouter attribution headers only to openrouter.ai.
+
+## v1.0.45
+
+- **API keys merged into LLM providers** (bcdff73): Settings → LLM providers replaces "API keys". OpenRouter chip first (multi-key section, "Get key" → openrouter.ai/keys), Kilo (no key, memory switch moved here), then presets. Single-slot custom provider storage migrated to per-provider encrypted storage.
+- **Providers UX overhaul** (a1454db): every provider configured independently (`CustomProviderStore` per-id base/key/headers, `version` flow). Models stored as `prov:<providerId>:<model>`, labelled "model (Groq)", routed per model by `CustomLlmClient`. `ProviderModelMigration` (app start) rewrites legacy `custom:` ids to the previously active provider; un-migrated `custom:` still routes to `legacyActive`. Status chips (✓ + contentDescription), Save / Test connection (GET /models), Advanced (base URL for presets, extra headers), URL validation, per-provider model list with add/remove, link to Model priority. Self-test checks every configured provider.

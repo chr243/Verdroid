@@ -1,0 +1,3 @@
+- LLM providers replace API keys: OpenRouter, Kilo and other providers in one place
+- Each provider set up separately, with a ready checkmark, Test connection and its own model list
+- Models show their provider, e.g. "llama-3.1-8b-instant (Groq)"; existing custom models are moved over automatically
