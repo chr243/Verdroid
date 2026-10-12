@@ -634,3 +634,17 @@ Chat head: Back and Home/Recents collapse the expanded panel back to the head at
   launcher (resolved via CATEGORY_HOME; com.miui.home on HyperOS) / recents → instant collapse (armed 400ms after
   open). Fallbacks: window visibility change, focus loss, the broadcast. Without the Accessibility service enabled,
   Home still depends on the system broadcast.
+
+## v1.0.44
+
+- **Outside tap no longer passes through:** the chat-head window is now a full-screen focusable overlay; the card is
+  positioned inside it (drag/resize move the card, not the window) and the transparent rest is a scrim that consumes
+  taps and collapses. Keyboard: `ADJUST_RESIZE` shrinks the window, the card is clamped above the IME.
+- **Home lag:** likely causes were (a) the collapse waiting on the Compose scale/fade animation while the system was
+  animating to the launcher (frames for a background overlay are throttled on HyperOS), and (b) the Accessibility
+  `notificationTimeout=100` + only `TYPE_WINDOW_STATE_CHANGED`. Now Home/Recents/focus/visibility/broadcast paths call
+  `collapseNow()` (remove immediately, no animation; only Back and scrim tap animate), the service also listens to
+  `TYPE_WINDOWS_CHANGED` (active window package) with `notificationTimeout=0`, and every path logs with uptime
+  timestamps under tag `VerdroidHead` (`adb logcat -s VerdroidHead`).
+- **Custom LLM providers** (`ae59ce4`): Settings → LLM provider (presets + OpenAI-compatible base URL/key/headers,
+  fetch models, `custom:` ids in Model priority); OpenRouter attribution headers only to openrouter.ai.
