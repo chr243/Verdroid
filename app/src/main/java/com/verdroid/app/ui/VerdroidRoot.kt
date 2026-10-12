@@ -63,6 +63,7 @@ object Routes {
     const val PERMISSIONS = "settings/permissions"
     const val THEME = "settings/theme"
     const val ARCHIVE = "settings/archive"
+    const val SELF_TEST = "settings/selftest"
     const val MEMORY = "settings/memory?chat={chat}"
     fun memory(chatId: Long? = null) = "settings/memory?chat=${chatId ?: -1}"
     fun chat(taskId: Long) = "chat/$taskId"
@@ -186,6 +187,7 @@ fun VerdroidRoot(
                 com.verdroid.app.ui.archive.ArchiveScreen(onBack = { nav.popBackStack() }, onOpenChat = { nav.navigate(Routes.chat(it)) })
             }
             composable(Routes.THEME) { com.verdroid.app.ui.theme.ThemeScreen(onBack = { nav.popBackStack() }) }
+            composable(Routes.SELF_TEST) { com.verdroid.app.ui.selftest.SelfTestScreen(onBack = { nav.popBackStack() }) }
             composable(Routes.CHAT_HEADS) { ChatHeadSettingsScreen(onBack = { nav.popBackStack() }) }
         }
       }

@@ -603,3 +603,11 @@ Chat head: Back and Home/Recents collapse the expanded panel back to the head at
 - **Updater:** release builds pick the plain `Verdroid-v<ver>.apk` asset (still accept `-release`/`-debug`).
 - **Start-up update panel:** a silent GitHub check on launch (quiet offline); if newer, a dialog shows version + notes
   snippet with Update (downloads, then opens installer) / Later (once per session).
+
+## Unreleased: on-device self-test
+
+- **Settings → App → Self-test** (`data/selftest/SelfTestRunner.kt`, `ui/selftest/SelfTestScreen.kt`): safe, non-destructive
+  per-feature checks with pass/fail/skip, detail and duration. Copy/Share, saved to `Documents/Verdroid/selftest-<ts>.md`.
+  No installs, trades or model calls; missing apps/permissions → SKIP; 25s timeout per check.
+- **Rule for new features/tools:** register a self-test check (or an exemption with a reason) in
+  `SelfTestCoverage`. `SelfTestCoverageTest` scans `agent/tools` for tool names and fails the build otherwise.

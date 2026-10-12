@@ -1,0 +1,257 @@
+package com.verdroid.app.data.selftest
+
+import android.Manifest
+import android.content.Context
+import android.content.pm.PackageManager
+import android.provider.Settings
+import androidx.core.content.ContextCompat
+import com.verdroid.app.BuildConfig
+import com.verdroid.app.agent.tools.AgentTool
+import com.verdroid.app.agent.tools.ToolRegistry
+import com.verdroid.app.data.update.AppUpdater
+import com.verdroid.app.data.update.UpdateState
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
+import kotlinx.serialization.json.*
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.io.File
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.concurrent.TimeUnit
+import javax.inject.Inject
+import javax.inject.Singleton
+
+enum class SelfTestStatus { PASS, FAIL, SKIP }
+data class SelfTestResult(val id: String, val status: SelfTestStatus, val detail: String, val ms: Long)
+
+/** Thrown inside a check to report SKIP (missing app/permission) instead of FAIL. */
+class SkipCheck(reason: String) : Exception(reason)
+
+/**
+ * On-device self-test: safe, non-destructive, short-timeout checks per feature ([SelfTestCoverage.CHECKS]).
+ * Never installs anything, never trades, never sends chat/model requests (only lists models).
+ */
+@Singleton
+class SelfTestRunner @Inject constructor(
+    @ApplicationContext private val context: Context,
+    private val registry: ToolRegistry,
+    private val settings: com.verdroid.app.domain.repository.SettingsRepository,
+    private val agentsMd: com.verdroid.app.data.instructions.AgentsMdStore,
+    private val memory: com.verdroid.app.data.memory.MemoryRepository,
+    private val shared: com.verdroid.app.data.storage.SharedFolder,
+    private val termux: com.verdroid.app.data.termux.TermuxManager,
+    private val updater: AppUpdater,
+) {
+    private val http = OkHttpClient.Builder().connectTimeout(8, TimeUnit.SECONDS).readTimeout(10, TimeUnit.SECONDS).build()
+    private fun tool(name: String): AgentTool = registry.tools.firstOrNull { it.name == name } ?: throw IllegalStateException("$name not registered")
+    private suspend fun run(name: String, args: JsonObject): JsonObject {
+        val out = tool(name).execute(args)
+        val o = Json.parseToJsonElement(out).jsonObject
+        o["error"]?.jsonPrimitive?.contentOrNull?.let { throw IllegalStateException(it.take(200)) }
+        return o
+    }
+    private fun args(vararg p: Pair<String, Any>) = buildJsonObject {
+        p.forEach { (k, v) -> when (v) { is Number -> put(k, v); is Boolean -> put(k, v); else -> put(k, v.toString()) } }
+    }
+    private fun get(url: String): Int = http.newCall(Request.Builder().url(url).header("User-Agent", "Verdroid-selftest").build())
+        .execute().use { it.code }
+    private fun requireTermux() {
+        if (!termux.isInstalled()) throw SkipCheck("Termux not installed")
+        if (!termux.hasRunCommandPermission()) throw SkipCheck("RUN_COMMAND permission not granted")
+    }
+    private suspend fun termuxEcho(cmd: String, timeout: Long = 15_000): String {
+        requireTermux()
+        val r = termux.runAndWait(cmd, "selftest-${System.nanoTime()}", timeout, "Verdroid self-test")
+            ?: throw IllegalStateException("no result from Termux within ${timeout / 1000}s (open Termux once?)")
+        return r.toString()
+    }
+
+    private val checks: Map<String, suspend () -> String> = mapOf(
+        "tool_registry" to {
+            val tools = registry.tools
+            tools.forEach { it.name; it.description; it.parameters } // touches every tool class (R8/reflection)
+            val missing = SelfTestCoverage.uncovered(tools.map { it.name })
+            if (missing.isNotEmpty()) throw IllegalStateException("no self-test for: $missing")
+            "${tools.size} tools instantiated"
+        },
+        "json" to {
+            registry.tools.forEach { t ->
+                val s = t.parameters.toString()
+                check(Json.parseToJsonElement(s) == t.parameters) { "schema roundtrip mismatch: ${t.name}" }
+            }
+            val probe = buildJsonObject { put("a", 1); putJsonArray("b") { add("x") } }
+            check(Json.parseToJsonElement(probe.toString()) == probe)
+            "${registry.tools.size} schemas roundtrip"
+        },
+        "room" to {
+            val r = memory.save("verdroid self-test probe ${System.currentTimeMillis()}", listOf("selftest"), null)
+            val id = memory.all().firstOrNull { it.text.startsWith("verdroid self-test probe") }?.id
+                ?: throw IllegalStateException("temp row not readable ($r)")
+            check(memory.delete(id)) { "temp row delete failed" }
+            "insert/read/delete ok"
+        },
+        "settings" to { "models=${settings.currentModels().size}, limits ok (${settings.limits.first().javaClass.simpleName})" },
+        "agents_md" to { "${agentsMd.text.value.length} chars" },
+        "memory" to { run("memory_search", args("query" to "selftest")); "${memory.all().size} memories, search ok" },
+        "skills" to { run("skill_list", args()); "skill_list ok" },
+        "sandbox" to {
+            val p = ".selftest/probe.txt"
+            run("write_file", args("path" to p, "content" to "ok"))
+            val read = run("read_file", args("path" to p)).toString()
+            check("ok" in read) { "read back mismatch" }
+            run("list_dir", args("path" to ".selftest"))
+            File(context.filesDir, "workspace/.selftest").deleteRecursively()
+            "write/read/list ok"
+        },
+        "shared_folder" to {
+            if (!shared.hasAccess()) throw SkipCheck("no All-files access")
+            check(shared.ensure()) { "can't create Documents/Verdroid" }
+            run("workspace_list", args("path" to "Input"))
+            val p = "Output/.selftest-probe.txt"
+            run("workspace_write", args("path" to p, "content" to "ok"))
+            run("workspace_read", args("path" to p))
+            File(shared.root, p).delete()
+            "Input listable, Output write/read ok"
+        },
+        "network" to { "github.com HTTP ${get("https://github.com")}" },
+        "providers" to {
+            val or = get("https://openrouter.ai/api/v1/models")
+            val kilo = runCatching { get("https://api.kilo.ai/api/gateway/models") }.getOrElse { -1 }
+            check(or in 200..299) { "OpenRouter models HTTP $or" }
+            "OpenRouter models $or, Kilo models $kilo"
+        },
+        "web_fetch" to { run("web_fetch", args("url" to "https://example.com", "format" to "markdown")); "example.com fetched" },
+        "web_search" to { run("web_search", args("query" to "android", "max_results" to 3)); "search ok" },
+        "termux" to { termuxEcho("echo verdroid-selftest").let { check("verdroid-selftest" in it) { it.take(160) } }; "echo roundtrip ok" },
+        "python" to {
+            val out = termuxEcho("python -c 'import fitz; print(\"fitz\", fitz.__doc__)' 2>&1 || python -c 'import pypdf; print(\"pypdf\")' 2>&1 || echo nopython")
+            when {
+                "fitz" in out -> "Python + PyMuPDF present"
+                "pypdf" in out -> "Python + pypdf (no PyMuPDF)"
+                else -> throw SkipCheck("Python/PDF libs not installed (no install by self-test)")
+            }
+        },
+        "pdf" to {
+            requireTermux()
+            if (!shared.hasAccess()) throw SkipCheck("no All-files access")
+            shared.ensure()
+            val f = File(shared.output, ".selftest.pdf"); f.writeBytes(TINY_PDF)
+            try {
+                val out = tool("pdf_info").execute(args("path" to "Output/.selftest.pdf"))
+                when {
+                    "confirm_install" in out || "install_id" in out -> throw SkipCheck("PDF deps not installed (consent required)")
+                    "\"error\"" in out -> throw IllegalStateException(out.take(200))
+                    else -> "pdf_info ok on 1-page PDF"
+                }
+            } finally { f.delete() }
+        },
+        "shizuku" to {
+            val o = Json.parseToJsonElement(tool("run_shell").execute(args("command" to "id", "timeout_seconds" to 8))).jsonObject
+            val err = o["error"]?.jsonPrimitive?.contentOrNull
+            if (err != null) throw SkipCheck("Shizuku unavailable: ${err.take(120)}")
+            "id: ${o["stdout"]?.jsonPrimitive?.contentOrNull?.take(60) ?: o.toString().take(60)}"
+        },
+        "rish" to {
+            val o = Json.parseToJsonElement(tool("rish_run").execute(args("command" to "id", "timeout_seconds" to 8))).jsonObject
+            val err = o["error"]?.jsonPrimitive?.contentOrNull
+            if (err != null) throw SkipCheck("rish unavailable: ${err.take(120)}")
+            "rish id ok"
+        },
+        "accessibility" to {
+            if (!com.verdroid.app.data.a11y.VerdroidAccessibilityService.isRunning) throw SkipCheck("Accessibility service not enabled")
+            "service running"
+        },
+        "overlay" to { if (Settings.canDrawOverlays(context)) "overlay allowed" else throw SkipCheck("overlay permission not granted") },
+        "git" to {
+            val dir = File(context.cacheDir, "selftest-git-${System.nanoTime()}")
+            try {
+                org.eclipse.jgit.api.Git.init().setDirectory(dir).call().use { g -> g.status().call() }
+                "JGit init + status ok"
+            } finally { dir.deleteRecursively() }
+        },
+        "crypto_public" to { run("crypto_ticker", args("pair" to "BTC-USD")); "Coinbase public ticker ok" },
+        "updater" to {
+            when (val st = updater.check(silent = true)) {
+                is UpdateState.Available -> "latest v${st.release.version} (newer), asset=${st.release.asset?.name}"
+                is UpdateState.UpToDate -> "up to date (v${st.latest})"
+                is UpdateState.Error -> throw IllegalStateException(st.message)
+                else -> st.toString()
+            }
+        },
+        "notifications" to {
+            val ok = ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+            if (ok) "granted" else throw SkipCheck("notification permission not granted")
+        },
+    )
+
+    suspend fun runAll(onResult: (SelfTestResult) -> Unit = {}): List<SelfTestResult> = withContext(Dispatchers.IO) {
+        SelfTestCoverage.CHECKS.map { id ->
+            val t0 = System.currentTimeMillis()
+            val block = checks[id]
+            val r = if (block == null) SelfTestResult(id, SelfTestStatus.FAIL, "no implementation", 0) else try {
+                val d = withTimeout(TIMEOUT_MS) { block() }
+                SelfTestResult(id, SelfTestStatus.PASS, d, System.currentTimeMillis() - t0)
+            } catch (e: SkipCheck) {
+                SelfTestResult(id, SelfTestStatus.SKIP, e.message.orEmpty(), System.currentTimeMillis() - t0)
+            } catch (e: kotlinx.coroutines.TimeoutCancellationException) {
+                SelfTestResult(id, SelfTestStatus.FAIL, "timeout after ${TIMEOUT_MS / 1000}s", System.currentTimeMillis() - t0)
+            } catch (e: Throwable) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                SelfTestResult(id, SelfTestStatus.FAIL, "${e.javaClass.simpleName}: ${e.message}".take(300), System.currentTimeMillis() - t0)
+            }
+            onResult(r); r
+        }
+    }
+
+    /** Writes the report to Documents/Verdroid/selftest-<ts>.md (null if no folder access). */
+    fun save(markdown: String): File? = runCatching {
+        if (!shared.hasAccess()) return null
+        shared.root.mkdirs()
+        File(shared.root, "selftest-${SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())}.md").apply { writeText(markdown) }
+    }.getOrNull()
+
+    fun report(results: List<SelfTestResult>): String = SelfTestReport.markdown(results, BuildConfig.VERSION_NAME, BuildConfig.BUILD_TYPE,
+        "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}, Android ${android.os.Build.VERSION.RELEASE}")
+
+    companion object {
+        const val TIMEOUT_MS = 25_000L
+        /** Minimal valid one-page PDF. */
+        val TINY_PDF: ByteArray = SelfTestReport.tinyPdf()
+    }
+}
+
+object SelfTestReport {
+    fun markdown(results: List<SelfTestResult>, version: String, buildType: String, device: String): String = buildString {
+        val p = results.count { it.status == SelfTestStatus.PASS }
+        val f = results.count { it.status == SelfTestStatus.FAIL }
+        val s = results.count { it.status == SelfTestStatus.SKIP }
+        appendLine("# Verdroid self-test")
+        appendLine("v$version ($buildType) · $device · ${Date()}")
+        appendLine()
+        appendLine("**$p pass · $f fail · $s skip**")
+        appendLine()
+        appendLine("| Check | Result | ms | Detail |")
+        appendLine("|---|---|---|---|")
+        results.forEach { appendLine("| ${it.id} | ${it.status} | ${it.ms} | ${it.detail.replace("|", "/").replace("\n", " ")} |") }
+    }
+
+    fun tinyPdf(): ByteArray {
+        val objs = listOf(
+            "<< /Type /Catalog /Pages 2 0 R >>",
+            "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
+            "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 200] >>",
+        )
+        val sb = StringBuilder("%PDF-1.4\n"); val offs = mutableListOf<Int>()
+        objs.forEachIndexed { i, o -> offs += sb.length; sb.append("${i + 1} 0 obj\n$o\nendobj\n") }
+        val xref = sb.length
+        sb.append("xref\n0 ${objs.size + 1}\n0000000000 65535 f \n")
+        offs.forEach { sb.append(String.format(Locale.US, "%010d 00000 n \n", it)) }
+        sb.append("trailer\n<< /Size ${objs.size + 1} /Root 1 0 R >>\nstartxref\n$xref\n%%EOF\n")
+        return sb.toString().toByteArray(Charsets.US_ASCII)
+    }
+}
