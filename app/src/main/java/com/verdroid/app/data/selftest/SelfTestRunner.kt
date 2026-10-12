@@ -74,7 +74,7 @@ class SelfTestRunner @Inject constructor(
     private val checks: Map<String, suspend () -> String> = mapOf(
         "tool_registry" to {
             val tools = registry.tools
-            tools.forEach { it.name; it.description; it.parameters } // touches every tool class (R8/reflection)
+            tools.filter { it.name != "self_test" }.forEach { it.name; it.description; it.parameters } // touches every tool class (R8/reflection); self_test excluded (recursion)
             val missing = SelfTestCoverage.uncovered(tools.map { it.name })
             if (missing.isNotEmpty()) throw IllegalStateException("no self-test for: $missing")
             "${tools.size} tools instantiated"
@@ -189,8 +189,8 @@ class SelfTestRunner @Inject constructor(
         },
     )
 
-    suspend fun runAll(onResult: (SelfTestResult) -> Unit = {}): List<SelfTestResult> = withContext(Dispatchers.IO) {
-        SelfTestCoverage.CHECKS.map { id ->
+    suspend fun runAll(only: Set<String>? = null, onResult: (SelfTestResult) -> Unit = {}): List<SelfTestResult> = withContext(Dispatchers.IO) {
+        SelfTestCoverage.CHECKS.filter { only == null || it in only }.map { id ->
             val t0 = System.currentTimeMillis()
             val block = checks[id]
             val r = if (block == null) SelfTestResult(id, SelfTestStatus.FAIL, "no implementation", 0) else try {

@@ -34,6 +34,7 @@ object SelfTestCoverage {
     )
 
     val EXEMPT: Map<String, String> = mapOf(
+        "self_test" to "runs the self-test itself; excluded to avoid recursion",
         "crypto_balance" to "needs the user's Coinbase API key; only instantiated (tool_registry)",
         "crypto_order_status" to "needs the user's Coinbase API key; only instantiated (tool_registry)",
         "crypto_place_order" to "live trading: never executed by a self-test; only instantiated (tool_registry)",

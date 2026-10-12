@@ -134,6 +134,7 @@ object AppModule {
         cryptoClient: com.verdroid.app.data.crypto.CoinbaseExchangeClient,
         cryptoCreds: com.verdroid.app.data.crypto.CryptoCredentials,
         termux: com.verdroid.app.data.termux.TermuxManager,
+        selfTest: javax.inject.Provider<com.verdroid.app.data.selftest.SelfTestRunner>,
     ): ToolRegistry = ToolRegistry(
         listOf(
             ReadFileTool(sandbox), WriteFileTool(sandbox), ListDirTool(sandbox),
@@ -161,6 +162,8 @@ object AppModule {
                 SkillListTool(skills), SkillGetTool(skills), SkillSaveTool(skills), SkillEditTool(skills), SkillDeleteTool(skills),
                 // v1.0.12: native charts in the chat (+ PNG export for sharing)
                 ChartTool(File(context.filesDir, "charts"), com.verdroid.app.ui.chart.AndroidChartPng()),
+                // On-device self-test (same checks as Settings → Self-test); runner resolved lazily (it needs this registry)
+                com.verdroid.app.agent.tools.SelfTestTool { selfTest.get() },
             ) +
             // Crypto: Coinbase Exchange market data + optional live trading (place/cancel off by default)
             com.verdroid.app.agent.tools.CryptoToolFactory(cryptoClient, cryptoCreds).tools() +
