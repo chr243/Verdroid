@@ -169,7 +169,7 @@ fun VerdroidRoot(
                     onChatMemory = { id -> nav.navigate(Routes.memory(id)) })
               }
             }
-            composable(Routes.KEYS) { ApiKeysScreen(onBack = { nav.popBackStack() }) }
+            composable(Routes.KEYS) { com.verdroid.app.ui.provider.ProviderScreen(onBack = { nav.popBackStack() }, initial = "openrouter") }
             composable(Routes.MODELS) { ModelPriorityScreen(onBack = { nav.popBackStack() }) }
             composable(Routes.LIMITS) { RateLimitSettingsScreen(onBack = { nav.popBackStack() }) }
             composable(Routes.SHIZUKU) { DeviceControlScreen(onBack = { nav.popBackStack() }) }

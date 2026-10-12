@@ -27,14 +27,14 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /** A preset for the custom OpenAI-compatible provider (Settings → LLM provider). */
-data class ProviderPreset(val id: String, val label: String, val baseUrl: String, val needsKey: Boolean, val note: String = "")
+data class ProviderPreset(val id: String, val label: String, val baseUrl: String, val needsKey: Boolean, val note: String = "", val keyUrl: String? = null)
 
 object ProviderPresets {
     val ALL = listOf(
-        ProviderPreset("openai", "OpenAI", "https://api.openai.com/v1/", true),
-        ProviderPreset("groq", "Groq", "https://api.groq.com/openai/v1/", true),
-        ProviderPreset("deepseek", "DeepSeek", "https://api.deepseek.com/v1/", true),
-        ProviderPreset("together", "Together", "https://api.together.xyz/v1/", true),
+        ProviderPreset("openai", "OpenAI", "https://api.openai.com/v1/", true, keyUrl = "https://platform.openai.com/api-keys"),
+        ProviderPreset("groq", "Groq", "https://api.groq.com/openai/v1/", true, keyUrl = "https://console.groq.com/keys"),
+        ProviderPreset("deepseek", "DeepSeek", "https://api.deepseek.com/v1/", true, keyUrl = "https://platform.deepseek.com/api_keys"),
+        ProviderPreset("together", "Together", "https://api.together.xyz/v1/", true, keyUrl = "https://api.together.ai/settings/api-keys"),
         ProviderPreset("ollama", "Ollama (local)", "http://localhost:11434/v1/", false, "Ollama on this phone (Termux) or your LAN IP"),
         ProviderPreset("lmstudio", "LM Studio (local)", "http://localhost:1234/v1/", false, "LM Studio server; use the PC's LAN IP"),
         ProviderPreset("custom", "Custom (OpenAI-compatible)", "", false),
@@ -119,23 +119,51 @@ class CustomProviderStore @Inject constructor(@ApplicationContext private val co
         return EncryptedSharedPreferences.create(context, SECURE_FILE, mk,
             EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV, EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM)
     }
+    init { runCatching { migrate(prefs, secure) } }
+
     private val _config = MutableStateFlow(read())
     val config: StateFlow<CustomProviderConfig> = _config.asStateFlow()
 
-    private fun read() = CustomProviderConfig(prefs.getString("preset", "custom") ?: "custom", prefs.getString("base", "") ?: "",
-        ProviderUrls.parseHeaders(prefs.getString("headers", "") ?: ""))
+    /** The active (used for `custom:` models) provider's config. */
+    private fun read(): CustomProviderConfig {
+        val id = prefs.getString(KEY_ACTIVE, null) ?: "custom"
+        return CustomProviderConfig(id, baseFor(id), ProviderUrls.parseHeaders(headersFor(id)))
+    }
 
-    val headersText: String get() = prefs.getString("headers", "") ?: ""
-    var apiKey: String?
-        get() = runCatching { secure.getString("key", null) }.getOrNull()?.takeIf { it.isNotBlank() }
-        set(v) { runCatching { secure.edit().apply { if (v.isNullOrBlank()) remove("key") else putString("key", v.trim()) }.apply() } }
+    /** Per-provider saved values (each preset remembers its own base URL, headers and key). */
+    fun baseFor(id: String): String = prefs.getString("base_$id", null) ?: ""
+    fun headersFor(id: String): String = prefs.getString("headers_$id", null) ?: ""
+    fun keyFor(id: String): String? = runCatching { secure.getString("key_$id", null) }.getOrNull()?.takeIf { it.isNotBlank() }
 
-    fun save(presetId: String, baseUrl: String, headersText: String) {
-        prefs.edit().putString("preset", presetId).putString("base", baseUrl).putString("headers", headersText).apply()
+    val headersText: String get() = headersFor(config.value.presetId)
+    /** Key of the active provider. */
+    val apiKey: String? get() = keyFor(config.value.presetId)
+
+    /** Saves a provider's values and makes it the active one. */
+    fun save(presetId: String, baseUrl: String, headersText: String, key: String?) {
+        prefs.edit().putString(KEY_ACTIVE, presetId).putString("base_$presetId", baseUrl).putString("headers_$presetId", headersText).apply()
+        runCatching { secure.edit().apply { if (key.isNullOrBlank()) remove("key_$presetId") else putString("key_$presetId", key.trim()) }.apply() }
         _config.value = read()
     }
 
-    companion object { private const val SECURE_FILE = "custom_provider_secure" }
+    companion object {
+        private const val SECURE_FILE = "custom_provider_secure"
+        const val KEY_ACTIVE = "active"
+
+        /**
+         * v1.0.45: single-slot storage (preset/base/headers + secure "key") → per-provider keys (`base_<id>`,
+         * `headers_<id>`, secure `key_<id>`, `active`). Idempotent; old entries are removed after copying.
+         */
+        fun migrate(prefs: SharedPreferences, secure: SharedPreferences) {
+            if (!prefs.contains("preset")) return
+            val id = prefs.getString("preset", null) ?: "custom"
+            prefs.edit().putString(KEY_ACTIVE, id)
+                .putString("base_$id", prefs.getString("base", "") ?: "")
+                .putString("headers_$id", prefs.getString("headers", "") ?: "")
+                .remove("preset").remove("base").remove("headers").commit()
+            secure.getString("key", null)?.let { k -> secure.edit().putString("key_$id", k).remove("key").commit() }
+        }
+    }
 }
 
 /** Calls the custom OpenAI-compatible endpoint (`custom:<model>` ids in the priority list). */

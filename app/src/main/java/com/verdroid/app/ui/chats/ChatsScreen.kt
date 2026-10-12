@@ -85,7 +85,7 @@ fun ChatsScreen(
                 item("nokey") {
                     Surface(color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
                         modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenKeys)) {
-                        Text("🔑 Add your OpenRouter API key to start (Settings → API keys).",
+                        Text("🔑 Add your OpenRouter API key to start (Settings → LLM providers → OpenRouter).",
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp))
                     }
                 }

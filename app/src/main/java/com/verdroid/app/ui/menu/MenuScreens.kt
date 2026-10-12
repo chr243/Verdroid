@@ -47,7 +47,6 @@ private fun SubScreen(title: String, onBack: () -> Unit, actions: @Composable Ro
 @Composable
 fun SettingsScreen(onNavigate: (String) -> Unit, onBack: () -> Unit, unreadNotifications: Int = 0, vm: SettingsViewModel = hiltViewModel()) {
     val kiloNoticeSeen by vm.appPrefs.kiloNoticeSeen.collectAsStateWithLifecycle()
-    val memToKilo by vm.appPrefs.sendMemoriesToKilo.collectAsStateWithLifecycle()
     Scaffold(topBar = {
         TopAppBar(title = { Text("Settings") },
             navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } })
@@ -63,19 +62,9 @@ fun SettingsScreen(onNavigate: (String) -> Unit, onBack: () -> Unit, unreadNotif
                 item("Archive", "Chats deleted from the home list: open, restore or delete permanently", Routes.ARCHIVE),
             ))
             SettingsGroup("Models", listOf(
-                item("API keys", "Add, reorder and choose the primary OpenRouter key", Routes.KEYS),
-                item("LLM provider", "OpenAI, Groq, DeepSeek, Together, Ollama/LM Studio or any OpenAI-compatible API", Routes.PROVIDER),
+                item("LLM providers", "OpenRouter keys, Kilo, OpenAI, Groq, DeepSeek, Together, Ollama/LM Studio or any OpenAI-compatible API", Routes.PROVIDER),
                 item("Model priority", "Ordered list of free models used for fallback", Routes.MODELS),
                 item("Rate limits & quota", "RPM, daily limit, cooldown, low-quota warning, context budget", Routes.LIMITS),
-                { i ->
-                    ListItem(
-                        headlineContent = { Text("Send memories to Kilo models") },
-                        supportingContent = { Text("Include saved memories in prompts sent to kilo:* models (Kilo Auto Free may log prompts)") },
-                        trailingContent = { Switch(memToKilo, vm.appPrefs::setSendMemoriesToKilo) },
-                        colors = ListItemDefaults.colors(containerColor = Zebra.color(i)),
-                        modifier = Modifier.clickable { vm.appPrefs.setSendMemoriesToKilo(!memToKilo) },
-                    )
-                },
             ))
             SettingsGroup("Agent tools", listOf(
                 item("Tools", "Built-in agent tools (status, on/off), Documents/Verdroid folder access, Termux setup and add-ons", Routes.TOOLS),
@@ -127,20 +116,21 @@ private fun MenuItem(title: String, subtitle: String, index: Int, onClick: () ->
     )
 }
 
+/** OpenRouter keys (multi-key fallback, primary first). Lives in Settings → LLM providers → OpenRouter (v1.0.45). */
 @Composable
-fun ApiKeysScreen(onBack: () -> Unit, vm: SettingsViewModel = hiltViewModel()) {
+fun OpenRouterKeysSection(vm: SettingsViewModel = hiltViewModel()) {
     val keys by vm.apiKeys.collectAsStateWithLifecycle()
     var label by remember { mutableStateOf("") }
     var key by remember { mutableStateOf("") }
     var editing by remember { mutableStateOf<ApiKey?>(null) }
-    SubScreen("API keys", onBack) { padding ->
-        LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(16.dp)) {
-            item {
+    run {
+        Column(Modifier.fillMaxWidth()) {
+            run {
                 Text(modifier = Modifier.padding(bottom = 10.dp), text = "Keys are stored encrypted (Android Keystore + EncryptedSharedPreferences). The primary key is used first; " +
                     "others are used in order when a key is rate-limited.", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            itemsIndexed(keys, key = { _, k -> k.id }) { i, k ->
+            keys.forEachIndexed { i, k ->
                 Surface(color = Zebra.color(i), shape = Zebra.shape(i, keys.size), modifier = Modifier.fillMaxWidth()) {
                     Row(Modifier.padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
                         RadioButton(selected = k.isPrimary, onClick = { vm.setPrimary(k.id) })
@@ -158,7 +148,7 @@ fun ApiKeysScreen(onBack: () -> Unit, vm: SettingsViewModel = hiltViewModel()) {
                     }
                 }
             }
-            item {
+            run {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 16.dp)) {
                     Text("Add key", style = MaterialTheme.typography.titleSmall)
                     OutlinedTextField(label, { label = it }, label = { Text("Label (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth())

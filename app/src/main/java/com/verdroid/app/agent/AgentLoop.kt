@@ -137,7 +137,7 @@ class AgentLoop internal constructor(
             val outcome = model(messages, registry.schemas(taskId), taskId) { tasks.updateSubtitle(taskId, it) }
             when (outcome) {
                 ChatOutcome.NoApiKey -> {
-                    fail(taskId, "No model available: add an OpenRouter API key (Settings → API keys) or keep kilo:kilo-auto/free in Settings → Model priority.")
+                    fail(taskId, "No model available: add an OpenRouter API key (Settings → LLM providers → OpenRouter) or keep kilo:kilo-auto/free in Settings → Model priority.")
                     return RunResult.Stopped
                 }
                 is ChatOutcome.Failure -> return pauseForFailure(taskId, outcome.message, attempt)
