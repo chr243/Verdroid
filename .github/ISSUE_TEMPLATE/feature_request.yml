@@ -1,0 +1,19 @@
+name: Feature request
+description: Suggest an idea for Verdroid
+labels: [enhancement]
+body:
+  - type: textarea
+    id: idea
+    attributes:
+      label: What would you like Verdroid to do?
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why is it useful? What do you do today instead?
+  - type: textarea
+    id: device
+    attributes:
+      label: App and device (optional)
+      placeholder: "Verdroid 1.0.x, Android 14"

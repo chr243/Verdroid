@@ -1,0 +1,28 @@
+name: Bug report / feedback
+description: Something doesn't work, or you have feedback about Verdroid
+labels: [bug]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce (if any)
+      placeholder: "1. Open …\n2. Tap …"
+  - type: textarea
+    id: device
+    attributes:
+      label: App and device
+      description: Filled in automatically when sent from the app (Settings → App → Send feedback).
+      placeholder: "Verdroid 1.0.x, Android 14, Xiaomi …"
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs (optional)
+      description: Settings → App → Debug log / Self-test → Copy, then paste here. Remove anything private (keys!).
+      render: text

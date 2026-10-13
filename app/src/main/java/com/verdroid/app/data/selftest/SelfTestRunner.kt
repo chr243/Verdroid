@@ -179,6 +179,13 @@ class SelfTestRunner @Inject constructor(
             check(com.verdroid.app.ui.theme.FontScale.clamp(5f) == com.verdroid.app.ui.theme.FontScale.MAX) { "clamp broken" }
             "font size ${com.verdroid.app.ui.theme.FontScale.label(v)}"
         },
+        "feedback" to {
+            val info = com.verdroid.app.data.feedback.FeedbackLinks.current(context)
+            val url = com.verdroid.app.data.feedback.FeedbackLinks.bugUrl(info)
+            check(url.startsWith("https://github.com/chr243/Verdroid/issues/new?template=bug_report.yml")) { url }
+            val star = com.verdroid.app.data.feedback.StarPromptStore.get(context)
+            "issue links ok; chats created ${star.created}, star prompt ${if (star.done) "done" else "not shown yet"}"
+        },
         "overlay" to { if (Settings.canDrawOverlays(context)) "overlay allowed" else throw SkipCheck("overlay permission not granted") },
         "git" to {
             val dir = File(context.cacheDir, "selftest-git-${System.nanoTime()}")

@@ -49,6 +49,7 @@ fun ChatsScreen(
     val updateAvailable by vm.updateAvailable.collectAsStateWithLifecycle()
     val now = rememberNow()
     val snackbar = remember { SnackbarHostState() }
+    StarPrompt(anyTaskActive = conversations.any { it.task.status.isActive })
     LaunchedEffect(Unit) {
         vm.archivedEvents.collect { e ->
             snackbar.currentSnackbarData?.dismiss()

@@ -42,8 +42,10 @@ class TaskRepositoryImpl @Inject constructor(
 
     override suspend fun createTask(title: String, prompt: String, type: TaskType): Long {
         val t = now()
-        return taskDao.insert(TaskEntity(title = title, prompt = prompt, type = type.name, status = TaskStatus.QUEUED.name,
+        val id = taskDao.insert(TaskEntity(title = title, prompt = prompt, type = type.name, status = TaskStatus.QUEUED.name,
             subtitle = "Queued", createdAt = t, updatedAt = t, lastOpenedAt = t))
+        runCatching { com.verdroid.app.data.feedback.StarPromptStore.get(context).onChatCreated() } // lifetime count for the star prompt
+        return id
     }
 
     override suspend fun updateStatus(taskId: Long, status: TaskStatus, subtitle: String, resumeAt: Long?, error: String?) =
