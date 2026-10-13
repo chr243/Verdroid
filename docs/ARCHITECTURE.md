@@ -717,3 +717,9 @@ Released 2026-10-13. It bundles everything above since v1.0.48:
 - **Feedback:** the "Feedback / Feature request" row (GitHub issue chooser) and the issue forms, plus the one-time star prompt after the 3rd chat.
 - **Removed screens:** the in-app Debug log and Self-test screens (the `self_test` tool remains).
 - No bridge/-debug APK from this release on.
+
+## v1.0.50
+
+Released 2026-10-13.
+- **File change confirmation:** `FileChangeGuard` and `DestructiveDetector` run in `ToolRegistry.execute`. `FileChangeConsent` shows the Allow/Deny dialog in the main app and the bubble, sends a notification, and denies after 10 minutes without an answer. It asks before deletes, moves and renames, and before overwrites outside `Internal/`.
+- **Contextual prompt:** the backtest guidance (`BACKTEST_GUIDANCE`) is added only when a `crypto_backtest*` tool is enabled. The live/paper-trading decline rule is in the tool descriptions. The disclaimer and `reply_instruction` are in the tool results. The base prompt tells the agent not to talk about its own instructions and not to add unrelated disclaimers.

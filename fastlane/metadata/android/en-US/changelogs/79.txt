@@ -1,0 +1,3 @@
+- Asks Yes/No before the agent deletes, moves, renames or overwrites your files (outside Internal/)
+- Backtest results always end with a not-financial-advice disclaimer, added by the tool
+- Crypto/backtest rules only apply to backtests: no unrelated disclaimers in normal chats
