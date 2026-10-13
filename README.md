@@ -6,7 +6,12 @@
 
 Also listed in [ARK-Store](https://github.com/topics/arkstore) (GitHub topic `arkstore`).
 
-**An on-device AI agent for Android that actually does things:** it searches the web and fetches pages and APIs over HTTP, runs bash and Python in Termux (optionally with headless Chromium + Selenium), runs shell commands through Shizuku or rish, drives apps with Accessibility, translates ebooks, works with files in `Documents/Verdroid` and Git, and reads crypto market data (work in progress), all tuned to work well on **free OpenRouter / Kilo models**, with automatic model and key fallback and rate-limit recovery. No server and no cloud backend: your keys stay encrypted on your phone.
+**An on-device AI agent for Android that actually does things:** it searches the web and fetches pages and APIs over HTTP, runs bash and Python in Termux (optionally with headless Chromium + Selenium), runs shell commands through Shizuku or rish, drives apps with Accessibility, translates ebooks, works with files in `Documents/Verdroid` and Git, and backtests crypto trading strategies, all tuned to work well on **free OpenRouter / Kilo models**, with automatic model and key fallback and rate-limit recovery. No server and no cloud backend: your keys stay encrypted on your phone.
+
+## Highlights
+
+- **📈 Crypto strategy backtesting, just by chatting.** Describe your idea ("buy when RSI dips below 30 on BTC 4h, sell at 55"). The agent asks about entries, exits and risk, writes the strategy as Python and runs it offline on free historical candles (Binance public data, Coinbase/Kraken fallback, no API key, cached locally). It reports return, CAGR, max drawdown, Sharpe, win rate and trades vs buy & hold, plus an equity chart (PNG/CSV in `Output/backtests/`). Strategies are saved so you can tweak and re-run them. Signals are applied on the next bar (no lookahead), with fees and slippage included. You install the Python libraries once in Settings → Tools (one tap on *crypto-backtest*). *Not financial advice. Backtests can overfit.*
+- **📚 Whole-book translation on your phone.** Drop a MOBI, EPUB, PDF, DOCX or TXT into `Documents/Verdroid/Input` and ask for a language. `ebook_translate` gives you an ETA first, then translates chapter by chapter in Termux Python. It uses Google Translate with a MyMemory fallback, checks the language, handles rate limits and resumes if interrupted. The result lands in `Output/` as TXT (or DOCX). No API key.
 
 | Chats | Chat thread |
 |:---:|:---:|
@@ -104,7 +109,7 @@ No analytics, no ads, no Verdroid backend. Termux packages and Python modules ar
 
 ## Status and limitations
 
-Personal project; release builds are signed with the project's own key. There is no in-app browser and no X/Facebook tools (removed). Pages that need JavaScript can be read with the optional headless Chromium + Selenium add-on in Termux; pages behind a login are not supported. All crypto/Coinbase features (market data, backtest, trading) are work in progress and still on the todo list. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#known-limitations).
+Personal project; release builds are signed with the project's own key. There is no in-app browser and no X/Facebook tools (removed). Pages that need JavaScript can be read with the optional headless Chromium + Selenium add-on in Termux; pages behind a login are not supported. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#known-limitations).
 
 ## License
 
