@@ -318,7 +318,7 @@ Chat head: Back and Home/Recents collapse the expanded panel back to the head at
 
 ## v1.0.18
 
-- **Crypto tools (Coinbase Exchange).** Revolut's public developer APIs (Business / Merchant / Open Banking) expose
+- **Crypto tools (Coinbase Exchange)**: *historical. All of these, including the live trading tools, were removed in v1.0.49. Verdroid now has no real or paper trading, only backtesting.* Revolut's public developer APIs (Business / Merchant / Open Banking) expose
   accounts, payments and fiat FX — there is **no** crypto trading, order book, candles or spot-order endpoint. Retail
   crypto in the Revolut app has no documented API. Verdroid therefore uses **Coinbase Exchange** for:
   - Public (no key): `crypto_markets`, `crypto_ticker`, `crypto_candles`, `crypto_orderbook`, `crypto_backtest` (local

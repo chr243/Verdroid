@@ -186,7 +186,8 @@ class CryptoHistoryTools(
             put("series", JsonArray(listOf(buildJsonObject { put("name", "equity"); put("values", JsonArray(eq.map { JsonPrimitive(r2(it.second)) })) })))
         })
         csv?.let { put("equity_csv", it.absolutePath) }
-        put("note", "Pass equity_chart to the chart tool to plot it (it can export a PNG). Past performance is not indicative; not financial advice.")
+        put("note", "Pass equity_chart to the chart tool to plot it (it can export a PNG).")
+        put("disclaimer", DISCLAIMER) // always the last field
     }
 
     private fun customTemplate(dl: DownloadResult, from: Long, to: Long) = buildJsonObject {
@@ -241,6 +242,8 @@ print({"total_return_pct": (eq.iloc[-1]-1)*100, "max_drawdown_pct": ((eq.cummax(
         const val MAX_BARS = 500_000L
         const val HARNESS_REL = "backtest/verdroid_backtest.py"
         const val MARK = "@@VERDROID_BACKTEST@@"
+        /** Appended (last field) to every successful backtest result; the agent must repeat it in its reply. */
+        const val DISCLAIMER = "⚠️ Not financial advice. Backtests use past data and can overfit; results don't predict future returns."
         @Volatile private var depsOk = false
         internal const val PREFLIGHT = "python3 -c '${com.verdroid.app.data.tools.TermuxPackages.BACKTEST_IMPORT}' >/dev/null 2>&1 && echo DEPS=1 || echo DEPS=0"
         internal fun preflightOk(stdout: String?) = stdout?.contains("DEPS=1") == true
@@ -299,7 +302,8 @@ print({"total_return_pct": (eq.iloc[-1]-1)*100, "max_drawdown_pct": ((eq.cummax(
                 }
                 put("strategy_file", strategyRel)
                 dl?.let { put("data_sources", JsonArray(it.sources.map(::JsonPrimitive))); put("gaps", it.gaps.size) }
-                put("note", "Signals are applied on the next bar. Beware of overfitting: check other periods/symbols before trusting a result. Not financial advice.")
+                put("note", "Signals are applied on the next bar. Re-test on other periods/symbols before trusting a result.")
+                if (base?.get("ok")?.jsonPrimitive?.booleanOrNull == true) put("disclaimer", DISCLAIMER) // always the last field
             }
         }
 

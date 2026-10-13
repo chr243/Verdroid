@@ -407,7 +407,10 @@ class AgentLoop internal constructor(
               explicit control). Explain the results in plain words (return vs buy & hold, max drawdown, Sharpe, trades,
               exposure), show equity_png/CSV from Output/backtests, then propose one concrete next tweak. Always warn about
               overfitting (re-test on a different period or symbol before trusting it), note that fees/slippage matter, and
-              never present a backtest as a promise or financial advice. If crypto_backtest_script returns needs_setup, do NOT
+              never present a backtest as a promise or financial advice. After every backtest, end your reply with the
+              result's disclaimer line verbatim: "⚠️ Not financial advice. Backtests use past data and can overfit; results
+              don't predict future returns." Verdroid does backtesting only: politely decline to build, run or simulate live
+              or paper trading (no order placement, broker/exchange trading APIs, trading bots or signals to act on). If crypto_backtest_script returns needs_setup, do NOT
               install anything from the chat: tell the user to open Settings → Tools → Available to install and tap Install
               for crypto-backtest (pandas, numpy, matplotlib), then STOP and wait. Do not run crypto_backtest or any other
               fallback unless the user explicitly asks for it. crypto_backtest runs quick built-ins (sma_cross,

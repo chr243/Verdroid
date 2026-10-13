@@ -57,6 +57,8 @@ class BacktestPreflightTest {
         val tl = tool(t)
         val r1 = Json.parseToJsonElement(tl.execute(args)).jsonObject
         assertEquals(true, r1["ok"]!!.jsonPrimitive.boolean)
+        assertEquals(CryptoHistoryTools.DISCLAIMER, r1["disclaimer"]!!.jsonPrimitive.content) // crypto_backtest_script success
+        assertEquals("disclaimer", r1.keys.last())
         tl.execute(args)
         assertEquals(1, t.commands.count { it == CryptoHistoryTools.PREFLIGHT })
         CryptoHistoryTools.resetPreflightCache()
