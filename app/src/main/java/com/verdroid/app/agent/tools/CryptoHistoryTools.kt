@@ -251,8 +251,8 @@ print({"total_return_pct": (eq.iloc[-1]-1)*100, "max_drawdown_pct": ((eq.cummax(
             put("error", "Python libraries for crypto backtesting (pandas, numpy, matplotlib) are not installed.")
             put("needs_setup", true)
             put("tell_user", "Go to Settings → Tools → Available to install and tap Install for crypto-backtest (Crypto backtesting). Then ask me again.")
-            put("meanwhile", "crypto_backtest (built-in strategies sma_cross, ema_cross, rsi, bollinger, buy_hold) works without Python.")
-            put("note", "Do not install packages from the chat (no pip/pkg via termux_run).")
+            put("next_step", "Tell the user exactly that, then STOP and wait for them. Do not run crypto_backtest or any other fallback " +
+                "backtest unless the user explicitly asks for it. Do not install packages from the chat (no pip/pkg via termux_run).")
         }
 
         /** Harness shipped in app resources (src/main/resources/verdroid/verdroid_backtest.py). */

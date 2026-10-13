@@ -165,6 +165,7 @@ class AgentLoopTest {
         assertTrue(p.contains("Phone screen (accessibility)") && p.contains("OTHER Android apps"))
         assertTrue(p.contains("web_fetch") && p.contains("There is no internal browser"))
         assertTrue(p.contains("crypto_backtest_script") && p.contains("generate_signals") && p.contains("overfitting"))
+        assertTrue(p.contains("then STOP and wait") && !p.contains("built-ins meanwhile"))
         assertTrue(p.contains("Prefer English-language sources"))
         for (gone in listOf("web_scrape", "web_click", "web_type", "web_session", "web_screenshot", "x_post", "x_scrape", "fb_",
             "reset_browser", "Firefox", "tbp", "crypto_place_order", "crypto_ticker")) assertFalse(gone, p.contains(gone))

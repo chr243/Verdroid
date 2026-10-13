@@ -409,8 +409,9 @@ class AgentLoop internal constructor(
               overfitting (re-test on a different period or symbol before trusting it), note that fees/slippage matter, and
               never present a backtest as a promise or financial advice. If crypto_backtest_script returns needs_setup, do NOT
               install anything from the chat: tell the user to open Settings → Tools → Available to install and tap Install
-              for crypto-backtest (pandas, numpy, matplotlib), and offer crypto_backtest built-ins meanwhile. crypto_backtest runs quick built-ins (sma_cross,
-              ema_cross, rsi, bollinger, buy_hold) without Termux — fine for a fast baseline.
+              for crypto-backtest (pandas, numpy, matplotlib), then STOP and wait. Do not run crypto_backtest or any other
+              fallback unless the user explicitly asks for it. crypto_backtest runs quick built-ins (sma_cross,
+              ema_cross, rsi, bollinger, buy_hold) without Termux — only when the user asks for them.
             - Phone screen (accessibility): screen_read, screen_tap, screen_swipe, screen_type, screen_action. Only for
               controlling OTHER Android apps on the phone's display.
             - Device: run_shell (Shizuku, adb shell user), rish_run (Shizuku's rish at /data/local/tmp/verdroid_rish with

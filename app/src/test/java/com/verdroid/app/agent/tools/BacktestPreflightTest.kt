@@ -44,7 +44,9 @@ class BacktestPreflightTest {
         val r = Json.parseToJsonElement(tool(t).execute(args)).jsonObject
         assertEquals(true, r["needs_setup"]!!.jsonPrimitive.boolean)
         assertTrue(r["tell_user"]!!.jsonPrimitive.content.contains("Settings → Tools"))
-        assertTrue(r["meanwhile"]!!.jsonPrimitive.content.contains("crypto_backtest"))
+        assertFalse(r.containsKey("meanwhile"))
+        assertTrue(r["next_step"]!!.jsonPrimitive.content.contains("STOP"))
+        assertTrue(r["next_step"]!!.jsonPrimitive.content.contains("unless the user explicitly asks"))
         assertEquals(1, t.commands.size) // only the preflight, no install, no run
         assertFalse(t.commands.any { "pip install" in it || "apt" in it })
     }
