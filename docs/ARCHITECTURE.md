@@ -707,3 +707,13 @@ Chat head: Back and Home/Recents collapse the expanded panel back to the head at
 - **New Settings > Tools package `crypto-backtest`** (`TermuxPackages.CRYPTO_BACKTEST`): it installs prebuilt Termux packages first (`python-numpy`, `matplotlib`, and `python-pandas` from tur-repo), then pip only for whatever is still missing. Detection: `python3 -c 'import pandas, numpy, matplotlib'`.
 - **Preflight in `crypto_backtest_script`:** `CryptoHistoryTools.PREFLIGHT` runs before the first backtest; a positive result is cached for the process. When the libraries are missing it returns `needs_setup` with `tell_user` (Settings → Tools → Install crypto-backtest) and `next_step` (stop and wait; no fallback backtest unless the user asks). It never installs from the chat.
 - **Self-test:** the `backtest_python` check is skipped when the libraries are missing. The system prompt has a matching rule.
+
+## v1.0.49
+
+Released 2026-10-13. It bundles everything above since v1.0.48:
+- **Crypto backtesting:** keyless history cache, the Python strategy harness and `crypto_backtest_script` (with preflight and Settings install), offline `crypto_backtest`, the `crypto-backtest` package. The old Coinbase tools are removed.
+- **Settings > Tools:** collapsible groups with tri-state toggles.
+- **Shared folder:** `Documents/Verdroid/Internal/` with a one-time tidy of loose root files.
+- **Feedback:** the "Feedback / Feature request" row (GitHub issue chooser) and the issue forms, plus the one-time star prompt after the 3rd chat.
+- **Removed screens:** the in-app Debug log and Self-test screens (the `self_test` tool remains).
+- No bridge/-debug APK from this release on.

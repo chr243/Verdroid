@@ -1,0 +1,5 @@
+- Crypto strategy backtesting by chat: the agent writes Python strategies and tests them offline on free historical data (one-tap install in Settings > Tools)
+- Old crypto trading tools removed
+- Settings > Tools grouped into sections with group on/off toggles
+- New Documents/Verdroid/Internal folder keeps agent files out of the way
+- Feedback / Feature request button; Debug log and Self-test screens removed (ask the agent to run a self-test)
