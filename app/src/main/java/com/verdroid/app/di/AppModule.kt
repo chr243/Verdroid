@@ -167,6 +167,16 @@ object AppModule {
             ) +
             // Crypto: Coinbase Exchange market data + optional live trading (place/cancel off by default)
             com.verdroid.app.agent.tools.CryptoToolFactory(cryptoClient, cryptoCreds).tools() +
+            // Keyless history cache (Documents/Verdroid/Internal/market-data) + offline backtests
+            com.verdroid.app.agent.tools.CryptoHistoryTools(
+                downloader = {
+                    val dir = if (sharedFolder.hasAccess() && sharedFolder.ensure()) File(sharedFolder.internal, "market-data")
+                        else File(context.filesDir, "market-data")
+                    com.verdroid.app.agent.tools.CryptoHistoryTools.androidDownloader(dir)
+                },
+                outputDir = { if (sharedFolder.hasAccess() && sharedFolder.ensure()) sharedFolder.output else null },
+                termux = termux, folder = sharedFolder,
+            ).tools() +
             StubTool.all(),
         toolPrefs,
         dynamic = mcp::agentTools,

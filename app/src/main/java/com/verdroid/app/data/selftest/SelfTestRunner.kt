@@ -202,6 +202,15 @@ class SelfTestRunner @Inject constructor(
                 "JGit init + status ok"
             } finally { dir.deleteRecursively() }
         },
+        "crypto_history" to {
+            val d = run("crypto_history_download", args("symbol" to "BTC-USDT", "interval" to "1d", "from" to java.time.LocalDate.now().minusDays(60).toString()))
+            check(d["ok"]?.jsonPrimitive?.booleanOrNull == true) { d.toString().take(200) }
+            val b = run("crypto_backtest", args("symbol" to "BTC-USDT", "interval" to "1d", "from" to java.time.LocalDate.now().minusDays(60).toString(), "strategy" to "sma_cross", "fast" to 5, "slow" to 20))
+            check("total_return_pct" in b) { b.toString().take(200) }
+            run("crypto_history_list", args())
+            check(com.verdroid.app.agent.tools.CryptoHistoryTools.harnessSource().contains("generate_signals")) { "backtest harness missing from the app" }
+            "60d BTC-USDT cached + offline backtest ok; Python harness bundled"
+        },
         "crypto_public" to { run("crypto_ticker", args("pair" to "BTC-USD")); "Coinbase public ticker ok" },
         "updater" to {
             if (!updater.enabled.value) throw SkipCheck("GitHub update checks are off (Settings → App)")

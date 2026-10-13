@@ -73,25 +73,4 @@ class CryptoToolsTest {
         assertEquals("ord-1", r["id"]!!.jsonPrimitive.content)
         assertTrue(posted!!.contains("\"side\":\"buy\""))
     }
-
-    @Test fun `backtest runs on candle transport`() = runBlocking {
-        val client = CoinbaseExchangeClient()
-        // 80 daily candles, rising
-        // Fall then rise (newest first like Coinbase) so SMA crossover fires.
-        val series = (0 until 40).map { i -> 140.0 - i } + (0 until 50).map { i -> 100.0 + i * 1.5 }
-        val rows = series.mapIndexed { i, c ->
-            val t = 1_700_000_000 + i * 86_400
-            "[$t,${c - 1},${c + 1},$c,$c,1]"
-        }.reversed().joinToString(",")
-        client.transport = { _, path, _ ->
-            assertTrue(path.contains("/candles"))
-            "[$rows]"
-        }
-        val r = obj(byName("crypto_backtest", client).execute(buildJsonObject {
-            put("pair", "BTC-USD"); put("fast", 5); put("slow", 20); put("fee_pct", 0.0)
-        }))
-        assertEquals(true, r["ok"]!!.jsonPrimitive.boolean)
-        assertTrue(r["total_return_pct"]!!.jsonPrimitive.double > 0)
-        assertTrue(r["equity_chart"]!!.jsonObject["type"]!!.jsonPrimitive.content == "line")
-    }
 }

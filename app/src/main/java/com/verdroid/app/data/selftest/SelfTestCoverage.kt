@@ -10,7 +10,7 @@ object SelfTestCoverage {
     val CHECKS = listOf(
         "tool_registry", "json", "room", "settings", "agents_md", "memory", "skills", "sandbox", "shared_folder",
         "network", "providers", "web_fetch", "web_search", "termux", "python", "pdf", "shizuku", "rish", "accessibility",
-        "overlay", "git", "crypto_public", "updater", "notifications", "font_scale", "feedback", "internal_folder",
+        "overlay", "git", "crypto_public", "updater", "notifications", "font_scale", "feedback", "internal_folder", "crypto_history",
     )
 
     val TOOL_CHECKS: Map<String, String> = mapOf(
@@ -30,7 +30,8 @@ object SelfTestCoverage {
         "skill_list" to "skills", "skill_get" to "skills", "skill_save" to "skills", "skill_edit" to "skills", "skill_delete" to "skills",
         "chart" to "tool_registry",
         "crypto_markets" to "crypto_public", "crypto_ticker" to "crypto_public", "crypto_candles" to "crypto_public",
-        "crypto_orderbook" to "crypto_public", "crypto_backtest" to "crypto_public",
+        "crypto_orderbook" to "crypto_public", "crypto_backtest" to "crypto_history",
+        "crypto_history_download" to "crypto_history", "crypto_backtest_script" to "crypto_history", "crypto_history_list" to "crypto_history",
     )
 
     val EXEMPT: Map<String, String> = mapOf(

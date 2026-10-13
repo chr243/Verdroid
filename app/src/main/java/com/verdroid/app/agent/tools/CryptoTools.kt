@@ -18,8 +18,7 @@ class CryptoToolFactory(
     fun tools(): List<AgentTool> = listOf(
         markets(), ticker(), candles(), orderBook(),
         balance(), orderStatus(), placeOrder(), cancelOrder(),
-        backtest(),
-    )
+    ) // crypto_backtest moved to CryptoHistoryTools (offline, cached history)
 
     private fun markets() = object : AgentTool {
         override val name = "crypto_markets"
@@ -203,56 +202,6 @@ class CryptoToolFactory(
             val r = client.deleteAuth("/orders/$id")
             buildJsonObject { put("ok", true); put("cancelled", r); put("order_id", id) }.toString()
         } catch (e: Exception) { errorJson(e.message ?: "crypto_cancel_order failed") }
-        }
-    }
-
-    private fun backtest() = object : AgentTool {
-        override val name = "crypto_backtest"
-        override val description = "Run a local SMA-crossover backtest on Coinbase Exchange candles (public). Returns total return %, max drawdown %, win rate, trade list, and a chart-ready equity series. No API key, no live orders."
-        override val parameters = schema(listOf("pair"),
-            "pair" to prop("string", "Product id, e.g. BTC-USD"),
-            "granularity_seconds" to prop("integer", "Candle size (default 86400 = 1d)"),
-            "fast" to prop("integer", "Fast SMA period (default 10)"),
-            "slow" to prop("integer", "Slow SMA period (default 30)"),
-            "fee_pct" to prop("number", "Fee fraction per fill, default 0.001 (=0.1%)"),
-            "limit" to prop("integer", "Candles to fetch (default 300, max 300)"))
-        override suspend fun execute(args: JsonObject): String {
-            return try {
-            val pair = pair(args)
-            val gran = (args.int("granularity_seconds") ?: 86_400)
-            if (gran !in CoinbaseExchangeClient.GRANULARITIES)
-                return errorJson("granularity_seconds must be one of ${CoinbaseExchangeClient.GRANULARITIES.sorted()}")
-            val limit = (args.int("limit") ?: 300).coerceIn(50, 300)
-            val fast = args.int("fast") ?: 10
-            val slow = args.int("slow") ?: 30
-            val fee = (args["fee_pct"] as? JsonPrimitive)?.doubleOrNull ?: 0.001
-            val candles = CoinbaseExchangeClient.parseCandles(client.get("/products/$pair/candles?granularity=$gran")).takeLast(limit)
-            val r = CryptoBacktest.smaCrossover(candles, pair, fast, slow, fee)
-            // Downsample equity for a chart (≤ 60 points).
-            val step = maxOf(1, r.equity.size / 60)
-            val eq = r.equity.filterIndexed { i, _ -> i % step == 0 || i == r.equity.lastIndex }
-            buildJsonObject {
-                put("ok", true); put("strategy", r.strategy); put("pair", r.pair); put("candles", r.candles)
-                put("trades", r.trades.size)
-                put("total_return_pct", round2(r.totalReturnPct))
-                put("max_drawdown_pct", round2(r.maxDrawdownPct))
-                put("win_rate_pct", round2(r.winRatePct))
-                put("trade_list", JsonArray(r.trades.takeLast(20).map { t -> buildJsonObject {
-                    put("entry_time", t.entryTime); put("exit_time", t.exitTime)
-                    put("entry", t.entryPrice); put("exit", t.exitPrice)
-                    put("return_pct", round2(t.returnPct)); put("side", t.side)
-                } }))
-                put("equity_chart", buildJsonObject {
-                    put("type", "line"); put("title", "Equity · ${r.strategy} · $pair")
-                    put("x_label", "time"); put("y_label", "equity")
-                    put("labels", JsonArray(eq.map { JsonPrimitive(it.first.toString()) }))
-                    put("series", JsonArray(listOf(buildJsonObject {
-                        put("name", "equity"); put("values", JsonArray(eq.map { JsonPrimitive(round2(it.second)) }))
-                    })))
-                })
-                put("note", "Pass equity_chart to the chart tool to plot it. This is a toy backtest, not financial advice.")
-            }.toString()
-        } catch (e: Exception) { errorJson(e.message ?: "crypto_backtest failed") }
         }
     }
 

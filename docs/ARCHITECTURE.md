@@ -669,3 +669,24 @@ Chat head: Back and Home/Recents collapse the expanded panel back to the head at
 
 - **Font size** (5e2e00f): `FontScale` (85–130% in 5% steps, default 100%) is stored in `ThemeStore` (`theme_prefs/font_scale`). `VerdroidTheme` provides `LocalDensity` with fontScale = system × app, so it applies to MainActivity, BubbleActivity and the floating chat window. Settings → Theme has a slider with a live preview and Reset. Self-test check `font_scale`.
 - Releases from now on also carry the info-only bridge `Verdroid-v<ver>-debug.apk` for old debug installs (branch `bridge-debug`).
+
+
+## Crypto backtesting (unreleased, after v1.0.48)
+
+- **History cache** (`data/crypto/history/MarketHistory.kt`):
+  - `HistorySource` adapters, all keyless, tried in this order:
+    - `BinanceHistory`: `data-api.binance.vision/api/v3/klines`, 1000 per page; works where `api.binance.com` returns 451.
+    - `CoinbaseHistory`: 300-candle windows; fewer intervals.
+    - `KrakenHistory`: last 720 candles only.
+  - `CandleCache` keeps CSVs at `Internal/market-data/<BASE-QUOTE>_<interval>.csv` (open time in epoch s, UTC), or under `filesDir/market-data` without shared access. It handles merge/dedupe (newer wins), `missing()` (only before the first or after the last cached candle) and `gaps()`.
+  - `HistoryDownloader` fetches only the missing ranges, falls back per range, and reports the sources used, gaps and errors.
+- **Main flow, conversational:** the agent clarifies entry/exit/risk, writes `Internal/strategies/<name>.py` with `generate_signals(df, params)`, and runs `crypto_backtest_script`.
+  - The tool writes the shipped harness (`src/main/resources/verdroid/verdroid_backtest.py`) to `Internal/backtest/` on every run, downloads missing data, then runs it in Termux.
+  - The harness shifts positions one bar (no lookahead), charges fee + slippage on turnover, and scales by `position_percent` (`allow_short` optional).
+  - Metrics: return, CAGR, max drawdown, Sharpe (annualised by bar size, rf 0), trades, win rate, exposure, buy & hold. It writes `_equity.csv` and a matplotlib PNG to `Output/backtests/`.
+  - Result line marker: `@@VERDROID_BACKTEST@@`. Missing pandas gives a hint to install via `termux_run` with consent. Strategies that pip-install go through `InstallConsent`.
+- **Built-ins:** `crypto_backtest` runs `BacktestEngine` in Kotlin, offline on the cache. Long-only; next-bar-open fills; strategies sma_cross / ema_cross / rsi / bollinger / buy_hold.
+  - Legacy args `pair`, `granularity_seconds`, `fee_pct` (a fraction) are still accepted.
+  - `strategy=custom` returns the CSV path and a pandas template.
+- **Self-test:** check `crypto_history` downloads 60 days of BTC-USDT 1d, runs a built-in backtest, lists the cache and confirms the harness is bundled.
+- **System prompt:** a backtesting section with the questions to ask first, then the write → run → explain → iterate loop, plus overfitting / not-advice warnings.
