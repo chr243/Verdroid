@@ -18,11 +18,11 @@ body:
     id: device
     attributes:
       label: App and device
-      description: Filled in automatically when sent from the app (Settings → App → Send feedback).
+      description: Filled in automatically when sent from the app (Settings → App → Feedback / Feature request).
       placeholder: "Verdroid 1.0.x, Android 14, Xiaomi …"
   - type: textarea
     id: logs
     attributes:
       label: Logs (optional)
-      description: Settings → App → Debug log / Self-test → Copy, then paste here. Remove anything private (keys!).
+      description: Settings → App → Self-test → Copy, then paste here. Remove anything private (keys!).
       render: text

@@ -188,8 +188,9 @@ class SelfTestRunner @Inject constructor(
         },
         "feedback" to {
             val info = com.verdroid.app.data.feedback.FeedbackLinks.current(context)
-            val url = com.verdroid.app.data.feedback.FeedbackLinks.bugUrl(info)
-            check(url.startsWith("https://github.com/chr243/Verdroid/issues/new?template=bug_report.yml")) { url }
+            val url = com.verdroid.app.data.feedback.FeedbackLinks.CHOOSER
+            check(url == "https://github.com/chr243/Verdroid/issues/new/choose") { url }
+            check(info.startsWith("Verdroid ")) { info }
             val star = com.verdroid.app.data.feedback.StarPromptStore.get(context)
             "issue links ok; chats created ${star.created}, star prompt ${if (star.done) "done" else "not shown yet"}"
         },

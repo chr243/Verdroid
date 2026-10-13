@@ -9,6 +9,8 @@ import kotlinx.coroutines.flow.asStateFlow
 /** GitHub new-issue links with app/device info prefilled (issue forms take field values as `<field id>=` params). */
 object FeedbackLinks {
     const val REPO = "https://github.com/chr243/Verdroid"
+    /** GitHub issue template chooser (bug report / feature request); used by Settings → App. */
+    const val CHOOSER = "$REPO/issues/new/choose"
 
     fun deviceInfo(appVersion: String, sdk: Int, release: String, manufacturer: String, model: String): String =
         "Verdroid $appVersion, Android $release (API $sdk), $manufacturer $model"

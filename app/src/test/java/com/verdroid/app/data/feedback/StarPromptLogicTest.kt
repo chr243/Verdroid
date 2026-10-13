@@ -21,4 +21,5 @@ class StarPromptLogicTest {
     }
     @Test fun deviceInfo() = assertEquals("Verdroid 1.0.48, Android 14 (API 34), Xiaomi 23078PND5G",
         FeedbackLinks.deviceInfo("1.0.48", 34, "14", "Xiaomi", "23078PND5G"))
+    @Test fun chooserUrl() = assertEquals("https://github.com/chr243/Verdroid/issues/new/choose", FeedbackLinks.CHOOSER)
 }

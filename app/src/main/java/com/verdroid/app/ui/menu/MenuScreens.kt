@@ -81,9 +81,7 @@ fun SettingsScreen(onNavigate: (String) -> Unit, onBack: () -> Unit, unreadNotif
             SettingsGroup("Appearance", listOf(item("Theme", "Light / dark mode and color palette", Routes.THEME)))
             SettingsGroup("App", listOf({ i -> AppUpdateRow(vm.updater, i) },
                 item("Self-test", "Check every feature on this phone (pass/fail/skip report, copy/share, saved to Documents/Verdroid)", Routes.SELF_TEST),
-                { i -> LinkItem("Send feedback", "Report a bug or share feedback on GitHub (app and device info filled in)", i) { c -> com.verdroid.app.data.feedback.FeedbackLinks.bugUrl(com.verdroid.app.data.feedback.FeedbackLinks.current(c)) } },
-                { i -> LinkItem("Request a feature", "Suggest an idea on GitHub", i) { c -> com.verdroid.app.data.feedback.FeedbackLinks.featureUrl(com.verdroid.app.data.feedback.FeedbackLinks.current(c)) } },
-                item("Debug log", "Recent floating-window events (Home/Recents signals) with Copy", Routes.DEBUG_LOG)))
+                { i -> LinkItem("Feedback / Feature request", "Report a bug or suggest an idea on GitHub", i) { com.verdroid.app.data.feedback.FeedbackLinks.CHOOSER } }))
             Text("Verdroid v${com.verdroid.app.BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 28.dp, top = 16.dp))
         }
