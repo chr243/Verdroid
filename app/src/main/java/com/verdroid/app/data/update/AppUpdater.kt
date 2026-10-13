@@ -83,11 +83,13 @@ class AppUpdater @Inject constructor(@ApplicationContext private val context: Co
 
     /** Silent check on app start, at most every 6 h; errors are ignored. */
     suspend fun autoCheck() {
+        if (BuildConfig.BRIDGE) return // bridge: never self-update (no debug asset on later releases → would offer a release APK that can't install)
         if (!UpdateLogic.autoCheckDue(prefs.getLong(KEY_LAST_CHECK, 0), System.currentTimeMillis())) return
         runCatching { check(silent = true) }
     }
 
     suspend fun check(silent: Boolean = false): UpdateState = lock.withLock {
+        if (BuildConfig.BRIDGE) return UpdateState.Error("This build can't update itself. Uninstall it and install the signed release from GitHub.", null).also { _state.value = it }
         if (!silent) _state.value = UpdateState.Checking
         val r = try {
             withContext(Dispatchers.IO) {

@@ -52,7 +52,13 @@ android {
         }
     }
     buildTypes {
+        // Bridge build (branch bridge-debug): `./gradlew assembleDebug -Pbridge=true` → debug-signed APK that only old
+        // debug installs (<= v1.0.39) pick up via their updater; it tells users to reinstall the signed release.
+        debug {
+            buildConfigField("boolean", "BRIDGE", (project.findProperty("bridge") == "true").toString())
+        }
         release {
+            buildConfigField("boolean", "BRIDGE", "false")
             isMinifyEnabled = true
             isShrinkResources = true
             signingConfig = if (releaseSigning != null) signingConfigs.getByName("release") else signingConfigs.getByName("debug")

@@ -85,6 +85,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             VerdroidTheme {
                 VerdroidRoot(openTaskId = openTaskId.value, onOpenTaskConsumed = { openTaskId.value = null })
+                if (BuildConfig.BRIDGE) com.verdroid.app.ui.bridge.BridgeNotice()
             }
         }
     }

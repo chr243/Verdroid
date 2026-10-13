@@ -54,3 +54,14 @@ class UpdateLogicTest {
         assertTrue(UpdateLogic.autoCheckDue(now + h, now)) // clock went backwards
     }
 }
+
+class BridgeAssetTest {
+    private val assets = listOf(
+        ApkAsset("Verdroid-v1.0.47.apk", "https://x/r.apk", 10),
+        ApkAsset("Verdroid-v1.0.47-debug.apk", "https://x/d.apk", 10),
+    )
+    @org.junit.Test fun releaseIgnoresBridge() =
+        org.junit.Assert.assertEquals("Verdroid-v1.0.47.apk", UpdateLogic.pickAsset(assets, "release")?.name)
+    @org.junit.Test fun debugPicksBridge() =
+        org.junit.Assert.assertEquals("Verdroid-v1.0.47-debug.apk", UpdateLogic.pickAsset(assets, "debug")?.name)
+}
