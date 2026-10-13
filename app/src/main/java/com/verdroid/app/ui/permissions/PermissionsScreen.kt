@@ -46,7 +46,7 @@ object PermissionCatalog {
     )
 
     fun rows(s: Status): List<PermissionRow> = listOf(
-        PermissionRow("all_files", "All files access", "Documents/Verdroid (Input/, Output/) and the workspace_* tools", s.allFiles, "Grant"),
+        PermissionRow("all_files", "All files access", "Documents/Verdroid (Input/, Output/, Internal/) and the workspace_* tools", s.allFiles, "Grant"),
         PermissionRow("notifications", "Notifications", "Task finished / rate-limit alerts, chat heads (Bubbles), keep-alive", s.notifications, "Grant"),
         PermissionRow("termux", "Run commands in Termux", "termux_run, Termux add-ons, selenium_* and termux_python",
             s.termuxRunCommand, if (!s.termuxInstalled) "Get Termux" else "Grant"),

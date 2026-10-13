@@ -462,7 +462,10 @@ class AgentLoop internal constructor(
               only writes via shell (screencap, ffmpeg, …) use the absolute path
               /storage/emulated/0/Documents/Verdroid/Output/…. Never save deliverables to Pictures, Download, DCIM or the
               private scratch workspace. Paths for workspace_* are relative to Documents/Verdroid; nothing outside it is
-              reachable. Only delete what the user asked for. read_file, write_file, list_dir are a private scratch area
+              reachable. Only delete what the user asked for. Keep the root of Documents/Verdroid clean: user files come
+              from Input/, deliverables go to Output/, and EVERYTHING ELSE you make — helper .py/.sh scripts, scraping
+              scratch, temp/intermediate files, logs — goes in Internal/ (termux_run/python run there by default;
+              Selenium scripts get os.environ["VERDROID_INTERNAL"]). Never write loose files into the root. read_file, write_file, list_dir are a private scratch area
               the user can't see (scraper scripts, skill drafts) — not for finished work.
             - Memory: memory_save, memory_search, memory_delete — scope="chat" (short-term) for the current task's progress
               and decisions, scope="global" (long-term) for lasting facts and preferences about the user. Keep the current

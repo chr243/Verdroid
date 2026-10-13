@@ -42,8 +42,9 @@ class VerdroidApp : Application(), Configuration.Provider {
         removeLegacyAdb()
         // v1.0.45: custom:<model> → prov:<provider>:<model> in Model priority (once; no-op afterwards).
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch { runCatching { providerMigration.run() } }
-        // Documents/Verdroid with Input/ and Output/ (no-op until All files access is granted; Tools re-checks it).
-        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch { runCatching { sharedFolder.ensure() } }
+        // Documents/Verdroid with Input/, Output/, Internal/ (no-op until All files access is granted; Tools re-checks it),
+        // then a one-time move of loose agent scripts/temp files from the root into Internal/.
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch { runCatching { sharedFolder.ensure(); sharedFolder.migrateStrayRootFiles() } }
         // v0.9.19: the keep-alive service runs only while a task is running (no idle notification).
         keepAlive.watch(agent.runningTaskIds, CoroutineScope(SupervisorJob() + Dispatchers.Main))
     }

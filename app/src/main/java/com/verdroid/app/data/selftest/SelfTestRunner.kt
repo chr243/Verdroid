@@ -179,6 +179,13 @@ class SelfTestRunner @Inject constructor(
             check(com.verdroid.app.ui.theme.FontScale.clamp(5f) == com.verdroid.app.ui.theme.FontScale.MAX) { "clamp broken" }
             "font size ${com.verdroid.app.ui.theme.FontScale.label(v)}"
         },
+        "internal_folder" to {
+            if (!shared.hasAccess()) throw SkipCheck("All files access not granted")
+            check(shared.ensure()) { "could not create Documents/Verdroid/Internal" }
+            val probe = java.io.File(shared.internal, ".selftest-probe")
+            probe.writeText("ok"); check(probe.readText() == "ok") { "read back mismatch" }; probe.delete()
+            "Internal/ exists and is writable"
+        },
         "feedback" to {
             val info = com.verdroid.app.data.feedback.FeedbackLinks.current(context)
             val url = com.verdroid.app.data.feedback.FeedbackLinks.bugUrl(info)

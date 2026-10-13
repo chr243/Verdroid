@@ -9,7 +9,7 @@ import kotlinx.serialization.json.*
  */
 class TermuxRunTool(private val termux: TermuxRunner) : AgentTool {
     override val name = "termux_run"
-    override val description = "Run a bash command inside Termux (cwd ~/verdroid-work) to use Termux packages such as ffmpeg, " +
+    override val description = "Run a bash command inside Termux (cwd Documents/Verdroid/Internal) to use Termux packages such as ffmpeg, " +
         "magick (imagemagick), yt-dlp, git, node, jq, curl, pandoc — whichever the user installed in Settings > Tools. " +
         "Returns exit_code, stdout, stderr as soon as the command finishes (timeout_seconds is only a cap, max 600 s; " +
         "background jobs left running are stopped when the command ends). Installing packages (pip/apt/pkg/npm install, " +
@@ -61,8 +61,12 @@ class TermuxRunTool(private val termux: TermuxRunner) : AgentTool {
          * command writes to temp files with stdin from /dev/null, the wrapper waits only for the command itself, cleans up
          * leftovers in its process group (timeout's pid == pgid), then prints the captured output and exits at once.
          */
+        /** cwd: Documents/Verdroid/Internal (scripts/temp visible but out of the way); Termux home if storage isn't set up. */
+        const val WORKDIR = "{ mkdir -p /storage/emulated/0/Documents/Verdroid/Internal 2>/dev/null && " +
+            "cd /storage/emulated/0/Documents/Verdroid/Internal; } || { mkdir -p ~/verdroid-work && cd ~/verdroid-work; } || exit 1\n"
+
         internal fun script(command: String, timeoutS: Int): String =
-            "mkdir -p ~/verdroid-work && cd ~/verdroid-work || exit 1\n" + capped("bash -lc " + shellQuote(command), timeoutS)
+            WORKDIR + capped("bash -lc " + shellQuote(command), timeoutS)
 
         /**
          * Runs the shell fragment [cmdline] under `timeout -k [grace] [timeoutS]` so that the Termux result comes back as soon

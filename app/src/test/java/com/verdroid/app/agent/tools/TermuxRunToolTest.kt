@@ -39,7 +39,7 @@ class TermuxRunToolTest {
         assertEquals("warn", o["stderr"]!!.jsonPrimitive.content)
         val (cmd, timeoutMs) = t.commands.single()
         assertTrue(cmd, cmd.contains("timeout -k 5 30 bash -lc 'echo '\\''hi'\\''' </dev/null"))
-        assertTrue(cmd.startsWith("mkdir -p ~/verdroid-work && cd ~/verdroid-work"))
+        assertTrue(cmd.startsWith(TermuxRunTool.WORKDIR))
         assertEquals(45_000L, timeoutMs)
     }
 

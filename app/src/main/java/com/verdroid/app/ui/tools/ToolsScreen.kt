@@ -201,7 +201,7 @@ private fun SharedFolderCard(s: StorageSetup, onGrant: () -> Unit) {
             SetupLine("1. All files access", s.access) {
                 if (!s.access) OutlinedButton(onClick = onGrant) { Text("Grant") }
             }
-            SetupLine("2. Documents/Verdroid with Input/ and Output/", s.exists) {}
+            SetupLine("2. Documents/Verdroid with Input/, Output/ and Internal/", s.exists) {}
         }
     }
 }

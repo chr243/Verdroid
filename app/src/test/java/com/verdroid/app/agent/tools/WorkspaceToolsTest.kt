@@ -78,7 +78,7 @@ class WorkspaceToolsTest {
 
         val ls = obj(l.execute(args()))
         val names = ls["entries"]!!.jsonArray.map { it.jsonObject["path"]!!.jsonPrimitive.content }
-        assertEquals(listOf("Input", "Output"), names)
+        assertEquals(listOf("Input", "Internal", "Output"), names)
         val deep = obj(l.execute(args("recursive" to true)))["entries"]!!.jsonArray.map { it.jsonObject["path"]!!.jsonPrimitive.content }
         assertTrue("Output/sub/report.md" in deep)
 

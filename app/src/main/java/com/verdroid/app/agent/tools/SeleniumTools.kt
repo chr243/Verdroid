@@ -181,9 +181,9 @@ class TermuxPythonTool(
             val safeName = fileName.replace(Regex("[^A-Za-z0-9._-]"), "_")
             val tmp = "\"${'$'}{TMPDIR:-${'$'}PREFIX/tmp}/verdroid-scripts\""
             return VerdroidSeleniumPy.installCommand() + "\n" +
-                "mkdir -p $tmp ~/verdroid-work && cd ~/verdroid-work\n" +
+                "mkdir -p $tmp\n" + TermuxRunTool.WORKDIR +
                 "echo " + Base64.getEncoder().encodeToString(script) + " | base64 -d > $tmp/$safeName\n" +
-                "export VERDROID_OUTPUT=${SharedFolder.DISPLAY_PATH}/Output VERDROID_INPUT=${SharedFolder.DISPLAY_PATH}/Input " +
+                "export VERDROID_OUTPUT=${SharedFolder.DISPLAY_PATH}/Output VERDROID_INPUT=${SharedFolder.DISPLAY_PATH}/Input VERDROID_INTERNAL=${SharedFolder.DISPLAY_PATH}/Internal " +
                 "PYTHONPATH=${VerdroidSeleniumPy.DIR}${'$'}{PYTHONPATH:+:${'$'}PYTHONPATH}\n" +
                 TermuxRunTool.capped("python3 $tmp/$safeName " + argv.joinToString(" ") { TermuxRunTool.shellQuote(it) }, timeoutS)
         }
