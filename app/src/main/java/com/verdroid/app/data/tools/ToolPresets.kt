@@ -9,25 +9,30 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Per-chat tool presets (chat ⋮ menu → Tool presets). Each preset is a category of tools the user can switch off for
- * one chat; everything is on by default. Tools outside every preset (memory, skills, charts, crypto, MCP) are never
- * affected here — they follow Settings > Tools only.
+ * Per-chat tool presets (chat ⋮ menu → Tool presets). Each preset mirrors one Settings > Tools group
+ * ([ToolGroups.ORDER], same ids and titles, so the two stay in sync); the user can switch a group off for one chat.
+ * Everything is on by default. Memory & skills and MCP servers are never affected here — they follow Settings > Tools only.
+ *
+ * Migration: only the presets a chat switched OFF are persisted (by enum name). Old names map onto the new groups:
+ * DEVICE → SYSTEM + GIT, FILES → FILES + PDF (it covered PDFs/ebooks), WEB/TERMUX unchanged. Groups added later
+ * (Crypto, Charts & other) start ON for existing chats — the same as before, when those tools were not gated.
  */
-enum class ToolPreset(val label: String, val description: String) {
-    WEB("Web", "web_search, web_fetch, headless Chromium (selenium_*)"),
-    FILES("Files", "Documents/Verdroid (workspace_*), private scratch files, PDFs, ebook translation"),
-    TERMUX("Termux", "termux_run, termux_python"),
-    DEVICE("Device", "Shizuku shell, rish, screen control (accessibility), Git");
+enum class ToolPreset(val groupId: String, val description: String) {
+    FILES("files", "Documents/Verdroid (workspace_*), private scratch files"),
+    WEB("web", "web_search, web_fetch, headless Chromium (selenium_*)"),
+    TERMUX("termux", "termux_run, termux_python"),
+    PDF("pdf", "PDF read/edit (pdf_*), ebook translation"),
+    SYSTEM("system", "Shizuku shell, rish, screen control (accessibility)"),
+    GIT("git", "git_* (JGit)"),
+    CRYPTO("crypto", "Backtesting: history download, backtests, scripts"),
+    OTHER("other", "Charts and other tools");
+
+    /** Same title as the Settings > Tools group. */
+    val label: String get() = ToolGroups.ORDER.first { it.id == groupId }.title
 
     companion object {
-        /** The preset a tool belongs to, or null for tools no preset controls. */
-        fun of(tool: String): ToolPreset? = when {
-            tool in WEB_TOOLS || tool.startsWith("selenium_") -> WEB
-            tool in FILE_TOOLS || tool.startsWith("workspace_") || tool.startsWith("pdf_") -> FILES
-            tool == "termux_run" || tool == "termux_python" -> TERMUX
-            tool in DEVICE_TOOLS || tool.startsWith("screen_") || tool.startsWith("git_") -> DEVICE
-            else -> null
-        }
+        /** The preset a tool belongs to (its Settings group), or null for always-on groups (memory/skills, MCP). */
+        fun of(tool: String): ToolPreset? = ToolGroups.groupOf(tool).let { g -> entries.firstOrNull { it.groupId == g } }
 
         /** True unless [tool] belongs to a preset in [off]. */
         fun allowed(tool: String, off: Set<ToolPreset>): Boolean = off.isEmpty() || of(tool)?.let { it !in off } ?: true
@@ -39,11 +44,12 @@ enum class ToolPreset(val label: String, val description: String) {
                 "another way (e.g. a shell or another tool). If the task needs them, tell the user which preset to turn on."
 
         fun encode(off: Set<ToolPreset>): Set<String> = off.map { it.name }.toSet()
-        fun decode(raw: Set<String>?): Set<ToolPreset> = raw.orEmpty().mapNotNull { n -> entries.firstOrNull { it.name == n } }.toSet()
+        fun decode(raw: Set<String>?): Set<ToolPreset> = raw.orEmpty().flatMap { n ->
+            LEGACY[n] ?: listOfNotNull(entries.firstOrNull { it.name == n })
+        }.toSet()
 
-        private val WEB_TOOLS = setOf("web_search", "web_fetch")
-        private val FILE_TOOLS = setOf("read_file", "write_file", "list_dir", "ebook_translate")
-        private val DEVICE_TOOLS = setOf("run_shell", "rish_run")
+        /** Persisted names from before presets mirrored the Settings groups. */
+        private val LEGACY = mapOf("DEVICE" to listOf(SYSTEM, GIT), "FILES" to listOf(FILES, PDF))
     }
 }
 

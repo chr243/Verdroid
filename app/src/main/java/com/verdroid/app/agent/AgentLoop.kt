@@ -501,7 +501,7 @@ class AgentLoop internal constructor(
 
         /** [SYSTEM_PROMPT] + [TOOL_GROUPS] + the English-sources rule. */
         fun systemPrompt(toolNames: Collection<String> = emptyList()): String = SYSTEM_PROMPT + "\n" + TOOL_GROUPS +
-            (if (toolNames.any { it.startsWith("crypto_backtest") }) "\n" + BACKTEST_GUIDANCE else "") + "\n" + ENGLISH_SOURCES
+            (if (toolNames.any { it.startsWith("crypto_") }) "\n" + BACKTEST_GUIDANCE else "") + "\n" + ENGLISH_SOURCES
     }
 }
 

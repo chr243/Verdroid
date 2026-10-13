@@ -19,13 +19,14 @@ class ToolPresetsTest {
         assertEquals(ToolPreset.WEB, ToolPreset.of("web_search"))
         assertEquals(ToolPreset.WEB, ToolPreset.of("selenium_open"))
         assertEquals(ToolPreset.FILES, ToolPreset.of("workspace_read"))
-        assertEquals(ToolPreset.FILES, ToolPreset.of("pdf_merge"))
-        assertEquals(ToolPreset.FILES, ToolPreset.of("ebook_translate"))
+        assertEquals(ToolPreset.PDF, ToolPreset.of("pdf_merge"))
+        assertEquals(ToolPreset.PDF, ToolPreset.of("ebook_translate"))
         assertEquals(ToolPreset.TERMUX, ToolPreset.of("termux_python"))
-        assertEquals(ToolPreset.DEVICE, ToolPreset.of("run_shell"))
-        assertEquals(ToolPreset.DEVICE, ToolPreset.of("screen_tap"))
-        assertEquals(ToolPreset.DEVICE, ToolPreset.of("git_push"))
-        listOf("memory_save", "skill_get", "chart", "crypto_backtest", "mcp__x__y").forEach {
+        assertEquals(ToolPreset.SYSTEM, ToolPreset.of("run_shell"))
+        assertEquals(ToolPreset.SYSTEM, ToolPreset.of("screen_tap"))
+        assertEquals(ToolPreset.GIT, ToolPreset.of("git_push"))
+        assertEquals(ToolPreset.OTHER, ToolPreset.of("chart"))
+        listOf("memory_save", "skill_get", "mcp__x__y").forEach {
             assertNull(it, ToolPreset.of(it)); assertTrue(ToolPreset.allowed(it, ToolPreset.entries.toSet()))
         }
     }
@@ -33,8 +34,8 @@ class ToolPresetsTest {
     @Test fun `all on by default and the prompt note only appears when something is off`() {
         assertTrue(ToolPreset.allowed("web_search", emptySet()))
         assertEquals("", ToolPreset.promptNote(emptySet()))
-        val note = ToolPreset.promptNote(setOf(ToolPreset.DEVICE, ToolPreset.WEB))
-        assertTrue(note, note.contains("Web, Device"))
+        val note = ToolPreset.promptNote(setOf(ToolPreset.SYSTEM, ToolPreset.WEB))
+        assertTrue(note, note.contains("Web, Shizuku & phone screen"))
         assertEquals(setOf(ToolPreset.TERMUX), ToolPreset.decode(ToolPreset.encode(setOf(ToolPreset.TERMUX)) + "BOGUS"))
     }
 
@@ -50,5 +51,48 @@ class ToolPresetsTest {
         assertFalse(reg.execute("web_search", "{}", 8).isError)
         off.clear()
         assertFalse(reg.execute("web_search", "{}", 7).isError)
+    }
+
+    @Test fun `crypto preset covers every crypto tool and is part of All`() {
+        listOf("crypto_history_download", "crypto_history_list", "crypto_backtest", "crypto_backtest_script").forEach {
+            assertEquals(it, ToolPreset.CRYPTO, ToolPreset.of(it))
+            assertFalse(ToolPreset.allowed(it, setOf(ToolPreset.CRYPTO)))
+            assertTrue(ToolPreset.allowed(it, setOf(ToolPreset.WEB)))
+        }
+        // Every registered crypto tool (self-test coverage list) must be gated by the preset.
+        com.verdroid.app.data.selftest.SelfTestCoverage.TOOL_CHECKS.keys.filter { it.startsWith("crypto_") }
+            .forEach { assertEquals(it, ToolPreset.CRYPTO, ToolPreset.of(it)) }
+        assertTrue(ToolPreset.CRYPTO in ToolPreset.entries)
+        assertEquals("Crypto backtesting", ToolPreset.CRYPTO.label)
+    }
+
+    @Test fun `old persisted presets migrate with crypto on`() {
+        // A chat saved before CRYPTO existed with All off stored only the four old presets.
+        val old = ToolPreset.decode(setOf("WEB", "FILES", "TERMUX", "DEVICE"))
+        assertEquals(setOf(ToolPreset.WEB, ToolPreset.FILES, ToolPreset.PDF, ToolPreset.TERMUX, ToolPreset.SYSTEM, ToolPreset.GIT), old)
+        assertTrue(ToolPreset.allowed("chart", old))
+        assertTrue(ToolPreset.allowed("crypto_backtest", old))
+        assertFalse(ToolPreset.allowed("web_search", old))
+        assertTrue(ToolPreset.allowed("crypto_backtest", ToolPreset.decode(null)))
+        assertTrue(ToolPreset.promptNote(setOf(ToolPreset.CRYPTO)).contains("Crypto"))
+    }
+
+    @Test fun `backtest guidance only in prompt when crypto tools are enabled`() = runTest {
+        val bt = Echo("crypto_backtest_script"); val mem = Echo("memory_save")
+        val off = mapOf(1L to setOf(ToolPreset.CRYPTO))
+        val reg = ToolRegistry(listOf(bt, mem), chatFilter = { id, n -> ToolPreset.allowed(n, off[id].orEmpty()) })
+        val g = com.verdroid.app.agent.AgentLoop.BACKTEST_GUIDANCE
+        assertFalse(com.verdroid.app.agent.AgentLoop.systemPrompt(reg.namesFor(1)).contains(g))
+        assertTrue(com.verdroid.app.agent.AgentLoop.systemPrompt(reg.namesFor(2)).contains(g))
+        assertTrue(reg.execute("crypto_backtest_script", "{}", 1).isError); assertEquals(0, bt.calls)
+    }
+
+    @Test fun `presets mirror the Settings tool groups`() {
+        val groups = ToolGroups.ORDER.map { it.id } - setOf("memory", "mcp")
+        assertEquals(groups, ToolPreset.entries.map { it.groupId })
+        ToolPreset.entries.forEach { p -> assertEquals(ToolGroups.ORDER.first { it.id == p.groupId }.title, p.label) }
+        com.verdroid.app.data.selftest.SelfTestCoverage.TOOL_CHECKS.keys.forEach { t ->
+            assertEquals(t, ToolGroups.groupOf(t), ToolPreset.of(t)?.groupId ?: ToolGroups.groupOf(t).also { assertTrue(it in setOf("memory", "mcp")) })
+        }
     }
 }
