@@ -23,6 +23,7 @@ fun BridgeNotice() {
         title = { Text("Please reinstall Verdroid") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text("This is an info-only build, not the latest version of Verdroid.", style = MaterialTheme.typography.titleSmall)
                 Text("Verdroid now ships signed release builds. This copy uses the old test key, so it can't update to them and won't get updates anymore.")
                 Text("To switch: 1) export anything you want to keep (chats, memories, files in Documents/Verdroid stay). " +
                     "2) Uninstall Verdroid. 3) Install the latest Verdroid-v….apk from GitHub.")
