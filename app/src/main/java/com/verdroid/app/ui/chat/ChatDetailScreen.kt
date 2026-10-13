@@ -332,7 +332,7 @@ fun ChatDetailScreen(onBack: () -> Unit, onChatMemory: (Long) -> Unit = {}, vm: 
     }
 }
 
-/** Per-chat tool presets: one per Settings → Tools group (memory/skills and MCP excluded), plus All. Everything is on by default. */
+/** Per-chat tool presets: one per Settings → Tools group (memory/skills, charts & other and MCP excluded), plus All. Everything is on by default. */
 @Composable
 private fun ToolPresetsDialog(
     off: Set<com.verdroid.app.data.tools.ToolPreset>,
@@ -346,7 +346,7 @@ private fun ToolPresetsDialog(
         title = { Text("Tool presets") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
-                Text("Which tools the agent can use in this chat. Memory & skills and MCP always stay on; " +
+                Text("Which tools the agent can use in this chat. Memory & skills, charts & other (incl. self-test) and MCP always stay on; " +
                     "Settings → Tools still applies.", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(8.dp))

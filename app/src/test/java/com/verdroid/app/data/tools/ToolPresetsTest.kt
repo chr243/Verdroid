@@ -25,8 +25,7 @@ class ToolPresetsTest {
         assertEquals(ToolPreset.SYSTEM, ToolPreset.of("run_shell"))
         assertEquals(ToolPreset.SYSTEM, ToolPreset.of("screen_tap"))
         assertEquals(ToolPreset.GIT, ToolPreset.of("git_push"))
-        assertEquals(ToolPreset.OTHER, ToolPreset.of("chart"))
-        listOf("memory_save", "skill_get", "mcp__x__y").forEach {
+        listOf("memory_save", "skill_get", "chart", "self_test", "mcp__x__y").forEach {
             assertNull(it, ToolPreset.of(it)); assertTrue(ToolPreset.allowed(it, ToolPreset.entries.toSet()))
         }
     }
@@ -71,6 +70,7 @@ class ToolPresetsTest {
         val old = ToolPreset.decode(setOf("WEB", "FILES", "TERMUX", "DEVICE"))
         assertEquals(setOf(ToolPreset.WEB, ToolPreset.FILES, ToolPreset.PDF, ToolPreset.TERMUX, ToolPreset.SYSTEM, ToolPreset.GIT), old)
         assertTrue(ToolPreset.allowed("chart", old))
+        assertTrue(ToolPreset.decode(setOf("OTHER")).isEmpty())
         assertTrue(ToolPreset.allowed("crypto_backtest", old))
         assertFalse(ToolPreset.allowed("web_search", old))
         assertTrue(ToolPreset.allowed("crypto_backtest", ToolPreset.decode(null)))
@@ -88,11 +88,11 @@ class ToolPresetsTest {
     }
 
     @Test fun `presets mirror the Settings tool groups`() {
-        val groups = ToolGroups.ORDER.map { it.id } - setOf("memory", "mcp")
+        val groups = ToolGroups.ORDER.map { it.id } - setOf("memory", "other", "mcp")
         assertEquals(groups, ToolPreset.entries.map { it.groupId })
         ToolPreset.entries.forEach { p -> assertEquals(ToolGroups.ORDER.first { it.id == p.groupId }.title, p.label) }
         com.verdroid.app.data.selftest.SelfTestCoverage.TOOL_CHECKS.keys.forEach { t ->
-            assertEquals(t, ToolGroups.groupOf(t), ToolPreset.of(t)?.groupId ?: ToolGroups.groupOf(t).also { assertTrue(it in setOf("memory", "mcp")) })
+            assertEquals(t, ToolGroups.groupOf(t), ToolPreset.of(t)?.groupId ?: ToolGroups.groupOf(t).also { assertTrue(it in setOf("memory", "other", "mcp")) })
         }
     }
 }

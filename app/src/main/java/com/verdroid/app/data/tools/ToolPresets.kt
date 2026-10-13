@@ -11,11 +11,11 @@ import javax.inject.Singleton
 /**
  * Per-chat tool presets (chat ⋮ menu → Tool presets). Each preset mirrors one Settings > Tools group
  * ([ToolGroups.ORDER], same ids and titles, so the two stay in sync); the user can switch a group off for one chat.
- * Everything is on by default. Memory & skills and MCP servers are never affected here — they follow Settings > Tools only.
+ * Everything is on by default. Memory & skills, Charts & other (charts, self-test) and MCP servers are never affected here — they follow Settings > Tools only.
  *
  * Migration: only the presets a chat switched OFF are persisted (by enum name). Old names map onto the new groups:
- * DEVICE → SYSTEM + GIT, FILES → FILES + PDF (it covered PDFs/ebooks), WEB/TERMUX unchanged. Groups added later
- * (Crypto, Charts & other) start ON for existing chats — the same as before, when those tools were not gated.
+ * DEVICE → SYSTEM + GIT, FILES → FILES + PDF (it covered PDFs/ebooks), WEB/TERMUX unchanged. A stored OTHER (Charts & other, briefly a preset) is ignored.
+ * Groups added later (Crypto) start ON for existing chats — the same as before, when those tools were not gated.
  */
 enum class ToolPreset(val groupId: String, val description: String) {
     FILES("files", "Documents/Verdroid (workspace_*), private scratch files"),
@@ -24,14 +24,13 @@ enum class ToolPreset(val groupId: String, val description: String) {
     PDF("pdf", "PDF read/edit (pdf_*), ebook translation"),
     SYSTEM("system", "Shizuku shell, rish, screen control (accessibility)"),
     GIT("git", "git_* (JGit)"),
-    CRYPTO("crypto", "Backtesting: history download, backtests, scripts"),
-    OTHER("other", "Charts and other tools");
+    CRYPTO("crypto", "Backtesting: history download, backtests, scripts");
 
     /** Same title as the Settings > Tools group. */
     val label: String get() = ToolGroups.ORDER.first { it.id == groupId }.title
 
     companion object {
-        /** The preset a tool belongs to (its Settings group), or null for always-on groups (memory/skills, MCP). */
+        /** The preset a tool belongs to (its Settings group), or null for always-on groups (memory/skills, charts & other, MCP). */
         fun of(tool: String): ToolPreset? = ToolGroups.groupOf(tool).let { g -> entries.firstOrNull { it.groupId == g } }
 
         /** True unless [tool] belongs to a preset in [off]. */
