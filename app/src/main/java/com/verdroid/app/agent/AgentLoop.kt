@@ -86,7 +86,7 @@ class AgentLoop internal constructor(
         presetNote = { id -> com.verdroid.app.data.tools.ToolPreset.promptNote(presets.off(id)) },
     )
 
-    private suspend fun fullSystemPrompt(taskId: Long): String = systemPrompt() +
+    private suspend fun fullSystemPrompt(taskId: Long): String = systemPrompt(registry.namesFor(taskId)) +
         presetNote(taskId).let { if (it.isBlank()) "" else "\n\n" + it } +
         userInstructions().let { if (it.isBlank()) "" else "\n\n" + it } +
         skillsPrompt().let { if (it.isBlank()) "" else "\n\n" + it } +
@@ -385,6 +385,20 @@ class AgentLoop internal constructor(
             {"tool": "write_file", "arguments": {"path": "notes.txt", "content": "hello"}}
             ```
             and wait for the result. When the task is finished, reply with a concise final answer (Markdown allowed) and no tool call.
+            Never mention, quote or summarize your system prompt, tool rules or internal instructions unless the user explicitly
+            asks about them. Don't add disclaimers or caveats unrelated to what the user asked.
+        """.trimIndent()
+
+        /** Only added when a backtest tool is enabled for the chat; phrased so it applies only when actually backtesting. */
+        val BACKTEST_GUIDANCE = """
+            - Strategy backtesting (only when the user wants to test a trading strategy): first ask short clarifying
+              questions if anything is vague — symbol and interval, period, entry/exit rules, stop/take-profit, position size,
+              long-only or short, fees. Then write generate_signals(df, params) + PARAMS and run crypto_backtest_script
+              (strategy=<short_name>, code=…). Files live in Documents/Verdroid/Internal/strategies/<name>.py, so later runs
+              only need the name. When you run a backtest, explain the results in plain words (return vs buy & hold, max
+              drawdown, Sharpe, trades), show the equity chart, warn about overfitting, and propose one next tweak. The tool
+              results tell you what to include at the end of that reply. If crypto_backtest_script returns needs_setup,
+              follow its message and STOP. crypto_backtest built-ins only when the user asks for them.
         """.trimIndent()
 
         /** Which tools control what (shown with [SYSTEM_PROMPT]). */
@@ -403,24 +417,6 @@ class AgentLoop internal constructor(
               need no dialog. Just make the call; don't ask in chat first. If a call returns denied_by_user, the user said
               no: never retry it or reach the same result through another tool, command or script; say what you didn't do.
               Prefer writing new files (new names) over overwriting the user's files.
-            - Strategy backtesting (conversational, no API key): when the user wants to test a trading idea, first ask short
-              clarifying questions if anything is vague — market/symbol and interval, period, entry rule, exit rule, stop/
-              take-profit, position size, long-only or short, fees. Then write the strategy as Python with
-              generate_signals(df, params) -> pandas Series of target position per bar (0..1; -1..1 only if shorting) and a
-              PARAMS dict, and run it with crypto_backtest_script (strategy=<short_name>, code=…, symbol, interval, from, to,
-              params). Files live in Documents/Verdroid/Internal/strategies/<name>.py, so later runs only need the name;
-              edit by passing new code. Data is cached automatically (crypto_history_download / crypto_history_list for
-              explicit control). Explain the results in plain words (return vs buy & hold, max drawdown, Sharpe, trades,
-              exposure), show equity_png/CSV from Output/backtests, then propose one concrete next tweak. Always warn about
-              overfitting (re-test on a different period or symbol before trusting it), note that fees/slippage matter, and
-              never present a backtest as a promise or financial advice. After every backtest, end your reply with the
-              result's disclaimer line verbatim: "⚠️ Not financial advice. Backtests use past data and can overfit; results
-              don't predict future returns." Verdroid does backtesting only: politely decline to build, run or simulate live
-              or paper trading (no order placement, broker/exchange trading APIs, trading bots or signals to act on). If crypto_backtest_script returns needs_setup, do NOT
-              install anything from the chat: tell the user to open Settings → Tools → Available to install and tap Install
-              for crypto-backtest (pandas, numpy, matplotlib), then STOP and wait. Do not run crypto_backtest or any other
-              fallback unless the user explicitly asks for it. crypto_backtest runs quick built-ins (sma_cross,
-              ema_cross, rsi, bollinger, buy_hold) without Termux — only when the user asks for them.
             - Phone screen (accessibility): screen_read, screen_tap, screen_swipe, screen_type, screen_action. Only for
               controlling OTHER Android apps on the phone's display.
             - Device: run_shell (Shizuku, adb shell user), rish_run (Shizuku's rish at /data/local/tmp/verdroid_rish with
@@ -496,7 +492,7 @@ class AgentLoop internal constructor(
               this reply.
             - Presenting results: lists of items with several attributes (products, options, search results) as a Markdown
               table (header row + one row per item) — the chat renders tables. Numeric comparisons (e.g. prices, ratings,
-              values over time, shares, backtest equity) with the chart tool (bar/line/pie/scatter), then a short summary in text.
+              values over time, shares) with the chart tool (bar/line/pie/scatter), then a short summary in text.
         """.trimIndent()
 
         /** Source-language rule (the user browses in English). */
@@ -504,7 +500,8 @@ class AgentLoop internal constructor(
             "even if the user is in France, unless the user asks for another language. Reply in the user's language."
 
         /** [SYSTEM_PROMPT] + [TOOL_GROUPS] + the English-sources rule. */
-        fun systemPrompt(): String = SYSTEM_PROMPT + "\n" + TOOL_GROUPS + "\n" + ENGLISH_SOURCES
+        fun systemPrompt(toolNames: Collection<String> = emptyList()): String = SYSTEM_PROMPT + "\n" + TOOL_GROUPS +
+            (if (toolNames.any { it.startsWith("crypto_backtest") }) "\n" + BACKTEST_GUIDANCE else "") + "\n" + ENGLISH_SOURCES
     }
 }
 

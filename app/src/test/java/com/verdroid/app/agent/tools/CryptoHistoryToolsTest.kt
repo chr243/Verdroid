@@ -29,6 +29,7 @@ class CryptoHistoryToolsTest {
         assertEquals(true, r["ok"]!!.jsonPrimitive.boolean)
         assertTrue(r["total_return_pct"]!!.jsonPrimitive.double > 0)
         assertEquals(CryptoHistoryTools.DISCLAIMER, r["disclaimer"]!!.jsonPrimitive.content)
+        assertTrue(r["reply_instruction"]!!.jsonPrimitive.content.contains("End your reply"))
         assertEquals("disclaimer", r.keys.last())
         listOf("cagr_pct", "max_drawdown_pct", "sharpe", "win_rate_pct", "buy_hold_return_pct").forEach { assertTrue(it, r.containsKey(it)) }
         assertTrue(java.io.File(r["equity_csv"]!!.jsonPrimitive.content).isFile)

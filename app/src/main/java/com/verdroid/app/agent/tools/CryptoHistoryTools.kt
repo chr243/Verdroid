@@ -31,7 +31,8 @@ class CryptoHistoryTools(
             "position per bar (0..1, or -1..1 with allow_short); optional PARAMS dict of defaults. df columns: time, open, high, low, close, " +
             "volume (DatetimeIndex, UTC). Pass code to create/overwrite the file. The harness shifts signals one bar (no lookahead), applies " +
             "fees, slippage and position sizing, and returns total return, CAGR, max drawdown, Sharpe, win rate, trades, exposure, buy & " +
-            "hold, plus equity CSV/PNG in Output/backtests. Missing candles are downloaded first (no API key). Needs Termux + pandas."
+            "hold, plus equity CSV/PNG in Output/backtests. Missing candles are downloaded first (no API key). Needs Termux + pandas." +
+            " Scope: backtesting only. Only if the user asks for live or paper trading (placing orders, exchange/broker trading APIs, trading bots or signals to act on), politely decline: Verdroid only backtests on past data."
         override val parameters = schema(listOf("strategy"),
             "strategy" to prop("string", "Strategy name (file Internal/strategies/<name>.py), letters/digits/_-"),
             "code" to prop("string", "Optional Python source to save as the strategy before running"),
@@ -131,7 +132,8 @@ class CryptoHistoryTools(
         override val description = "Offline backtest on cached candles (missing ranges are downloaded first, no API key). Long-only, signals on " +
             "bar close, fills at next open with fee + slippage. Strategies: sma_cross(fast,slow), ema_cross(fast,slow), rsi(period,oversold,overbought), " +
             "bollinger(period,stddev), buy_hold; strategy=custom returns the cached CSV path + a pandas template to run with termux_python. " +
-            "Returns total return, CAGR, max drawdown, Sharpe, win rate, trades, buy & hold comparison and an equity chart. Not financial advice."
+            "Returns total return, CAGR, max drawdown, Sharpe, win rate, trades, buy & hold comparison and an equity chart." +
+            " Scope: backtesting only. Only if the user asks for live or paper trading (placing orders, exchange/broker trading APIs, trading bots or signals to act on), politely decline: Verdroid only backtests on past data."
         override val parameters = schema(emptyList(), symbolProp, intervalProp, fromProp, toProp,
             "strategy" to prop("string", "sma_cross (default), ema_cross, rsi, bollinger, buy_hold, custom"),
             "fast" to prop("integer", "Fast MA period (default 10)"), "slow" to prop("integer", "Slow MA period (default 30)"),
@@ -187,7 +189,7 @@ class CryptoHistoryTools(
         })
         csv?.let { put("equity_csv", it.absolutePath) }
         put("note", "Pass equity_chart to the chart tool to plot it (it can export a PNG).")
-        put("disclaimer", DISCLAIMER) // always the last field
+        put("reply_instruction", DISCLAIMER_INSTRUCTION); put("disclaimer", DISCLAIMER) // always the last field
     }
 
     private fun customTemplate(dl: DownloadResult, from: Long, to: Long) = buildJsonObject {
@@ -243,6 +245,7 @@ print({"total_return_pct": (eq.iloc[-1]-1)*100, "max_drawdown_pct": ((eq.cummax(
         const val HARNESS_REL = "backtest/verdroid_backtest.py"
         const val MARK = "@@VERDROID_BACKTEST@@"
         /** Appended (last field) to every successful backtest result; the agent must repeat it in its reply. */
+        const val DISCLAIMER_INSTRUCTION = "End your reply about this backtest with the disclaimer line verbatim."
         const val DISCLAIMER = "⚠️ Not financial advice. Backtests use past data and can overfit; results don't predict future returns."
         @Volatile private var depsOk = false
         internal const val PREFLIGHT = "python3 -c '${com.verdroid.app.data.tools.TermuxPackages.BACKTEST_IMPORT}' >/dev/null 2>&1 && echo DEPS=1 || echo DEPS=0"
@@ -303,7 +306,7 @@ print({"total_return_pct": (eq.iloc[-1]-1)*100, "max_drawdown_pct": ((eq.cummax(
                 put("strategy_file", strategyRel)
                 dl?.let { put("data_sources", JsonArray(it.sources.map(::JsonPrimitive))); put("gaps", it.gaps.size) }
                 put("note", "Signals are applied on the next bar. Re-test on other periods/symbols before trusting a result.")
-                if (base?.get("ok")?.jsonPrimitive?.booleanOrNull == true) put("disclaimer", DISCLAIMER) // always the last field
+                if (base?.get("ok")?.jsonPrimitive?.booleanOrNull == true) { put("reply_instruction", DISCLAIMER_INSTRUCTION); put("disclaimer", DISCLAIMER) } // always the last field
             }
         }
 
