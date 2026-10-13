@@ -664,3 +664,8 @@ Chat head: Back and Home/Recents collapse the expanded panel back to the head at
 
 - **Orientation-aware floating window:** `FloatingWindowGeometry.default(areaW, areaH, top, density, saved, savedPos)`. Portrait is 85%×60%. Landscape is 88% of the height, width = min(60% of width, max(height, 360dp)), centred. Minimum size is 280×240dp, always clamped to the usable area (minus system bars).
 - **Remembered per orientation:** the user's resized size and dragged position are saved in the `chathead_window` prefs (`w_/h_/x_/y_` + `port`/`land`) and restored, clamped, when the window reopens. `ChatHeadService.onConfigurationChanged` re-fits an open window after rotation.
+
+## v1.0.48
+
+- **Font size** (5e2e00f): `FontScale` (85–130% in 5% steps, default 100%) is stored in `ThemeStore` (`theme_prefs/font_scale`). `VerdroidTheme` provides `LocalDensity` with fontScale = system × app, so it applies to MainActivity, BubbleActivity and the floating chat window. Settings → Theme has a slider with a live preview and Reset. Self-test check `font_scale`.
+- Releases from now on also carry the info-only bridge `Verdroid-v<ver>-debug.apk` for old debug installs (branch `bridge-debug`).
