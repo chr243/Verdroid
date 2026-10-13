@@ -133,6 +133,7 @@ object AppModule {
         @ApplicationContext context: Context,
         termux: com.verdroid.app.data.termux.TermuxManager,
         selfTest: javax.inject.Provider<com.verdroid.app.data.selftest.SelfTestRunner>,
+        fileConsent: com.verdroid.app.data.consent.FileChangeConsent,
     ): ToolRegistry = ToolRegistry(
         listOf(
             ReadFileTool(sandbox), WriteFileTool(sandbox), ListDirTool(sandbox),
@@ -177,6 +178,19 @@ object AppModule {
         toolPrefs,
         dynamic = mcp::agentTools,
         chatFilter = chatPresets,
+        // Yes/No dialog before agent-driven deletes/moves/renames and overwrites outside Internal/
+        fileGuard = com.verdroid.app.agent.tools.FileChangeGuard(fileConsent, shared = sharedFolder.root) { tool, a ->
+            val p = (a["path"] as? kotlinx.serialization.json.JsonPrimitive)?.content
+            val st = (a["strategy"] as? kotlinx.serialization.json.JsonPrimitive)?.content
+            runCatching {
+                when {
+                    tool == "termux_python" && p != null -> sandbox.resolve(p).takeIf { it.isFile }?.readText()
+                    tool == "crypto_backtest_script" && st != null ->
+                        File(sharedFolder.internal, "strategies/${com.verdroid.app.agent.tools.CryptoHistoryTools.strategyName(st)}.py").takeIf { it.isFile }?.readText()
+                    else -> null
+                }
+            }.getOrNull()
+        },
     )
 }
 

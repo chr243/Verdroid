@@ -120,7 +120,9 @@ class ToolRegistry(val tools: List<AgentTool>, private val switches: com.verdroi
     /** Tools that come and go at runtime (remote MCP servers: mcp__<server>__<tool>). */
     private val dynamic: () -> List<AgentTool> = { emptyList() },
     /** Per-chat tool presets (chat ⋮ → Tool presets); all on unless the user turned a preset off for that chat. */
-    private val chatFilter: com.verdroid.app.data.tools.ChatToolFilter = com.verdroid.app.data.tools.ChatToolFilter.ALL) {
+    private val chatFilter: com.verdroid.app.data.tools.ChatToolFilter = com.verdroid.app.data.tools.ChatToolFilter.ALL,
+    /** Yes/No before deleting/moving/renaming or overwriting files (null = no gate, e.g. unit tests). */
+    private val fileGuard: FileChangeGuard? = null) {
     private val staticByName = tools.associateBy { it.name }
     private val allTools: List<AgentTool> get() = tools + dynamic().filter { it.name !in staticByName }
     val enabledTools: List<AgentTool> get() = allTools.filter { switches.isEnabled(it.name) }
@@ -151,6 +153,10 @@ class ToolRegistry(val tools: List<AgentTool>, private val switches: com.verdroi
         }
         val args = runCatching { Json.parseToJsonElement(argumentsJson.ifBlank { "{}" }) as? JsonObject }.getOrNull()
             ?: return ToolResult(errorJson("Arguments must be a JSON object"), true)
+        fileGuard?.let { g ->
+            try { g.check(taskId, name, args) } catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                catch (e: Exception) { FileChangeGuard.denied(name, listOf("confirmation failed: ${e.message}")) }
+        }?.let { return ToolResult(it, true) }
         return try {
             val out = tool.execute(args, ToolContext(taskId))
             ToolResult(out, out.trimStart().startsWith("{\"error\""))

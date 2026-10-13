@@ -27,6 +27,7 @@ class BubbleActivity : ComponentActivity() {
         val taskId = intent.getLongExtra(EXTRA_TASK_ID, 0L)
         setContent {
             VerdroidTheme {
+                com.verdroid.app.ui.consent.FileChangeDialog()
                 val vm: ChatViewModel = hiltViewModel()
                 val task by vm.task.collectAsStateWithLifecycle()
                 val messages by vm.messages.collectAsStateWithLifecycle()

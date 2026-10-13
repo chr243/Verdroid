@@ -202,6 +202,17 @@ class SelfTestRunner @Inject constructor(
                 "JGit init + status ok"
             } finally { dir.deleteRecursively() }
         },
+        "file_guard" to {
+            val D = com.verdroid.app.agent.tools.DestructiveDetector
+            check(D.shell("rm -rf /sdcard/Download/x").isNotEmpty()) { "rm not detected" }
+            check(D.shell("ls -la && echo hi > out.txt").isEmpty()) { "harmless command flagged" }
+            check(D.python("import os\nos.remove('/sdcard/a.txt')").isNotEmpty()) { "os.remove not detected" }
+            var asked = false
+            val g = com.verdroid.app.agent.tools.FileChangeGuard({ asked = true; false })
+            val denied = g.check(0, "termux_run", buildJsonObject { put("command", "mv a b") })
+            check(asked && denied != null && "denied_by_user" in denied) { "deny path broken" }
+            "delete/move/overwrite detection and Deny path ok"
+        },
         "backtest_python" to {
             requireTermux()
             val r = termux.runAndWait(com.verdroid.app.agent.tools.CryptoHistoryTools.PREFLIGHT, "st-btdeps-${System.nanoTime()}", 25_000, label = "Verdroid self-test")

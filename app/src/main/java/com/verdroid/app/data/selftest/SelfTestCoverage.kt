@@ -10,7 +10,7 @@ object SelfTestCoverage {
     val CHECKS = listOf(
         "tool_registry", "json", "room", "settings", "agents_md", "memory", "skills", "sandbox", "shared_folder",
         "network", "providers", "web_fetch", "web_search", "termux", "python", "pdf", "shizuku", "rish", "accessibility",
-        "overlay", "git", "updater", "notifications", "font_scale", "feedback", "internal_folder", "crypto_history", "backtest_python",
+        "overlay", "git", "updater", "notifications", "font_scale", "feedback", "internal_folder", "crypto_history", "backtest_python", "file_guard",
     )
 
     val TOOL_CHECKS: Map<String, String> = mapOf(
