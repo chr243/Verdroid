@@ -202,6 +202,14 @@ class SelfTestRunner @Inject constructor(
                 "JGit init + status ok"
             } finally { dir.deleteRecursively() }
         },
+        "backtest_python" to {
+            requireTermux()
+            val r = termux.runAndWait(com.verdroid.app.agent.tools.CryptoHistoryTools.PREFLIGHT, "st-btdeps-${System.nanoTime()}", 25_000, label = "Verdroid self-test")
+                ?: throw IllegalStateException("Termux did not answer")
+            if (!com.verdroid.app.agent.tools.CryptoHistoryTools.preflightOk(r.stdout))
+                throw SkipCheck("pandas/numpy/matplotlib not installed (Settings → Tools → crypto-backtest)")
+            "pandas, numpy, matplotlib importable"
+        },
         "crypto_history" to {
             val d = run("crypto_history_download", args("symbol" to "BTC-USDT", "interval" to "1d", "from" to java.time.LocalDate.now().minusDays(60).toString()))
             check(d["ok"]?.jsonPrimitive?.booleanOrNull == true) { d.toString().take(200) }

@@ -701,3 +701,9 @@ Chat head: Back and Home/Recents collapse the expanded panel back to the head at
   - `Candle` and `CoinbaseCandles.parse` are kept for the history fallback.
   - `ToolPrefs.DEFAULT_OFF` is now empty.
   - Crypto is now backtesting only: `crypto_history_download`, `crypto_history_list`, `crypto_backtest`, `crypto_backtest_script`.
+
+## Backtest Python libraries (unreleased)
+
+- **New Settings > Tools package `crypto-backtest`** (`TermuxPackages.CRYPTO_BACKTEST`): it installs prebuilt Termux packages first (`python-numpy`, `matplotlib`, and `python-pandas` from tur-repo), then pip only for whatever is still missing. Detection: `python3 -c 'import pandas, numpy, matplotlib'`.
+- **Preflight in `crypto_backtest_script`:** `CryptoHistoryTools.PREFLIGHT` runs before the first backtest; a positive result is cached for the process. When the libraries are missing it returns `needs_setup` with `tell_user` (Settings → Tools → Install crypto-backtest) and `meanwhile` (the `crypto_backtest` built-ins). It never installs from the chat.
+- **Self-test:** the `backtest_python` check is skipped when the libraries are missing. The system prompt has a matching rule.

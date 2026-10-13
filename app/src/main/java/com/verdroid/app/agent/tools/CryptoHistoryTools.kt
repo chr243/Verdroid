@@ -51,6 +51,7 @@ class CryptoHistoryTools(
             if (!f.hasAccess() || !f.ensure()) throw IllegalStateException("Needs All files access for Documents/Verdroid (Settings > Permissions).")
             if (!t.isInstalled()) throw IllegalStateException("Termux is not installed. Set it up in Settings > Tools.")
             if (!t.hasRunCommandPermission()) throw IllegalStateException("Verdroid doesn't have the 'Run commands in Termux' permission (Settings > Tools).")
+            if (!depsReady(t)) throw NeedsSetup()
             val name = strategyName(args.s("strategy"))
             val file = File(f.internal, "strategies/$name.py")
             args.s("code")?.let { file.parentFile?.mkdirs(); file.writeText(it) }
@@ -72,6 +73,7 @@ class CryptoHistoryTools(
             val r = t.runAndWait(cmd, "bt-${System.nanoTime()}", (timeout + 30) * 1000L, label = "Verdroid: backtest $name")
                 ?: throw IllegalStateException("Termux did not answer within ${timeout + 30} s")
             parseHarnessOutput(r.stdout, r.stderr, r.exitCode ?: -1, "Internal/strategies/$name.py", dl).toString()
+        } catch (e: NeedsSetup) { NEEDS_SETUP.toString()
         } catch (e: Exception) { errorJson(e.message ?: "crypto_backtest_script failed") }
     }
 
@@ -218,6 +220,14 @@ print({"total_return_pct": (eq.iloc[-1]-1)*100, "max_drawdown_pct": ((eq.cummax(
         val raw = args.s("interval") ?: args["granularity_seconds"]?.jsonPrimitive?.contentOrNull ?: "1d"
         return Interval.parse(raw) ?: throw IllegalArgumentException("interval must be one of ${Interval.CODES}")
     }
+    /** Fast preflight `python3 -c 'import pandas, numpy, matplotlib'`; a positive result is cached for the process. */
+    private suspend fun depsReady(t: com.verdroid.app.data.termux.TermuxRunner): Boolean {
+        if (depsOk) return true
+        val r = t.runAndWait(PREFLIGHT, "btdeps-${System.nanoTime()}", 25_000, label = "Verdroid: backtest check")
+        depsOk = preflightOk(r?.stdout)
+        return depsOk
+    }
+
     private fun JsonObject.b(k: String) = (this[k] as? JsonPrimitive)?.booleanOrNull
     private fun termuxPath(f: com.verdroid.app.data.storage.SharedFolder, file: File) =
         com.verdroid.app.data.storage.SharedFolder.DISPLAY_PATH + "/" + file.relativeTo(f.root).path
@@ -225,10 +235,25 @@ print({"total_return_pct": (eq.iloc[-1]-1)*100, "max_drawdown_pct": ((eq.cummax(
     private fun JsonObject.n(k: String) = (this[k] as? JsonPrimitive)?.doubleOrNull
     private fun r2(x: Double) = round(x * 100) / 100
 
+    private class NeedsSetup : Exception()
+
     companion object {
         const val MAX_BARS = 500_000L
         const val HARNESS_REL = "backtest/verdroid_backtest.py"
         const val MARK = "@@VERDROID_BACKTEST@@"
+        @Volatile private var depsOk = false
+        internal const val PREFLIGHT = "python3 -c '${com.verdroid.app.data.tools.TermuxPackages.BACKTEST_IMPORT}' >/dev/null 2>&1 && echo DEPS=1 || echo DEPS=0"
+        internal fun preflightOk(stdout: String?) = stdout?.contains("DEPS=1") == true
+        internal fun resetPreflightCache() { depsOk = false }
+
+        /** Returned instead of installing from chat: the user installs the libraries in Settings. */
+        val NEEDS_SETUP: JsonObject = buildJsonObject {
+            put("error", "Python libraries for crypto backtesting (pandas, numpy, matplotlib) are not installed.")
+            put("needs_setup", true)
+            put("tell_user", "Go to Settings → Tools → Available to install and tap Install for crypto-backtest (Crypto backtesting). Then ask me again.")
+            put("meanwhile", "crypto_backtest (built-in strategies sma_cross, ema_cross, rsi, bollinger, buy_hold) works without Python.")
+            put("note", "Do not install packages from the chat (no pip/pkg via termux_run).")
+        }
 
         /** Harness shipped in app resources (src/main/resources/verdroid/verdroid_backtest.py). */
         fun harnessSource(): String = CryptoHistoryTools::class.java.getResourceAsStream("/verdroid/verdroid_backtest.py")!!
@@ -264,8 +289,10 @@ print({"total_return_pct": (eq.iloc[-1]-1)*100, "max_drawdown_pct": ((eq.cummax(
                     base.forEach { (k, v) -> put(k, v) }
                     if (base["ok"]?.jsonPrimitive?.booleanOrNull != true) {
                         put("error", base["error"] ?: JsonPrimitive("backtest failed"))
-                        if (base["missing_packages"]?.jsonPrimitive?.booleanOrNull == true)
-                            put("hint", "Ask the user, then install with termux_run: pip install pandas numpy matplotlib (it will ask for install confirmation).")
+                        if (base["missing_packages"]?.jsonPrimitive?.booleanOrNull == true) {
+                            resetPreflightCache()
+                            put("hint", NEEDS_SETUP["tell_user"]!!)
+                        }
                     }
                     val logs = stdout.lineSequence().filterNot { it.startsWith(MARK) }.joinToString("\n").trim()
                     if (logs.isNotEmpty()) put("strategy_output", logs.takeLast(3000))

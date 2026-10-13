@@ -407,7 +407,9 @@ class AgentLoop internal constructor(
               explicit control). Explain the results in plain words (return vs buy & hold, max drawdown, Sharpe, trades,
               exposure), show equity_png/CSV from Output/backtests, then propose one concrete next tweak. Always warn about
               overfitting (re-test on a different period or symbol before trusting it), note that fees/slippage matter, and
-              never present a backtest as a promise or financial advice. crypto_backtest runs quick built-ins (sma_cross,
+              never present a backtest as a promise or financial advice. If crypto_backtest_script returns needs_setup, do NOT
+              install anything from the chat: tell the user to open Settings → Tools → Available to install and tap Install
+              for crypto-backtest (pandas, numpy, matplotlib), and offer crypto_backtest built-ins meanwhile. crypto_backtest runs quick built-ins (sma_cross,
               ema_cross, rsi, bollinger, buy_hold) without Termux — fine for a fast baseline.
             - Phone screen (accessibility): screen_read, screen_tap, screen_swipe, screen_type, screen_action. Only for
               controlling OTHER Android apps on the phone's display.

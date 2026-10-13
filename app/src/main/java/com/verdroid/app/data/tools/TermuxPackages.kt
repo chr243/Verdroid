@@ -24,7 +24,32 @@ object TermuxPackages {
         SELENIUM,
         EBOOK_TRANSLATE,
         PDF_TOOLS,
+        CRYPTO_BACKTEST,
     )
+
+    /**
+     * Crypto backtesting (crypto_backtest_script): numpy, pandas, matplotlib. Prebuilt Termux packages first (python-numpy,
+     * matplotlib from the main repo, python-pandas from tur-repo) — compiling them with pip on a phone takes very long —
+     * then pip only for whatever is still missing.
+     */
+    val CRYPTO_BACKTEST: TermuxPackage get() = TermuxPackage(
+        pkg = "crypto-backtest",
+        binary = "python3",
+        description = "Crypto backtesting for crypto_backtest_script — pandas, numpy, matplotlib (prebuilt Termux packages, pip fallback)",
+        detect = "python3 -c '$BACKTEST_IMPORT' >/dev/null 2>&1",
+        install = listOf(
+            "${'$'}APT install python python-pip 2>&1 | tail -n 5",
+            "${'$'}APT install python-numpy matplotlib 2>&1 | tail -n 5",
+            "${'$'}APT install tur-repo 2>&1 | tail -n 3; (apt-get update -q >/dev/null 2>&1 || true)",
+            "python3 -c 'import pandas' >/dev/null 2>&1 || ${'$'}APT install python-pandas 2>&1 | tail -n 5",
+            "python3 -c 'import numpy' >/dev/null 2>&1 || pip install numpy 2>&1 | tail -n 5",
+            "python3 -c 'import pandas' >/dev/null 2>&1 || pip install pandas 2>&1 | tail -n 5",
+            "python3 -c 'import matplotlib' >/dev/null 2>&1 || pip install matplotlib 2>&1 | tail -n 5",
+        ).joinToString("\n"),
+    )
+
+    /** Imports the backtest harness needs (matplotlib only for the PNG, but installed together). */
+    const val BACKTEST_IMPORT = "import pandas, numpy, matplotlib"
 
     /** Headless Chromium + chromedriver (TUR via x11-repo/tur-repo) and Python Selenium, for selenium_* and termux_python. */
     val SELENIUM: TermuxPackage get() = TermuxPackage(
