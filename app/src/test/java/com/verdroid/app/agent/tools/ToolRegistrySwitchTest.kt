@@ -38,7 +38,7 @@ class ToolRegistrySwitchTest {
         assertTrue(ToolStatus.of("run_shell", none).text.contains("Shizuku"))
         assertTrue(ToolStatus.of("run_shell", none.copy(shizukuReady = true)).ready)
         assertFalse(ToolStatus.of("screen_tap", none).ready)
-        assertTrue(ToolStatus.of("crypto_ticker", none).ready)
+        assertTrue(ToolStatus.of("crypto_backtest", none).ready)
         assertFalse(ToolStatus.of("termux_run", none).ready)
         assertTrue(ToolStatus.of("termux_run", none.copy(termuxReady = true)).ready)
         assertEquals("Echo tool.", ToolStatus.short("Echo tool. Second sentence."))

@@ -211,7 +211,6 @@ class SelfTestRunner @Inject constructor(
             check(com.verdroid.app.agent.tools.CryptoHistoryTools.harnessSource().contains("generate_signals")) { "backtest harness missing from the app" }
             "60d BTC-USDT cached + offline backtest ok; Python harness bundled"
         },
-        "crypto_public" to { run("crypto_ticker", args("pair" to "BTC-USD")); "Coinbase public ticker ok" },
         "updater" to {
             if (!updater.enabled.value) throw SkipCheck("GitHub update checks are off (Settings → App)")
             when (val st = updater.check(silent = true)) {

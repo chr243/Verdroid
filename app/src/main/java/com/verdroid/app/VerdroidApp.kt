@@ -40,6 +40,8 @@ class VerdroidApp : Application(), Configuration.Provider {
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch { scheduler.recover() }
         QuotaPollWorker.schedule(this)
         removeLegacyAdb()
+        // v1.0.49: old Coinbase Exchange tools removed → drop their encrypted key store (no-op when absent).
+        runCatching { deleteSharedPreferences("crypto_secure") }
         // v1.0.45: custom:<model> → prov:<provider>:<model> in Model priority (once; no-op afterwards).
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch { runCatching { providerMigration.run() } }
         // Documents/Verdroid with Input/, Output/, Internal/ (no-op until All files access is granted; Tools re-checks it),

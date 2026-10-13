@@ -690,3 +690,14 @@ Chat head: Back and Home/Recents collapse the expanded panel back to the head at
   - `strategy=custom` returns the CSV path and a pandas template.
 - **Self-test:** check `crypto_history` downloads 60 days of BTC-USDT 1d, runs a built-in backtest, lists the cache and confirms the harness is bundled.
 - **System prompt:** a backtesting section with the questions to ask first, then the write → run → explain → iterate loop, plus overfitting / not-advice warnings.
+
+## Tools screen groups + old crypto tools removed (unreleased)
+
+- **Settings > Tools sections:** tools are shown in collapsible sections (`data/tools/ToolGroups`): Files, Web, Termux & Python, PDF & documents, Shizuku & phone screen, Git, Crypto backtesting, Memory & skills, Charts & other, MCP. Sections are collapsed by default.
+  - Each header shows "x of y on" and has a tri-state master checkbox: tapping it turns all on, or all off when everything is already on.
+  - The per-tool switches are unchanged, and tool presets still work through `ToolPrefs`.
+- **Removed** the Coinbase Exchange market-data and trading tools (`crypto_markets/ticker/candles/orderbook/balance/order_status/place_order/cancel_order`), `CoinbaseExchangeClient`, `CryptoCredentials`, the old `CryptoBacktest`, and the key card in Settings > Tools.
+  - On start the app deletes the `crypto_secure` encrypted prefs.
+  - `Candle` and `CoinbaseCandles.parse` are kept for the history fallback.
+  - `ToolPrefs.DEFAULT_OFF` is now empty.
+  - Crypto is now backtesting only: `crypto_history_download`, `crypto_history_list`, `crypto_backtest`, `crypto_backtest_script`.

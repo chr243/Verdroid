@@ -25,7 +25,7 @@ class ToolPresetsTest {
         assertEquals(ToolPreset.DEVICE, ToolPreset.of("run_shell"))
         assertEquals(ToolPreset.DEVICE, ToolPreset.of("screen_tap"))
         assertEquals(ToolPreset.DEVICE, ToolPreset.of("git_push"))
-        listOf("memory_save", "skill_get", "chart", "crypto_ticker", "mcp__x__y").forEach {
+        listOf("memory_save", "skill_get", "chart", "crypto_backtest", "mcp__x__y").forEach {
             assertNull(it, ToolPreset.of(it)); assertTrue(ToolPreset.allowed(it, ToolPreset.entries.toSet()))
         }
     }

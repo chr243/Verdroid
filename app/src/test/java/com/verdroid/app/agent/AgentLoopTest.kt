@@ -164,10 +164,10 @@ class AgentLoopTest {
         val p = AgentLoop.systemPrompt()
         assertTrue(p.contains("Phone screen (accessibility)") && p.contains("OTHER Android apps"))
         assertTrue(p.contains("web_fetch") && p.contains("There is no internal browser"))
-        assertTrue(p.contains("crypto_place_order") && p.contains("OFF by default") && p.contains("Revolut has no public crypto"))
+        assertTrue(p.contains("crypto_backtest_script") && p.contains("generate_signals") && p.contains("overfitting"))
         assertTrue(p.contains("Prefer English-language sources"))
         for (gone in listOf("web_scrape", "web_click", "web_type", "web_session", "web_screenshot", "x_post", "x_scrape", "fb_",
-            "reset_browser", "Firefox", "tbp")) assertFalse(gone, p.contains(gone))
+            "reset_browser", "Firefox", "tbp", "crypto_place_order", "crypto_ticker")) assertFalse(gone, p.contains(gone))
         assertTrue(p.contains("termux_run") && p.contains("run_shell"))
         assertTrue(p.contains("web_search first") && p.contains("format=markdown"))
         assertTrue(p.indexOf("web_search") < p.indexOf("web_fetch"))

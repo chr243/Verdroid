@@ -131,8 +131,6 @@ object AppModule {
         mcp: com.verdroid.app.data.mcp.McpManager,
         memory: com.verdroid.app.data.memory.MemoryRepository,
         @ApplicationContext context: Context,
-        cryptoClient: com.verdroid.app.data.crypto.CoinbaseExchangeClient,
-        cryptoCreds: com.verdroid.app.data.crypto.CryptoCredentials,
         termux: com.verdroid.app.data.termux.TermuxManager,
         selfTest: javax.inject.Provider<com.verdroid.app.data.selftest.SelfTestRunner>,
     ): ToolRegistry = ToolRegistry(
@@ -165,8 +163,6 @@ object AppModule {
                 // On-device self-test (same checks as Settings → Self-test); runner resolved lazily (it needs this registry)
                 com.verdroid.app.agent.tools.SelfTestTool { selfTest.get() },
             ) +
-            // Crypto: Coinbase Exchange market data + optional live trading (place/cancel off by default)
-            com.verdroid.app.agent.tools.CryptoToolFactory(cryptoClient, cryptoCreds).tools() +
             // Keyless history cache (Documents/Verdroid/Internal/market-data) + offline backtests
             com.verdroid.app.agent.tools.CryptoHistoryTools(
                 downloader = {

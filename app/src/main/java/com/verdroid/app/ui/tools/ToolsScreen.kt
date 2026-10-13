@@ -1,5 +1,12 @@
 package com.verdroid.app.ui.tools
 
+import com.verdroid.app.data.tools.ToolGroups
+import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -26,6 +33,8 @@ fun ToolsScreen(onBack: () -> Unit, vm: ToolsViewModel = hiltViewModel()) {
     val storageLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.StartActivityForResult()) { vm.refresh() }
     val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+    // Sections start collapsed; open ones survive rotation.
+    var expanded by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(setOf<String>()) }
     LaunchedEffect(Unit) {
         vm.events.collect { e ->
             when (e) {
@@ -56,25 +65,45 @@ fun ToolsScreen(onBack: () -> Unit, vm: ToolsViewModel = hiltViewModel()) {
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
             }
-            itemsIndexed(state.tools, key = { _, t -> "t-" + t.name }) { i, t ->
-                val on = t.name !in disabled
-                ListItem(
-                    modifier = Modifier.groupedRow(i, state.tools.size),
-                    colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
-                    headlineContent = { Text(t.name, fontFamily = FontFamily.Monospace) },
-                    supportingContent = {
-                        Column {
-                            Text(t.description, maxLines = 2)
-                            Text(if (!on) "Off" else t.status.text, style = MaterialTheme.typography.labelMedium,
-                                color = when {
-                                    !on -> MaterialTheme.colorScheme.onSurfaceVariant
-                                    t.status.ready -> MaterialTheme.colorScheme.primary
-                                    else -> MaterialTheme.colorScheme.error
-                                })
-                        }
-                    },
-                    trailingContent = { Switch(checked = on, onCheckedChange = { vm.setEnabled(t.name, it) }) },
-                )
+            ToolGroups.group(state.tools) { it.name }.forEach { (g, tools) ->
+                val names = tools.map { it.name }
+                val m = ToolGroups.master(names, disabled)
+                val open = g.id in expanded
+                item(key = "g-" + g.id) {
+                    ListItem(
+                        modifier = Modifier.clickable { expanded = if (open) expanded - g.id else expanded + g.id }
+                            .semantics { contentDescription = "${g.title}, ${names.count { it !in disabled }} of ${names.size} on, ${if (open) "expanded" else "collapsed"}" },
+                        headlineContent = { Text(g.title, style = MaterialTheme.typography.titleSmall) },
+                        supportingContent = { Text("${names.count { it !in disabled }} of ${names.size} on") },
+                        leadingContent = { Icon(if (open) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown, null) },
+                        trailingContent = {
+                            TriStateCheckbox(
+                                state = when (m) { ToolGroups.Master.ON -> ToggleableState.On; ToolGroups.Master.OFF -> ToggleableState.Off; ToolGroups.Master.PARTIAL -> ToggleableState.Indeterminate },
+                                onClick = { val on = ToolGroups.nextEnabled(m); names.forEach { vm.setEnabled(it, on) } },
+                                modifier = Modifier.semantics { contentDescription = "Turn all ${g.title} tools ${if (ToolGroups.nextEnabled(m)) "on" else "off"}" })
+                        },
+                    )
+                }
+                if (open) itemsIndexed(tools, key = { _, t -> "t-" + t.name }) { i, t ->
+                    val on = t.name !in disabled
+                    ListItem(
+                        modifier = Modifier.groupedRow(i, tools.size),
+                        colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
+                        headlineContent = { Text(t.name, fontFamily = FontFamily.Monospace) },
+                        supportingContent = {
+                            Column {
+                                Text(t.description, maxLines = 2)
+                                Text(if (!on) "Off" else t.status.text, style = MaterialTheme.typography.labelMedium,
+                                    color = when {
+                                        !on -> MaterialTheme.colorScheme.onSurfaceVariant
+                                        t.status.ready -> MaterialTheme.colorScheme.primary
+                                        else -> MaterialTheme.colorScheme.error
+                                    })
+                            }
+                        },
+                        trailingContent = { Switch(checked = on, onCheckedChange = { vm.setEnabled(t.name, it) }) },
+                    )
+                }
             }
             item {
                 Text("Shared folder", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = 16.dp, top = 20.dp, end = 16.dp))
@@ -131,35 +160,11 @@ fun ToolsScreen(onBack: () -> Unit, vm: ToolsViewModel = hiltViewModel()) {
                     },
                 )
             }
-            item {
-                Text("Coinbase Exchange key", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = 16.dp, top = 20.dp, end = 16.dp))
-                CryptoKeyCard(state.cryptoKeyMasked, state.cryptoConfigured, vm::saveCrypto, vm::clearCrypto)
-            }
             item { Spacer(Modifier.height(24.dp)) }
         }
     }
 }
 
-/** Optional API key for crypto_balance / crypto_order_status / live orders. Market data needs no key. */
-@Composable
-private fun CryptoKeyCard(masked: String?, configured: Boolean, onSave: (String, String, String) -> Unit, onClear: () -> Unit) {
-    var key by remember { mutableStateOf("") }
-    var secret by remember { mutableStateOf("") }
-    var pass by remember { mutableStateOf("") }
-    val hidden = androidx.compose.ui.text.input.PasswordVisualTransformation()
-    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Only for crypto balances and orders. Key: ${masked ?: "not set"} · encrypted.",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        OutlinedTextField(key, { key = it }, label = { Text("API key") }, singleLine = true, visualTransformation = hidden, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(secret, { secret = it }, label = { Text("API secret") }, singleLine = true, visualTransformation = hidden, modifier = Modifier.fillMaxWidth())
-        OutlinedTextField(pass, { pass = it }, label = { Text("Passphrase") }, singleLine = true, visualTransformation = hidden, modifier = Modifier.fillMaxWidth())
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { onSave(key, secret, pass); key = ""; secret = ""; pass = "" },
-                enabled = key.isNotBlank() || secret.isNotBlank() || pass.isNotBlank()) { Text("Save") }
-            if (configured) OutlinedButton(onClick = onClear) { Text("Remove") }
-        }
-    }
-}
 
 /** Lightweight ViewModel for the MCP screen (no Termux/Shizuku checks like [ToolsViewModel]). */
 @dagger.hilt.android.lifecycle.HiltViewModel

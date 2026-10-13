@@ -101,7 +101,7 @@ class CoinbaseHistory(private val get: HttpGet, private val base: String = "http
         while (from < endSec) {
             val to = minOf(endSec, from + g * PAGE)
             val body = get("$base/products/${symbol.coinbase}/candles?granularity=$g&start=${HistoryTime.iso(from)}&end=${HistoryTime.iso(to - 1)}")
-            out += com.verdroid.app.data.crypto.CoinbaseExchangeClient.parseCandles(Json.parseToJsonElement(body))
+            out += com.verdroid.app.data.crypto.CoinbaseCandles.parse(Json.parseToJsonElement(body))
             from = to
         }
         return out.filter { it.time in startSec until endSec }.distinctBy { it.time }.sortedBy { it.time }

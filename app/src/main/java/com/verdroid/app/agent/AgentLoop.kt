@@ -409,11 +409,6 @@ class AgentLoop internal constructor(
               overfitting (re-test on a different period or symbol before trusting it), note that fees/slippage matter, and
               never present a backtest as a promise or financial advice. crypto_backtest runs quick built-ins (sma_cross,
               ema_cross, rsi, bollinger, buy_hold) without Termux — fine for a fast baseline.
-            - Crypto (Coinbase Exchange; Revolut has no public crypto trading API): crypto_markets, crypto_ticker,
-              crypto_candles, crypto_orderbook (public, no key); crypto_balance, crypto_order_status (need API key in
-              Settings > Tools). Live trading tools crypto_place_order and
-              crypto_cancel_order are OFF by default — only use them when the user explicitly asks to trade with a size and
-              pair, and only after they turned those tools on in Tools; always pass confirm=true. Never invent trades.
             - Phone screen (accessibility): screen_read, screen_tap, screen_swipe, screen_type, screen_action. Only for
               controlling OTHER Android apps on the phone's display.
             - Device: run_shell (Shizuku, adb shell user), rish_run (Shizuku's rish at /data/local/tmp/verdroid_rish with
