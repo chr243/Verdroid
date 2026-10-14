@@ -98,7 +98,10 @@ class SelfTestRunner @Inject constructor(
             check(memory.delete(id)) { "temp row delete failed" }
             "insert/read/delete ok"
         },
-        "settings" to { "models=${settings.currentModels().size}, limits ok (${settings.limits.first().javaClass.simpleName})" },
+        "settings" to {
+            check(!com.verdroid.app.data.network.ModelIds.openRouterUsable(listOf("openrouter/free"), 0)) { "no-key OpenRouter must be skipped" }
+            check(com.verdroid.app.domain.model.DefaultModels.list.any(com.verdroid.app.data.network.ModelIds::isKilo)) { "defaults need a keyless kilo fallback" }
+            "models=${settings.currentModels().size}, limits ok (${settings.limits.first().javaClass.simpleName}); no-key → kilo" },
         "agents_md" to { "${agentsMd.text.value.length} chars" },
         "memory" to { run("memory_search", args("query" to "selftest")); "${memory.all().size} memories, search ok" },
         "skills" to { run("skill_list", args()); "skill_list ok" },

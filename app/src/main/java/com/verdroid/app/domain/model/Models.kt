@@ -193,6 +193,13 @@ object DefaultModels {
      * it is deliberately NOT last, and no code treats the last entry as a special "final fallback".
      */
     val list = listOf(
+        "nvidia/nemotron-3-ultra-550b-a55b:free",
+        "openrouter/free",
+        "kilo:kilo-auto/free",
+    )
+
+    /** Defaults v3 (app 0.9.19 – 1.0.52); a saved list equal to this was never customised and moves to [list]. */
+    val previousV3 = listOf(
         "kilo:kilo-auto/free",
         "inclusionai/ling-3.0-flash-sante:free",
         "openrouter/free",
@@ -214,11 +221,11 @@ object DefaultModels {
     )
 
     /** Current version of the defaults (bumped whenever [list] changes). */
-    const val VERSION = 3
+    const val VERSION = 4
 
     /** Parses the stored newline-separated list the same way the settings repository does. */
     fun parse(stored: String?): List<String>? = stored?.split('\n')?.map { it.trim() }?.filter { it.isNotEmpty() }
 
     /** True when a stored list is just an old default (never customised) and should be dropped for the new defaults. */
-    fun isUncustomisedLegacy(stored: String?): Boolean = parse(stored) == legacyV1
+    fun isUncustomisedLegacy(stored: String?): Boolean = parse(stored).let { it == legacyV1 || it == previousV3 }
 }

@@ -40,6 +40,9 @@ object ModelIds {
         when { it.startsWith(KILO_PREFIX) -> ModelProvider.KILO; it.startsWith(CUSTOM_PREFIX) || it.startsWith(PROV_PREFIX) -> ModelProvider.CUSTOM; else -> ModelProvider.OPENROUTER }
     }
     fun isKilo(id: String) = provider(id) == ModelProvider.KILO
+
+    /** OpenRouter entries are only tried with at least one OpenRouter key; otherwise they are skipped (no request). */
+    fun openRouterUsable(orModels: List<String>, keyCount: Int): Boolean = keyCount > 0 && orModels.isNotEmpty()
     fun isCustom(id: String) = provider(id) == ModelProvider.CUSTOM
     fun isOpenRouter(id: String) = provider(id) == ModelProvider.OPENROUTER
     /** The id the provider's API expects (prefix removed). */

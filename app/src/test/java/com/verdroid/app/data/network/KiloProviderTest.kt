@@ -95,7 +95,7 @@ class KiloProviderTest {
         assertEquals("kilo-auto/free", ModelIds.bare("kilo:kilo-auto/free"))
         assertEquals("kilo-auto/free (Kilo)", ModelIds.label("kilo:kilo-auto/free"))
         assertEquals("openrouter/free", ModelIds.label("openrouter/free"))
-        assertEquals(ModelIds.KILO_AUTO_FREE, DefaultModels.list.first())
+        assertEquals(ModelIds.KILO_AUTO_FREE, DefaultModels.list.last())
         assertEquals(listOf(ModelIds.KILO_AUTO_FREE, "a/b"), ModelIds.withKiloFirst(listOf("a/b")))
         assertEquals(listOf("a/b", "kilo:x"), ModelIds.withKiloFirst(listOf("a/b", "kilo:x")))
     }
@@ -118,8 +118,11 @@ class KiloProviderTest {
         assertFalse(ModelDefaultsMigration.shouldMigrate(m))
         // user later removed kilo: not re-added because the flag (version 3) is set
         val removed = mutablePreferencesOf(SettingsKeys.MODELS to "a/b:free", SettingsKeys.MODEL_DEFAULTS_VERSION to 3)
-        assertFalse(ModelDefaultsMigration.shouldMigrate(removed))
-        // legacy uncustomised list is dropped -> defaults (Kilo first) apply
+        assertEquals("a/b:free", ModelDefaultsMigration.migrate(removed)[SettingsKeys.MODELS])
+        // v4: an untouched v3 default list moves to the new defaults; a customised one is kept
+        val oldDefault = mutablePreferencesOf(SettingsKeys.MODELS to DefaultModels.previousV3.joinToString("\n"), SettingsKeys.MODEL_DEFAULTS_VERSION to 3)
+        assertNull(ModelDefaultsMigration.migrate(oldDefault)[SettingsKeys.MODELS])
+        // legacy uncustomised list is dropped -> defaults apply
         val legacy = mutablePreferencesOf(SettingsKeys.MODELS to DefaultModels.legacyV1.joinToString("\n"))
         assertNull(ModelDefaultsMigration.migrate(legacy)[SettingsKeys.MODELS])
     }

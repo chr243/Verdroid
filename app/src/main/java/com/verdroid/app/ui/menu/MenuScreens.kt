@@ -96,7 +96,7 @@ private fun KiloNotice(onDismiss: () -> Unit) {
         Column(Modifier.padding(16.dp)) {
             Text("New: Kilo Auto Free (no API key)", style = MaterialTheme.typography.titleSmall)
             Spacer(Modifier.height(4.dp))
-            Text("kilo:kilo-auto/free is now the first model in Model priority, with your OpenRouter models as fallback. " +
+            Text("kilo:kilo-auto/free is in Model priority and is used when OpenRouter has no key or is unavailable. " +
                 "It works without an OpenRouter key (about 200 requests/hour). Kilo's free models may log prompts and " +
                 "replies, which can include your memories. Turn off \"Send memories to Kilo models\" below or remove the model " +
                 "from Model priority if you prefer.", style = MaterialTheme.typography.bodySmall)

@@ -102,7 +102,8 @@ class OpenRouterClient @Inject constructor(
         if (customFirst) tryCustom()?.let { return it }
         val kiloFirst = ModelIds.isKilo(models.first()) || (customFirst && models.firstOrNull { !ModelIds.isCustom(it) }?.let(ModelIds::isKilo) == true)
         if (kiloFirst) tryKilo()?.let { return it }
-        val orOutcome = if (keys.isNotEmpty() && orModels.isNotEmpty()) completeOpenRouter(keys, orModels, messages, tools, taskId, status) else null
+        // No OpenRouter key → OpenRouter entries are skipped instantly (no request, no 401, no cooldown) and Kilo/custom are tried.
+        val orOutcome = if (ModelIds.openRouterUsable(orModels, keys.size)) completeOpenRouter(keys, orModels, messages, tools, taskId, status) else null
         if (orOutcome is ChatOutcome.Success) return orOutcome
         if (!kiloFirst) tryKilo()?.let { return it }
         if (!customFirst) tryCustom()?.let { return it }
