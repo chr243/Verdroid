@@ -730,3 +730,10 @@ Released 2026-10-14.
 - **Share to Verdroid:** `ui/share/ShareActivity` (ACTION_SEND / SEND_MULTIPLE, text and documents, no images) with pure logic in `domain/share/ShareLogic` + `ShareDraft`. Links are reduced to the URL only and shown read-only; the message field holds the instruction and `ShareDraft.outgoing` appends the link. Quick actions Summarize / Translate / Ask, X profile links prefill "Who is this person?". New chat / Last chat (`AppPrefs.shareToLastChat`).
 - **Bubble share:** with overlay permission the sheet is a compact card on a translucent window (`Theme.Verdroid.Share`, `VerdroidTheme(transparentWindow)`); after Send it starts `ChatHeadService` for the chat. `ShareHead` hides it while `MainActivity` is in front and restores it on leave only with an unread/running reply. Without overlay permission → full app.
 - **Tool presets** mirror the Settings tool groups; charts and self-test always on. Chat head has no status dot.
+
+## v1.0.52
+
+Released 2026-10-14.
+- **Collapsed steps:** `ToolStacks.blocks(rows, generating)` groups consecutive assistant rows without visible text (thinking and/or tool calls) into `ToolStacks.Steps` (2+ steps): label "N steps · web_search, web_fetch ×6", status RUNNING (pending call or list tail while generating, with the current step name) / FAILED / DONE. `StepsCard` expands to the per-step rows; used by `ChatDetailScreen` and the floating `CompactChatPanel`. Status dots removed from tool cards. Self-test `chat_ui`.
+- **Unread badge:** `TaskDao.observeConversations` counts only assistant NORMAL messages with text and no tool calls; mirrored by `UnreadPolicy.isUserFacing` (unit-tested).
+- **Share scope:** `ShareLogic.scopeNote/withScope` append a model-only `[Share scope]` line to share-originated messages with a link: stay on the shared domain (`site:` search allowed, other sites only suggested). X profile links instead allow a general web search about the person. `AttachmentText.stripScope` hides the line in every UI path via `forDisplay`.

@@ -1,0 +1,4 @@
+- Chat: thinking and tool steps between replies collapse into one "N steps" row with a single status; tap to expand
+- No more green dots next to tool results
+- Chat head unread number counts only replies and questions to you, not thinking or tool steps
+- Shared links: the agent stays on the shared site (other sites only suggested); X profiles may be searched generally
