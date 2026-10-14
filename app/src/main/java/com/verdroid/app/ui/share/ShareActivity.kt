@@ -64,7 +64,11 @@ class ShareActivity : ComponentActivity() {
                             color = MaterialTheme.colorScheme.error)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             ShareLogic.QuickAction.entries.forEach { a ->
-                                FilterChip(selected = draft.selected == a, onClick = { draft = draft.select(a) }, label = { Text(a.label) })
+                                FilterChip(selected = draft.selected == a, onClick = { draft = draft.select(a) }, label = { Text(a.label) },
+                                    colors = FilterChipDefaults.filterChipColors(
+                                        selectedContainerColor = MaterialTheme.colorScheme.primary,
+                                        selectedLabelColor = MaterialTheme.colorScheme.onPrimary,
+                                        selectedLeadingIconColor = MaterialTheme.colorScheme.onPrimary))
                             }
                         }
                         OutlinedTextField(msg, { draft = draft.edit(it) }, Modifier.fillMaxWidth().heightIn(min = 96.dp, max = 220.dp),

@@ -84,7 +84,8 @@ object ShareLogic {
 data class ShareDraft(
     val shared: String,
     val hasFiles: Boolean,
-    val selected: ShareLogic.QuickAction? = null,
+    /** Ask is selected from the start, so text typed before tapping any action is Ask's draft and is kept. */
+    val selected: ShareLogic.QuickAction? = ShareLogic.QuickAction.ASK,
     private val edited: Map<ShareLogic.QuickAction?, String> = emptyMap(),
 ) {
     /** What the message field shows. */

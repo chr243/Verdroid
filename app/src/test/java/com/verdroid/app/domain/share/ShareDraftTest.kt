@@ -9,7 +9,7 @@ import org.junit.Test
 class ShareDraftTest {
     @Test fun `typed text survives re-tapping and switching actions`() {
         var d = ShareDraft("https://a.b", hasFiles = false)
-        assertEquals("https://a.b", d.text)
+        assertEquals("https://a.b", d.text); assertEquals(ASK, d.selected)
         d = d.select(ASK).edit("my question")
         d = d.select(ASK)
         assertEquals("my question", d.text)
@@ -36,5 +36,12 @@ class ShareDraftTest {
         assertFalse(OpenChatNav.needsNavigate(Routes.CHAT, 9, 9))
         assertTrue(OpenChatNav.needsNavigate(Routes.CHATS, null, 9))
         assertTrue(OpenChatNav.needsNavigate(null, null, 9))
+    }
+
+    @Test fun `text typed in the default field is Ask's and survives switching`() {
+        var d = ShareDraft("https://a.b", false).edit("typed first")
+        d = d.select(ASK); assertEquals("typed first", d.text)
+        d = d.select(SUMMARIZE); assertTrue(d.text.startsWith("Summarize"))
+        d = d.select(ASK); assertEquals("typed first", d.text)
     }
 }
