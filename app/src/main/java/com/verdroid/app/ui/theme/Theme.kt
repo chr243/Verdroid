@@ -226,7 +226,7 @@ fun VerdroidTheme(transparentWindow: Boolean = false, content: @Composable () ->
     val dark = when (mode) { ThemeMode.SYSTEM -> isSystemInDarkTheme(); ThemeMode.LIGHT -> false; ThemeMode.DARK -> true }
     val scheme = remember(palette, dark) { Palettes.scheme(palette, dark, context) }
     val status = remember(scheme, dark) { Palettes.status(scheme, dark) }
-    SystemBarsEffect(scheme, dark)
+    SystemBarsEffect(scheme, dark, transparentWindow)
     // Applies app-wide (activity, bubble activity and the floating chat window all use VerdroidTheme): every sp scales.
     val scaled = androidx.compose.ui.unit.Density(density.density, FontScale.effective(density.fontScale, fontScale))
     CompositionLocalProvider(LocalBubbleColors provides Palettes.bubbles(scheme), LocalStatusColors provides status,
@@ -240,7 +240,7 @@ fun VerdroidTheme(transparentWindow: Boolean = false, content: @Composable () ->
  * (light/dark icons) has to match the theme's dark flag — not the system setting.
  */
 @Composable
-private fun SystemBarsEffect(scheme: ColorScheme, dark: Boolean) {
+private fun SystemBarsEffect(scheme: ColorScheme, dark: Boolean, transparentWindow: Boolean) {
     val view = androidx.compose.ui.platform.LocalView.current
     if (view.isInEditMode) return
     androidx.compose.runtime.SideEffect {
