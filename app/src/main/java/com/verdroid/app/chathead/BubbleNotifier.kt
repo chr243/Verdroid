@@ -133,6 +133,7 @@ class BubbleNotifier @Inject constructor(
             .setIcon(icon)
             .setIntent(launchIntent)
             .setLongLived(true)
+            .setCategories(setOf(SHARE_CATEGORY)) // Direct Share target (res/xml/shortcuts.xml → ShareActivity)
             .setPerson(bot)
             .build()
         ShortcutManagerCompat.pushDynamicShortcut(context, shortcut)
@@ -188,6 +189,7 @@ class BubbleNotifier @Inject constructor(
         const val CHANNEL_BUBBLES = "chat_bubbles"
         const val CHANNEL_CHAT_HEAD = "chat_head_overlay"
         fun shortcutId(taskId: Long) = "task_$taskId"
+        const val SHARE_CATEGORY = "com.verdroid.app.category.SHARE_TARGET"
         fun notificationId(taskId: Long) = 10_000 + taskId.toInt()
     }
 }

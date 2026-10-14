@@ -46,7 +46,8 @@ object AttachmentText {
     }
 
     /** [path] is the attachment's path relative to Documents/Verdroid (e.g. Input/photo.jpg). */
-    data class Display(val fileName: String?, val bytes: Long?, val text: String, val path: String? = null) {
+    /** [moreFiles] counts further attachment lines (Share to Verdroid with several files); they are hidden too. */
+    data class Display(val fileName: String?, val bytes: Long?, val text: String, val path: String? = null, val moreFiles: Int = 0) {
         val isImage: Boolean get() = fileName != null && isImageName(fileName)
     }
 
@@ -61,9 +62,14 @@ object AttachmentText {
     /** File name + the user's own text; the default prompt is hidden when it was only added because nothing was typed. */
     fun forDisplay(content: String): Display {
         val m = PREFIX_RE.find(content) ?: return Display(null, null, content)
-        val rest = content.substring(m.range.last + 1)
+        var rest = content.substring(m.range.last + 1)
+        var more = 0
+        while (true) {
+            val n = PREFIX_RE.find(rest) ?: break
+            rest = rest.substring(n.range.last + 1); more++
+        }
         return Display(m.groupValues[1].substringAfterLast('/'), m.groupValues[2].toLongOrNull(),
-            if (isDefaultPrompt(rest)) "" else rest, m.groupValues[1])
+            if (isDefaultPrompt(rest)) "" else rest, m.groupValues[1], more)
     }
 
     fun isDefaultPrompt(text: String): Boolean = text.trim().let { it == DEFAULT_PROMPT || it in LEGACY_DEFAULT_PROMPTS }
@@ -71,10 +77,11 @@ object AttachmentText {
     /** One-line text for previews/notifications: the user's text, else "📎 <file name>". */
     fun preview(content: String): String {
         val d = forDisplay(content)
+        val name = if (d.moreFiles > 0) "${d.fileName} +${d.moreFiles}" else d.fileName
         return when {
             d.fileName == null -> content
-            d.text.isBlank() -> "📎 ${d.fileName}"
-            else -> "📎 ${d.fileName} · ${d.text.trim()}"
+            d.text.isBlank() -> "📎 $name"
+            else -> "📎 $name · ${d.text.trim()}"
         }
     }
 

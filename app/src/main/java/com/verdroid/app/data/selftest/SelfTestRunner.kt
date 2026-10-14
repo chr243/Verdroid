@@ -2,6 +2,7 @@ package com.verdroid.app.data.selftest
 
 import android.Manifest
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.provider.Settings
 import androidx.core.content.ContextCompat
@@ -201,6 +202,17 @@ class SelfTestRunner @Inject constructor(
                 org.eclipse.jgit.api.Git.init().setDirectory(dir).call().use { g -> g.status().call() }
                 "JGit init + status ok"
             } finally { dir.deleteRecursively() }
+        },
+        "share_target" to {
+            val pm = context.packageManager
+            fun handles(action: String, mime: String) = pm.queryIntentActivities(Intent(action).setType(mime), 0)
+                .any { it.activityInfo.packageName == context.packageName }
+            check(handles(Intent.ACTION_SEND, "text/plain")) { "text/plain share not registered" }
+            check(handles(Intent.ACTION_SEND_MULTIPLE, "application/pdf")) { "PDF share not registered" }
+            check(!handles(Intent.ACTION_SEND, "image/jpeg")) { "images must not be a share target" }
+            val msg = com.verdroid.app.domain.share.ShareLogic.message(listOf(com.verdroid.app.domain.model.AttachmentText.prefix("Input/a.pdf", 1)), "Summarize")
+            check(com.verdroid.app.domain.model.AttachmentText.forDisplay(msg).text == "Summarize") { "attachment line leaks into the UI" }
+            "text + documents registered, images not; attachment line hidden"
         },
         "file_guard" to {
             val D = com.verdroid.app.agent.tools.DestructiveDetector
