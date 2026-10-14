@@ -99,6 +99,7 @@ class SelfTestRunner @Inject constructor(
             "insert/read/delete ok"
         },
         "settings" to {
+            check(com.verdroid.app.data.tools.ToolPreset.entries.all { p -> com.verdroid.app.data.tools.ToolGroups.ORDER.any { it.id == p.groupId && it.description == p.description } }) { "tool group descriptions out of sync" }
             check(!com.verdroid.app.data.network.ModelIds.openRouterUsable(listOf("openrouter/free"), 0)) { "no-key OpenRouter must be skipped" }
             check(com.verdroid.app.domain.model.DefaultModels.list.any(com.verdroid.app.data.network.ModelIds::isKilo)) { "defaults need a keyless kilo fallback" }
             "models=${settings.currentModels().size}, limits ok (${settings.limits.first().javaClass.simpleName}); no-key → kilo" },

@@ -17,14 +17,11 @@ import javax.inject.Singleton
  * DEVICE → SYSTEM + GIT, FILES → FILES + PDF (it covered PDFs/ebooks), WEB/TERMUX unchanged. A stored OTHER (Charts & other, briefly a preset) is ignored.
  * Groups added later (Crypto) start ON for existing chats — the same as before, when those tools were not gated.
  */
-enum class ToolPreset(val groupId: String, val description: String) {
-    FILES("files", "Documents/Verdroid (workspace_*), private scratch files"),
-    WEB("web", "web_search, web_fetch, headless Chromium (selenium_*)"),
-    TERMUX("termux", "termux_run, termux_python"),
-    PDF("pdf", "PDF read/edit (pdf_*), ebook translation"),
-    SYSTEM("system", "Shizuku shell, rish, screen control (accessibility)"),
-    GIT("git", "git_* (JGit)"),
-    CRYPTO("crypto", "Backtesting: history download, backtests, scripts");
+enum class ToolPreset(val groupId: String) {
+    FILES("files"), WEB("web"), TERMUX("termux"), PDF("pdf"), SYSTEM("system"), GIT("git"), CRYPTO("crypto");
+
+    /** Same one-line description as the Settings > Tools group (shared in [ToolGroups.ORDER]). */
+    val description: String get() = ToolGroups.ORDER.first { it.id == groupId }.description
 
     /** Same title as the Settings > Tools group. */
     val label: String get() = ToolGroups.ORDER.first { it.id == groupId }.title

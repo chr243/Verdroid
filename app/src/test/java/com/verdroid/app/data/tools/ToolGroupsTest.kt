@@ -35,4 +35,20 @@ class ToolGroupsTest {
         assertFalse(ToolGroups.nextEnabled(ToolGroups.Master.ON))
         assertTrue(ToolGroups.nextEnabled(ToolGroups.Master.PARTIAL)); assertTrue(ToolGroups.nextEnabled(ToolGroups.Master.OFF))
     }
+
+    @Test fun `settings group switch and partial label`() {
+        val names = listOf("a", "b", "c")
+        assertTrue(ToolGroups.switchOn(ToolGroups.master(names, emptySet())))
+        assertTrue(ToolGroups.switchOn(ToolGroups.master(names, setOf("a"))))
+        assertFalse(ToolGroups.switchOn(ToolGroups.master(names, names.toSet())))
+        assertEquals("2 of 3 on", ToolGroups.partialLabel(names, setOf("a")))
+        assertNull(ToolGroups.partialLabel(names, emptySet()))
+        assertNull(ToolGroups.partialLabel(names, names.toSet()))
+    }
+
+    @Test fun `presets dialog and settings share one description per group`() {
+        ToolPreset.entries.forEach { p -> assertEquals(ToolGroups.ORDER.first { it.id == p.groupId }.description, p.description) }
+        assertEquals("Documents/Verdroid (workspace_*), private scratch files", ToolPreset.FILES.description)
+        assertTrue(ToolGroups.ORDER.all { it.description.isNotBlank() })
+    }
 }

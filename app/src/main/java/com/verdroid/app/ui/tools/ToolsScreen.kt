@@ -6,8 +6,8 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.state.ToggleableState
 import androidx.compose.foundation.layout.*
+import androidx.compose.ui.Alignment
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
 import com.verdroid.app.ui.components.groupedRow
@@ -70,19 +70,22 @@ fun ToolsScreen(onBack: () -> Unit, vm: ToolsViewModel = hiltViewModel()) {
                 val m = ToolGroups.master(names, disabled)
                 val open = g.id in expanded
                 item(key = "g-" + g.id) {
-                    ListItem(
-                        modifier = Modifier.clickable { expanded = if (open) expanded - g.id else expanded + g.id }
-                            .semantics { contentDescription = "${g.title}, ${names.count { it !in disabled }} of ${names.size} on, ${if (open) "expanded" else "collapsed"}" },
-                        headlineContent = { Text(g.title, style = MaterialTheme.typography.titleSmall) },
-                        supportingContent = { Text("${names.count { it !in disabled }} of ${names.size} on") },
-                        leadingContent = { Icon(if (open) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown, null) },
-                        trailingContent = {
-                            TriStateCheckbox(
-                                state = when (m) { ToolGroups.Master.ON -> ToggleableState.On; ToolGroups.Master.OFF -> ToggleableState.Off; ToolGroups.Master.PARTIAL -> ToggleableState.Indeterminate },
-                                onClick = { val on = ToolGroups.nextEnabled(m); names.forEach { vm.setEnabled(it, on) } },
-                                modifier = Modifier.semantics { contentDescription = "Turn all ${g.title} tools ${if (ToolGroups.nextEnabled(m)) "on" else "off"}" })
-                        },
-                    )
+                    // Same look as the chat Tool presets dialog: title, muted description, Switch; tap the row to expand.
+                    val partial = ToolGroups.partialLabel(names, disabled)
+                    Row(Modifier.fillMaxWidth().clickable { expanded = if (open) expanded - g.id else expanded + g.id }
+                        .semantics { contentDescription = "${g.title}, ${names.count { it !in disabled }} of ${names.size} on, ${if (open) "expanded" else "collapsed"}" }
+                        .padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(g.title, style = MaterialTheme.typography.bodyLarge)
+                            Text(g.description, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            partial?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                        }
+                        Icon(if (open) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown, null,
+                            tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.width(8.dp))
+                        Switch(checked = ToolGroups.switchOn(m), onCheckedChange = { on -> names.forEach { vm.setEnabled(it, on) } },
+                            modifier = Modifier.semantics { contentDescription = "Turn all ${g.title} tools ${if (ToolGroups.switchOn(m)) "off" else "on"}" })
+                    }
                 }
                 if (open) itemsIndexed(tools, key = { _, t -> "t-" + t.name }) { i, t ->
                     val on = t.name !in disabled

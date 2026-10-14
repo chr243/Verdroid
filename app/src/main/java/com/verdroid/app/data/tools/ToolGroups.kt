@@ -2,13 +2,21 @@ package com.verdroid.app.data.tools
 
 /** Settings > Tools sections (same families as AgentLoop.TOOL_GROUPS). Pure, unit-tested. */
 object ToolGroups {
-    data class Group(val id: String, val title: String)
+    /** [description] is the one-line summary shown in Settings > Tools and the chat Tool presets dialog (single source). */
+    data class Group(val id: String, val title: String, val description: String)
     enum class Master { ON, OFF, PARTIAL }
 
     val ORDER = listOf(
-        Group("files", "Files"), Group("web", "Web"), Group("termux", "Termux & Python"), Group("pdf", "PDF & documents"),
-        Group("system", "Shizuku & phone screen"), Group("git", "Git"), Group("crypto", "Crypto backtesting"),
-        Group("memory", "Memory & skills"), Group("other", "Charts & other"), Group("mcp", "MCP servers"),
+        Group("files", "Files", "Documents/Verdroid (workspace_*), private scratch files"),
+        Group("web", "Web", "web_search, web_fetch, headless Chromium (selenium_*)"),
+        Group("termux", "Termux & Python", "termux_run, termux_python"),
+        Group("pdf", "PDF & documents", "PDF read/edit (pdf_*), ebook translation"),
+        Group("system", "Shizuku & phone screen", "Shizuku shell, rish, screen control (accessibility)"),
+        Group("git", "Git", "git_* (JGit)"),
+        Group("crypto", "Crypto backtesting", "Backtesting: history download, backtests, scripts"),
+        Group("memory", "Memory & skills", "memory_*, skill_*"),
+        Group("other", "Charts & other", "chart, self_test"),
+        Group("mcp", "MCP servers", "Tools from your MCP servers (mcp__*)"),
     )
 
     fun groupOf(name: String): String = when {
@@ -37,4 +45,11 @@ object ToolGroups {
 
     /** Tapping the master: all on unless everything is already on (then all off). */
     fun nextEnabled(m: Master): Boolean = m != Master.ON
+
+    /** Group Switch in Settings > Tools: shown ON while any tool of the group is on (partial = on); flipping it sets all tools. */
+    fun switchOn(m: Master): Boolean = m != Master.OFF
+
+    /** "N of M on" line, only for a partially enabled group. */
+    fun partialLabel(names: List<String>, disabled: Set<String>): String? =
+        if (master(names, disabled) == Master.PARTIAL) "${names.count { it !in disabled }} of ${names.size} on" else null
 }
