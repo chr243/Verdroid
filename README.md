@@ -1,6 +1,5 @@
 # Verdroid
 
-[![Get it on Obtainium](docs/images/badge_obtainium.png)](https://apps.obtainium.imranr.dev/redirect?r=obtainium://app/%7B%22id%22%3A%22com.verdroid.app%22%2C%22url%22%3A%22https%3A%2F%2Fgithub.com%2Fchr243%2FVerdroid%22%2C%22author%22%3A%22chr243%22%2C%22name%22%3A%22Verdroid%22%7D)
 [![GitHub release](https://img.shields.io/github/v/release/chr243/Verdroid?label=GitHub%20release)](https://github.com/chr243/Verdroid/releases/latest)
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue)](LICENSE)
 
