@@ -8,7 +8,9 @@ interface TaskDao {
     @Query(
         """
         SELECT t.*, (SELECT COUNT(*) FROM messages m WHERE m.taskId = t.id AND m.role = 'assistant'
-                     AND m.kind = 'NORMAL' AND m.createdAt > t.lastOpenedAt) AS unreadCount
+                     AND m.kind = 'NORMAL' AND m.createdAt > t.lastOpenedAt
+                     AND m.content IS NOT NULL AND TRIM(m.content) != ''
+                     AND (m.toolCallsJson IS NULL OR TRIM(m.toolCallsJson) IN ('', '[]'))) AS unreadCount
         FROM tasks t WHERE t.archivedAt IS NULL ORDER BY t.updatedAt DESC
         """
     )

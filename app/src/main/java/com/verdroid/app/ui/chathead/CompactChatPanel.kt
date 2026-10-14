@@ -53,6 +53,8 @@ import com.verdroid.app.ui.chat.ToolCallGroup
 import com.verdroid.app.ui.chat.ThinkingCard
 import com.verdroid.app.ui.chat.rememberFollowBottom
 import com.verdroid.app.ui.chat.ToolStacks
+import com.verdroid.app.ui.chat.StepsCard
+import com.verdroid.app.ui.chat.AssistantRowContent
 import com.verdroid.app.ui.chat.UserBubble
 import com.verdroid.app.ui.components.TaskAvatar
 
@@ -82,16 +84,17 @@ fun CompactChatPanel(
     }
     // Consecutive termux_run (& co.) calls fold into one expandable row.
     val rows = remember(visible, callsByMessage) { ToolStacks.rows(visible, callsByMessage) }
+    val blocks = remember(rows, generating) { ToolStacks.blocks(rows, generating) }
     LaunchedEffect(messages.size) { onSeen() }
     // Same stick-to-bottom rule as the full chat: don't yank the list down while the user reads older messages.
     val follow = rememberFollowBottom(listState)
     val newestId = visible.lastOrNull()?.id
     val newestIsUser = visible.lastOrNull()?.role == MessageRole.USER
     val doneCalls = toolCalls.count { it.status != com.verdroid.app.domain.model.ToolCallStatus.PENDING }
-    LaunchedEffect(rows.size, newestId, toolCalls.size, doneCalls) {
+    LaunchedEffect(blocks.size, newestId, toolCalls.size, doneCalls) {
         if (visible.isEmpty()) return@LaunchedEffect
         if (newestIsUser) follow.value = true
-        if (follow.value) listState.scrollToItem(rows.lastIndex.coerceAtLeast(0), com.verdroid.app.ui.chat.ChatScroll.TO_END)
+        if (follow.value) listState.scrollToItem(blocks.lastIndex.coerceAtLeast(0), com.verdroid.app.ui.chat.ChatScroll.TO_END)
     }
 
     Surface(
@@ -122,18 +125,15 @@ fun CompactChatPanel(
                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
-                items(rows, key = { it.key }) { row ->
+                items(blocks, key = { it.key }) { block ->
+                    if (block is ToolStacks.Steps) { StepsCard(block) { t, model -> AgentBubble(t, model) }; return@items }
+                    val row = (block as ToolStacks.Single).row
                     val m = row.message
                     when {
                         m.kind == MessageKind.STATUS -> StatusLine(m)
                         m.kind == MessageKind.SUMMARY -> SummaryCard(m)
                         m.role == MessageRole.USER -> UserBubble(m.content.orEmpty())
-                        m.role == MessageRole.ASSISTANT -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            val shown = remember(m.content, m.reasoning) { ToolStacks.display(m) }
-                            shown.reasoning?.let { ThinkingCard(it) }
-                            shown.content?.takeIf { it.isNotBlank() }?.let { AgentBubble(it, m.model) }
-                            row.groups.forEach { ToolCallGroup(it) }
-                        }
+                        m.role == MessageRole.ASSISTANT -> AssistantRowContent(row) { t, model -> AgentBubble(t, model) }
                     }
                 }
             }

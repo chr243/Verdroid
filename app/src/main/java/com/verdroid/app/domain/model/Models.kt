@@ -61,6 +61,16 @@ data class Conversation(val task: Task, val unreadCount: Int) {
     val hasUnread: Boolean get() = unreadCount > 0
 }
 
+/**
+ * Unread badge rule (mirrors the SQL in `TaskDao.observeConversations`): only assistant messages addressed to the user
+ * count — text replies and questions — never thinking-only turns, tool-call turns or tool results.
+ */
+object UnreadPolicy {
+    fun isUserFacing(m: ChatMessage): Boolean =
+        m.role == MessageRole.ASSISTANT && m.kind == MessageKind.NORMAL && !m.content.isNullOrBlank() &&
+            (m.toolCallsJson.isNullOrBlank() || m.toolCallsJson.trim() == "[]")
+}
+
 enum class MessageRole(val apiName: String) {
     SYSTEM("system"), USER("user"), ASSISTANT("assistant"), TOOL("tool");
 }

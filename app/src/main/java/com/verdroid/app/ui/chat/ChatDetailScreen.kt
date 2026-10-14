@@ -80,6 +80,7 @@ fun ChatDetailScreen(onBack: () -> Unit, onChatMemory: (Long) -> Unit = {}, vm: 
     }
     // Consecutive termux_run (& co.) calls fold into one expandable row.
     val rows = remember(visible, callsByMessage) { ToolStacks.rows(visible, callsByMessage) }
+    val blocks = remember(rows, generating) { ToolStacks.blocks(rows, generating) }
 
     // ---- chat head / bubble launch flow (POST_NOTIFICATIONS on 13+, overlay permission dialog)
     val context = LocalContext.current
@@ -143,11 +144,11 @@ fun ChatDetailScreen(onBack: () -> Unit, onChatMemory: (Long) -> Unit = {}, vm: 
     val newestId = visible.lastOrNull()?.id
     val newestIsUser = visible.lastOrNull()?.role == MessageRole.USER
     val doneCalls = toolCalls.count { it.status != ToolCallStatus.PENDING }
-    LaunchedEffect(rows.size, newestId, toolCalls.size, doneCalls, generating, contentReady) {
+    LaunchedEffect(blocks.size, newestId, toolCalls.size, doneCalls, generating, contentReady) {
         if (!contentReady || visible.isEmpty()) return@LaunchedEffect
         if (newestIsUser) follow.value = true
         if (follow.value) {
-            val last = if (generating) rows.size else rows.lastIndex.coerceAtLeast(0)
+            val last = if (generating) blocks.size else blocks.lastIndex.coerceAtLeast(0)
             // Opening a chat: jump straight to the newest message (no animated trip from the top).
             if (openedAtBottom) listState.animateScrollToItem(last)
             listState.scrollToItem(last, ChatScroll.TO_END) // tall last item: settle at its bottom, not its top
@@ -217,18 +218,15 @@ fun ChatDetailScreen(onBack: () -> Unit, onChatMemory: (Long) -> Unit = {}, vm: 
                             modifier = Modifier.fillMaxWidth().padding(top = 48.dp))
                     }
                 }
-                items(rows, key = { it.key }) { row ->
+                items(blocks, key = { it.key }) { block ->
+                    if (block is ToolStacks.Steps) { StepsCard(block) { t, model -> AgentBubble(t, model) }; return@items }
+                    val row = (block as ToolStacks.Single).row
                     val m = row.message
                     when {
                         m.kind == MessageKind.STATUS -> StatusLine(m)
                         m.kind == MessageKind.SUMMARY -> SummaryCard(m)
                         m.role == MessageRole.USER -> UserBubble(m.content.orEmpty())
-                        m.role == MessageRole.ASSISTANT -> Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                            val shown = remember(m.content, m.reasoning) { ToolStacks.display(m) }
-                            shown.reasoning?.let { ThinkingCard(it) }
-                            shown.content?.takeIf { it.isNotBlank() }?.let { AgentBubble(it, m.model) }
-                            row.groups.forEach { ToolCallGroup(it) }
-                        }
+                        m.role == MessageRole.ASSISTANT -> AssistantRowContent(row) { t, model -> AgentBubble(t, model) }
                     }
                 }
                 if (generating) item("typing") {
@@ -468,8 +466,7 @@ internal fun ToolCallCard(call: ToolCallRecord) {
                 Text("🔧", fontSize = 14.sp); Spacer(Modifier.width(6.dp))
                 Text(call.name, fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
                 if (call.source == "fenced") { SmallBadge("json-fallback", MaterialTheme.colorScheme.outline, MaterialTheme.colorScheme.surface); Spacer(Modifier.width(6.dp)) }
-                Text(icon); Spacer(Modifier.width(4.dp))
-                Box(Modifier.size(8.dp).clip(CircleShape).background(color))
+                Text(icon, color = color)
                 Spacer(Modifier.width(6.dp))
                 Text(if (expanded) "▲" else "▼", fontSize = 12.sp)
             }

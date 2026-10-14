@@ -225,6 +225,19 @@ class SelfTestRunner @Inject constructor(
             "text + documents registered, images not, no Direct Share (new chat only); attachment line hidden; links shared without title; " +
                 "opens in ${if (om.shareUsesBubble(android.provider.Settings.canDrawOverlays(context))) "Bubble" else "Full app"}"
         },
+        "chat_ui" to {
+            fun m(id: Long, role: com.verdroid.app.domain.model.MessageRole, c: String?, calls: String? = null) = com.verdroid.app.domain.model.ChatMessage(
+                id, 1, role, c, com.verdroid.app.domain.model.MessageKind.NORMAL, calls, null, null, null, false, null, id)
+            val a = com.verdroid.app.domain.model.MessageRole.ASSISTANT
+            val rec = { id: Long, mid: Long -> com.verdroid.app.domain.model.ToolCallRecord(id, 1, mid, "c$id", "web_fetch", "{}", "{}",
+                com.verdroid.app.domain.model.ToolCallStatus.SUCCESS, "native", id, id) }
+            val msgs = listOf(m(1, a, null, "[x]"), m(2, a, null, "[x]"), m(3, a, "Done"))
+            val rows = com.verdroid.app.ui.chat.ToolStacks.rows(msgs, mapOf(1L to listOf(rec(1, 1)), 2L to listOf(rec(2, 2))))
+            val blocks = com.verdroid.app.ui.chat.ToolStacks.blocks(rows, false)
+            check(blocks.size == 2 && (blocks[0] as? com.verdroid.app.ui.chat.ToolStacks.Steps)?.stepCount == 2) { "tool steps must collapse into one row" }
+            check(msgs.count(com.verdroid.app.domain.model.UnreadPolicy::isUserFacing) == 1) { "unread must count only user-facing replies" }
+            "tool steps grouped; unread counts replies only"
+        },
         "file_guard" to {
             val D = com.verdroid.app.agent.tools.DestructiveDetector
             check(D.shell("rm -rf /sdcard/Download/x").isNotEmpty()) { "rm not detected" }

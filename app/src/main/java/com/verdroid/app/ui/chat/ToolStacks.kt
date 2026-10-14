@@ -71,6 +71,61 @@ object ToolStacks {
         return if (line.length > max) line.take(max - 1).trimEnd() + "…" else line
     }
 
+    enum class StepsStatus { RUNNING, DONE, FAILED }
+
+    /** List item: a normal row, or consecutive thinking/tool-only assistant rows collapsed into one "N steps" row. */
+    sealed interface Block { val key: Long }
+    data class Single(val row: Row) : Block { override val key get() = row.key }
+    data class Steps(val rows: List<Row>, val stepCount: Int, val label: String, val status: StepsStatus, val current: String?) : Block {
+        override val key get() = rows.first().key
+    }
+
+    /** Assistant turn with no visible text, only thinking and/or tool calls. */
+    fun isStepRow(r: Row): Boolean {
+        val m = r.message
+        if (m.role != MessageRole.ASSISTANT || m.kind != MessageKind.NORMAL) return false
+        val d = display(m)
+        return d.content.isNullOrBlank() && (!d.reasoning.isNullOrBlank() || r.groups.isNotEmpty())
+    }
+
+    private fun stepsOf(r: Row): Int = (if (display(r.message).reasoning.isNullOrBlank()) 0 else 1) + r.groups.sumOf { it.size }
+
+    /** "web_search, web_fetch ×6": tool names in first-use order with counts; "Thinking" when there are no tools. */
+    fun stepsLabel(calls: List<ToolCallRecord>): String {
+        if (calls.isEmpty()) return "Thinking"
+        return calls.groupingBy { it.name }.eachCount().entries.joinToString(", ") { (n, c) -> if (c > 1) "$n ×$c" else n }
+    }
+
+    /**
+     * Groups consecutive step rows between visible messages. A run with 2+ steps becomes one [Steps]; a run is RUNNING
+     * when a call is pending or it is the tail of the list while [generating], FAILED when any call failed, else DONE.
+     */
+    fun blocks(rows: List<Row>, generating: Boolean): List<Block> {
+        val out = mutableListOf<Block>()
+        var run = mutableListOf<Row>()
+        fun flush(atEnd: Boolean) {
+            if (run.isEmpty()) return
+            val steps = run.sumOf(::stepsOf)
+            if (steps < 2) run.forEach { out += Single(it) } else {
+                val calls = run.flatMap { r -> r.groups.flatten() }
+                val running = calls.any { it.status == ToolCallStatus.PENDING } || (atEnd && generating)
+                val status = when {
+                    running -> StepsStatus.RUNNING
+                    calls.any { it.status == ToolCallStatus.ERROR } -> StepsStatus.FAILED
+                    else -> StepsStatus.DONE
+                }
+                val last = run.last()
+                val current = if (!running) null else calls.lastOrNull { it.status == ToolCallStatus.PENDING }?.name
+                    ?: last.groups.lastOrNull()?.lastOrNull()?.name ?: "Thinking"
+                out += Steps(run.toList(), steps, stepsLabel(calls), status, current)
+            }
+            run = mutableListOf()
+        }
+        for (r in rows) if (isStepRow(r)) run += r else { flush(false); out += Single(r) }
+        flush(true)
+        return out
+    }
+
     /** Status of a stack: pending if any call runs, else error if any failed, else success. */
     fun status(calls: List<ToolCallRecord>): ToolCallStatus = when {
         calls.any { it.status == ToolCallStatus.PENDING } -> ToolCallStatus.PENDING
@@ -100,8 +155,7 @@ internal fun ToolCallGroup(calls: List<ToolCallRecord>) {
                 Text("${calls.first().name} ×${calls.size}", fontFamily = FontFamily.Monospace, fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.weight(1f))
                 if (failed > 0) { Text("$failed failed", style = MaterialTheme.typography.labelSmall, color = sc.error); Spacer(Modifier.width(6.dp)) }
-                Text(icon); Spacer(Modifier.width(4.dp))
-                Box(Modifier.size(8.dp).clip(CircleShape).background(color))
+                Text(icon, color = color)
                 Spacer(Modifier.width(6.dp))
                 Text(if (expanded) "▲" else "▼", fontSize = 12.sp)
             }
@@ -145,6 +199,53 @@ internal fun ThinkingCard(reasoning: String) {
                             Text(reasoning, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
+                }
+            }
+        }
+    }
+}
+
+/** Body of an assistant row (thinking, text, tool groups) — shared by the chat screen and the floating window. */
+@Composable
+internal fun AssistantRowContent(row: ToolStacks.Row, bubble: @Composable (String, String?) -> Unit) {
+    val m = row.message
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        val shown = remember(m.content, m.reasoning) { ToolStacks.display(m) }
+        shown.reasoning?.let { ThinkingCard(it) }
+        shown.content?.takeIf { it.isNotBlank() }?.let { bubble(it, m.model) }
+        row.groups.forEach { ToolCallGroup(it) }
+    }
+}
+
+/** One collapsed row for a run of thinking/tool steps: "🔧 7 steps · web_search, web_fetch ×6" + one status; tap to expand. */
+@Composable
+internal fun StepsCard(block: ToolStacks.Steps, bubble: @Composable (String, String?) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    val sc = com.verdroid.app.ui.theme.LocalStatusColors.current
+    Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.surfaceContainer,
+        contentColor = MaterialTheme.colorScheme.onSurface, modifier = Modifier.fillMaxWidth().padding(end = 32.dp)) {
+        Column(Modifier.clickable { expanded = !expanded }.padding(10.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("🔧", fontSize = 14.sp); Spacer(Modifier.width(6.dp))
+                Text("${block.stepCount} steps · ${block.label}", fontWeight = FontWeight.SemiBold, maxLines = 1,
+                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+                Spacer(Modifier.width(6.dp))
+                when (block.status) {
+                    ToolStacks.StepsStatus.RUNNING -> {
+                        Text("${block.current}…", style = MaterialTheme.typography.labelSmall, fontFamily = FontFamily.Monospace,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+                        Spacer(Modifier.width(6.dp))
+                        androidx.compose.material3.CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 2.dp, color = sc.warn)
+                    }
+                    ToolStacks.StepsStatus.DONE -> Text("✅")
+                    ToolStacks.StepsStatus.FAILED -> Text("❌")
+                }
+                Spacer(Modifier.width(6.dp))
+                Text(if (expanded) "▲" else "▼", fontSize = 12.sp)
+            }
+            AnimatedVisibility(expanded) {
+                Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    block.rows.forEach { AssistantRowContent(it, bubble) }
                 }
             }
         }

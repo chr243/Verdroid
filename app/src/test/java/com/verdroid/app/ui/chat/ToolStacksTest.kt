@@ -58,3 +58,51 @@ class ChatScrollTest {
         assertFalse(ChatScroll.nearBottom(6, 10, 1000, 1000, 100)) // scrolled up
     }
 }
+
+class StepsBlockTest {
+    private fun msg(id: Long, role: MessageRole, content: String? = null) =
+        ChatMessage(id, 1, role, content, MessageKind.NORMAL, null, null, null, null, false, null, id)
+    private fun call(id: Long, mid: Long, name: String, st: ToolCallStatus = ToolCallStatus.SUCCESS) =
+        ToolCallRecord(id, 1, mid, "c$id", name, "{}", "{}", st, "native", id, id)
+    private fun think(id: Long) = ChatMessage(id, 1, MessageRole.ASSISTANT, null, MessageKind.NORMAL, null, null, null, null, false, null, id, "hmm")
+
+    @Test fun `thinking and tool steps between replies collapse into one steps block`() {
+        val visible = listOf(msg(1, MessageRole.USER, "q"), think(2), msg(3, MessageRole.ASSISTANT), msg(4, MessageRole.ASSISTANT),
+            msg(5, MessageRole.ASSISTANT), msg(6, MessageRole.ASSISTANT, "Answer"))
+        val calls = listOf(call(10, 3, "web_search"), call(11, 4, "web_fetch"), call(12, 4, "web_fetch"), call(13, 5, "web_fetch"))
+            .groupBy { it.messageId }
+        val b = ToolStacks.blocks(ToolStacks.rows(visible, calls), generating = false)
+        assertEquals(listOf(1L, 2L, 6L), b.map { it.key })
+        val st = b[1] as ToolStacks.Steps
+        assertEquals(5, st.stepCount)
+        assertEquals("web_search, web_fetch ×3", st.label)
+        assertEquals(ToolStacks.StepsStatus.DONE, st.status); assertNull(st.current)
+        assertTrue(b[0] is ToolStacks.Single && b[2] is ToolStacks.Single)
+    }
+
+    @Test fun `steps status is running at the tail while generating, failed on any error, single step stays a row`() {
+        val v = listOf(msg(1, MessageRole.ASSISTANT), msg(2, MessageRole.ASSISTANT))
+        val ok = listOf(call(1, 1, "web_search"), call(2, 2, "web_fetch")).groupBy { it.messageId }
+        val run = ToolStacks.blocks(ToolStacks.rows(v, ok), generating = true).single() as ToolStacks.Steps
+        assertEquals(ToolStacks.StepsStatus.RUNNING, run.status); assertEquals("web_fetch", run.current)
+        val pending = listOf(call(1, 1, "web_search"), call(2, 2, "web_fetch", ToolCallStatus.PENDING)).groupBy { it.messageId }
+        assertEquals(ToolStacks.StepsStatus.RUNNING, (ToolStacks.blocks(ToolStacks.rows(v, pending), false).single() as ToolStacks.Steps).status)
+        val err = listOf(call(1, 1, "web_search", ToolCallStatus.ERROR), call(2, 2, "web_fetch")).groupBy { it.messageId }
+        assertEquals(ToolStacks.StepsStatus.FAILED, (ToolStacks.blocks(ToolStacks.rows(v, err), false).single() as ToolStacks.Steps).status)
+        val one = ToolStacks.blocks(ToolStacks.rows(v.take(1), mapOf(1L to listOf(call(1, 1, "web_search")))), false)
+        assertTrue(one.single() is ToolStacks.Single)
+        assertEquals("Thinking", ToolStacks.stepsLabel(emptyList()))
+    }
+
+    @Test fun `unread counts only user-facing assistant replies`() {
+        fun m(role: MessageRole, c: String?, calls: String? = null, kind: MessageKind = MessageKind.NORMAL) =
+            ChatMessage(1, 1, role, c, kind, calls, null, null, null, false, null, 1)
+        assertTrue(UnreadPolicy.isUserFacing(m(MessageRole.ASSISTANT, "Here is the answer")))
+        assertTrue(UnreadPolicy.isUserFacing(m(MessageRole.ASSISTANT, "Which file do you mean?", "[]")))
+        assertFalse(UnreadPolicy.isUserFacing(m(MessageRole.ASSISTANT, null)))
+        assertFalse(UnreadPolicy.isUserFacing(think(2)))
+        assertFalse(UnreadPolicy.isUserFacing(m(MessageRole.ASSISTANT, "Let me search", "[{\"id\":\"1\"}]")))
+        assertFalse(UnreadPolicy.isUserFacing(m(MessageRole.TOOL, "{result}")))
+        assertFalse(UnreadPolicy.isUserFacing(m(MessageRole.ASSISTANT, "status", kind = MessageKind.STATUS)))
+    }
+}
