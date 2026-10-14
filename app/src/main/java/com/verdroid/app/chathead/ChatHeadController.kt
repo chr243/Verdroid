@@ -13,6 +13,11 @@ import kotlinx.coroutines.flow.first
 import javax.inject.Inject
 import javax.inject.Singleton
 
+/** Chat whose head was spawned by a Floating/Bubble share (process-wide; null = none). */
+object ShareHead {
+    @Volatile var taskId: Long? = null
+}
+
 enum class ChatHeadResult { BUBBLE_SHOWN, BUBBLES_BLOCKED, NOTIFICATIONS_BLOCKED, OVERLAY_STARTED, NEEDS_OVERLAY_PERMISSION }
 
 /**

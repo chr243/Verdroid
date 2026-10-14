@@ -17,6 +17,7 @@ import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import kotlinx.coroutines.flow.first
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
@@ -24,6 +25,8 @@ class MainActivity : ComponentActivity() {
     @Inject lateinit var appPrefs: com.verdroid.app.data.prefs.AppPrefs
     @Inject lateinit var chatHeads: com.verdroid.app.chathead.ChatHeadController
     @Inject lateinit var updater: com.verdroid.app.data.update.AppUpdater
+    @Inject lateinit var taskRepo: com.verdroid.app.domain.repository.TaskRepository
+    @Inject lateinit var agent: com.verdroid.app.domain.repository.AgentController
 
     // v0.9.8 "Auto chat head on Home": onUserLeaveHint (Home/Recents) marks a leave; onStop (really in the background,
     // not rotation, not a translucent permission dialog) opens the head. Our own startActivity calls (settings,
@@ -49,15 +52,31 @@ class MainActivity : ComponentActivity() {
         val hinted = now - leaveHintAt < LEAVE_HINT_WINDOW_MS && now - ownLaunchAt > OWN_LAUNCH_GRACE_MS
         leaveHintAt = 0L
         val taskId = com.verdroid.app.chathead.VisibleChat.taskId
-        if (!hinted || isChangingConfigurations || taskId == null) return
-        if (!appPrefs.autoChatHeadOnHome.value || !chatHeads.canDrawOverlays()) return
-        runCatching { chatHeads.startOverlay(taskId) }.onSuccess { autoHeadTaskId = taskId }
+        if (isChangingConfigurations) return
+        if (hinted && taskId != null && appPrefs.autoChatHeadOnHome.value && chatHeads.canDrawOverlays()) {
+            runCatching { chatHeads.startOverlay(taskId) }.onSuccess { autoHeadTaskId = taskId }
+            return
+        }
+        restoreShareHead()
+    }
+
+    /** Bring a share-spawned head back only while its chat has an unread or running reply; otherwise forget it. */
+    private fun restoreShareHead() {
+        val id = com.verdroid.app.chathead.ShareHead.taskId ?: return
+        val running = id in agent.runningTaskIds.value
+        lifecycleScope.launch {
+            val unread = runCatching { taskRepo.observeConversations().first().firstOrNull { it.task.id == id }?.unreadCount ?: 0 }.getOrDefault(0)
+            if (com.verdroid.app.domain.share.ShareLogic.restoreShareHead(unread, running, chatHeads.canDrawOverlays()))
+                runCatching { chatHeads.startOverlay(id) }
+            else com.verdroid.app.chathead.ShareHead.taskId = null
+        }
     }
 
     override fun onStart() {
         super.onStart()
         // Back in the app: remove the head we opened automatically when the user is on that chat (or any route).
-        if (autoHeadTaskId != null) {
+        // A share-spawned head/floating window hides while the app is in front (opening its chat marks it read).
+        if (autoHeadTaskId != null || com.verdroid.app.chathead.ShareHead.taskId != null) {
             autoHeadTaskId = null
             runCatching { stopService(Intent(this, com.verdroid.app.chathead.ChatHeadService::class.java)) }
         }

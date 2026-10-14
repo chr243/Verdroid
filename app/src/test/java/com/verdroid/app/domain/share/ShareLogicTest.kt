@@ -98,4 +98,11 @@ class ShareLogicTest {
             assertEquals(it, ShareLogic.effectiveOpenMode(it, true))
         }
     }
+
+    @Test fun `share head only returns with an unread or running reply`() {
+        assertTrue(ShareLogic.restoreShareHead(1, false, true))
+        assertTrue(ShareLogic.restoreShareHead(0, true, true))
+        assertFalse(ShareLogic.restoreShareHead(0, false, true))
+        assertFalse(ShareLogic.restoreShareHead(3, true, false))
+    }
 }

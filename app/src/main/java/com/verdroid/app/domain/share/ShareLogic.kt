@@ -98,6 +98,13 @@ object ShareLogic {
     /** Stored name → mode (unknown/missing = FULL_APP, the default). */
     fun parseOpenMode(name: String?): OpenMode = OpenMode.entries.firstOrNull { it.name == name } ?: OpenMode.FULL_APP
 
+    /**
+     * A share-spawned chat head is hidden while the main app is in front; on leaving the app it only comes back when the
+     * chat still has a reason to show (unread reply or reply still running) and overlays are allowed.
+     */
+    fun restoreShareHead(unread: Int, running: Boolean, canDrawOverlays: Boolean): Boolean =
+        canDrawOverlays && (unread > 0 || running)
+
     /** Floating and Bubble need "Display over other apps"; without it the share falls back to the full app. */
     fun effectiveOpenMode(mode: OpenMode, canDrawOverlays: Boolean): OpenMode = if (canDrawOverlays) mode else OpenMode.FULL_APP
 }

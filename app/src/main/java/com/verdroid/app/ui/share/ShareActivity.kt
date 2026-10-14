@@ -117,6 +117,7 @@ class ShareActivity : ComponentActivity() {
         val i = com.verdroid.app.chathead.ChatHeadService.startIntent(this, id)
             .putExtra(com.verdroid.app.chathead.ChatHeadService.EXTRA_EXPAND, mode == ShareLogic.OpenMode.FLOATING)
         runCatching { androidx.core.content.ContextCompat.startForegroundService(this, i) }
+            .onSuccess { com.verdroid.app.chathead.ShareHead.taskId = id }
             .onFailure { startActivity(MainActivity.openTaskIntent(this, id)) }
     }
 

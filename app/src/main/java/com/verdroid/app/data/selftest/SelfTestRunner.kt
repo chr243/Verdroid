@@ -220,6 +220,7 @@ class SelfTestRunner @Inject constructor(
             val om = com.verdroid.app.domain.share.ShareLogic
             check(om.parseOpenMode(null) == com.verdroid.app.domain.share.ShareLogic.OpenMode.FULL_APP) { "Share opens in must default to Full app" }
             check(om.effectiveOpenMode(com.verdroid.app.domain.share.ShareLogic.OpenMode.BUBBLE, false) == com.verdroid.app.domain.share.ShareLogic.OpenMode.FULL_APP) { "no overlay permission must fall back to Full app" }
+            check(!om.restoreShareHead(0, false, true) && om.restoreShareHead(1, false, true)) { "share head must only return with an unread/running reply" }
             "text + documents registered, images not, no Direct Share (new chat only); attachment line hidden; links shared without title; " +
                 "opens in ${om.effectiveOpenMode(om.parseOpenMode(context.getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE).getString("share_open_mode", null)), android.provider.Settings.canDrawOverlays(context)).label}"
         },
