@@ -44,6 +44,8 @@ object ShareLogic {
         return if (rest.isEmpty()) urls.joinToString("\n") else "$links\n\n$rest"
     }
 
+    fun containsUrl(text: String): Boolean = URL_RE.containsMatchIn(text)
+
     fun isLink(text: String): Boolean = Regex("^https?://\\S+$").matches(text.trim())
 
     enum class QuickAction(val label: String) { SUMMARIZE("Summarize"), TRANSLATE("Translate"), ASK("Ask") }
@@ -96,4 +98,10 @@ data class ShareDraft(
     fun select(a: ShareLogic.QuickAction): ShareDraft = if (a == selected) this else copy(selected = a)
 
     fun edit(newText: String): ShareDraft = copy(edited = edited + (selected to newText))
+
+    companion object {
+        /** Sheet start: Summarize for a shared link (no files), Ask for plain text and files. */
+        fun initial(shared: String, hasFiles: Boolean): ShareDraft =
+            ShareDraft(shared, hasFiles, if (!hasFiles && ShareLogic.containsUrl(shared)) ShareLogic.QuickAction.SUMMARIZE else ShareLogic.QuickAction.ASK)
+    }
 }

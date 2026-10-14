@@ -51,7 +51,7 @@ class ShareActivity : ComponentActivity() {
         }
         setContent {
             VerdroidTheme {
-                var draft by remember { mutableStateOf(com.verdroid.app.domain.share.ShareDraft(text, files.isNotEmpty())) }
+                var draft by remember { mutableStateOf(com.verdroid.app.domain.share.ShareDraft.initial(text, files.isNotEmpty())) }
                 val msg = draft.text
                 var busy by remember { mutableStateOf(false) }
                 var error by remember { mutableStateOf<String?>(null) }

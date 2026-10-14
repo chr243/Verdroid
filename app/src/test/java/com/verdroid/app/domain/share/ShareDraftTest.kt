@@ -44,4 +44,18 @@ class ShareDraftTest {
         d = d.select(SUMMARIZE); assertTrue(d.text.startsWith("Summarize"))
         d = d.select(ASK); assertEquals("typed first", d.text)
     }
+
+    @Test fun `a shared link opens with Summarize, text and files with Ask`() {
+        val link = ShareDraft.initial("Link: https://a.b/c\n\nTitle", false)
+        assertEquals(SUMMARIZE, link.selected)
+        assertEquals("Summarize this page.\n\nLink: https://a.b/c\n\nTitle", link.text)
+        assertEquals(SUMMARIZE, ShareDraft.initial("https://a.b", false).selected)
+        assertEquals(ASK, ShareDraft.initial("just some text", false).selected)
+        assertEquals(ASK, ShareDraft.initial("", true).selected)
+        assertEquals(ASK, ShareDraft.initial("https://a.b", true).selected)
+        // Per-action drafts unchanged: typed Summarize text survives a trip to Ask.
+        val d = link.edit("short summary").select(ASK).select(SUMMARIZE)
+        assertEquals("short summary", d.text)
+        assertSame(link, link.select(SUMMARIZE))
+    }
 }
