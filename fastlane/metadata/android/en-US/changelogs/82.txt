@@ -1,0 +1,4 @@
+- New default model list: Nemotron 3 Ultra (free), openrouter/free, Kilo Auto Free; without an OpenRouter key Kilo is used
+- Tool presets per chat can now turn a group on or off for that chat even if Settings says otherwise
+- Settings → Tools looks like the Tool presets dialog: description, switch, expandable groups
+- Self-test skips a local model server (Ollama, LM Studio) that isn't running instead of failing
