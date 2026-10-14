@@ -90,21 +90,6 @@ fun ChatHeadSettingsScreen(onBack: () -> Unit, vm: SettingsViewModel = hiltViewM
                 androidx.compose.material3.Switch(checked = autoHead, onCheckedChange = vm.appPrefs::setAutoChatHeadOnHome)
             }
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
-            val shareMode by vm.appPrefs.shareOpenMode.collectAsStateWithLifecycle()
-            Text("Share opens in", style = MaterialTheme.typography.titleSmall)
-            com.verdroid.app.domain.share.ShareLogic.OpenMode.entries.forEach { m ->
-                Row(Modifier.fillMaxWidth().selectable(selected = m == shareMode, role = Role.RadioButton, onClick = { vm.appPrefs.setShareOpenMode(m) })
-                    .padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    RadioButton(selected = m == shareMode, onClick = null)
-                    Spacer(Modifier.width(8.dp))
-                    Column {
-                        Text(m.label, style = MaterialTheme.typography.bodyLarge)
-                        Text(m.subtitle + if (m != com.verdroid.app.domain.share.ShareLogic.OpenMode.FULL_APP) " (needs \"Display over other apps\", else Full app)" else "",
-                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                }
-            }
-            HorizontalDivider(Modifier.padding(vertical = 8.dp))
             Text("Permissions", style = MaterialTheme.typography.titleSmall)
             StatusRow("Display over other apps", overlayGranted) { context.startActivity(vm.chatHeads.overlayPermissionIntent()) }
             if (notificationPermissionMissing) {

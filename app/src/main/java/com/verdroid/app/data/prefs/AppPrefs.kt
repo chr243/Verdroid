@@ -12,6 +12,7 @@ import javax.inject.Singleton
 @Singleton
 class AppPrefs @Inject constructor(@ApplicationContext context: Context) {
     private val prefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
+        .also { if (it.contains(KEY_SHARE_OPEN)) it.edit().remove(KEY_SHARE_OPEN).apply() }
 
     private val _notifyOnFinish = MutableStateFlow(prefs.getBoolean(KEY_NOTIFY_FINISH, false))
     /** "Notify when a task finishes" — default OFF (only attention-needed events notify). */
@@ -33,12 +34,8 @@ class AppPrefs @Inject constructor(@ApplicationContext context: Context) {
     val kiloNoticeSeen: StateFlow<Boolean> = _kiloNotice.asStateFlow()
     fun dismissKiloNotice() { prefs.edit().putBoolean(KEY_KILO_NOTICE, true).apply(); _kiloNotice.value = true }
 
-    private val _shareOpen = MutableStateFlow(com.verdroid.app.domain.share.ShareLogic.parseOpenMode(prefs.getString(KEY_SHARE_OPEN, null)))
-    /** "Share opens in" — default Full app. */
-    val shareOpenMode: StateFlow<com.verdroid.app.domain.share.ShareLogic.OpenMode> = _shareOpen.asStateFlow()
-    fun setShareOpenMode(v: com.verdroid.app.domain.share.ShareLogic.OpenMode) { prefs.edit().putString(KEY_SHARE_OPEN, v.name).apply(); _shareOpen.value = v }
-
     private companion object {
+        /** Removed "Share opens in" setting; any stored value is dropped on start. */
         const val KEY_SHARE_OPEN = "share_open_mode"
         const val KEY_MEM_KILO = "send_memories_to_kilo"
         const val KEY_KILO_NOTICE = "kilo_notice_seen"

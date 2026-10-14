@@ -37,7 +37,6 @@ import javax.inject.Inject
 class ShareActivity : ComponentActivity() {
     @Inject lateinit var sharedFolder: SharedFolder
     @Inject lateinit var startConversation: StartConversationUseCase
-    @Inject lateinit var appPrefs: com.verdroid.app.data.prefs.AppPrefs
 
     private data class Shared(val uri: Uri, val name: String)
 
@@ -52,8 +51,8 @@ class ShareActivity : ComponentActivity() {
             val name = displayName(u)
             if (ShareLogic.acceptsFile(runCatching { contentResolver.getType(u) }.getOrNull(), name)) Shared(u, name ?: ChatAttachment.fallbackName(u.lastPathSegment)) else null
         }
-        val mode = ShareLogic.effectiveOpenMode(appPrefs.shareOpenMode.value, android.provider.Settings.canDrawOverlays(this))
-        val compact = mode != ShareLogic.OpenMode.FULL_APP
+        // Bubble mode (compact sheet over the source app → chat head) whenever overlays are allowed, else Full app.
+        val compact = ShareLogic.shareUsesBubble(android.provider.Settings.canDrawOverlays(this))
         setContent {
             VerdroidTheme(transparentWindow = compact) {
                 var draft by remember { mutableStateOf(com.verdroid.app.domain.share.ShareDraft.initial(text, files.isNotEmpty())) }
@@ -61,7 +60,7 @@ class ShareActivity : ComponentActivity() {
                 var busy by remember { mutableStateOf(false) }
                 var error by remember { mutableStateOf<String?>(null) }
                 val needsAccess = files.isNotEmpty() && !hasAccess.value
-                // Full app: opaque full-screen sheet. Floating/Bubble: compact card over the (visible) source app; tap outside = Cancel.
+                // Full app: opaque full-screen sheet. Bubble: compact card over the (visible) source app; tap outside = Cancel.
                 Box(Modifier.fillMaxSize().then(if (compact) Modifier.background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.32f))
                     .clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null) { finish() } else Modifier)
                     .systemBarsPadding().imePadding(), contentAlignment = Alignment.BottomCenter) {
@@ -99,8 +98,8 @@ class ShareActivity : ComponentActivity() {
                                 lifecycleScope.launch {
                                     runCatching { send(files, msg) }
                                         // Open the new chat in Verdroid's own task (warm: onNewIntent; cold: onCreate) and drop the sheet so Back skips it.
-                                        // Floating/Bubble: stay over the source app; the chat head service shows the chat (panel or head + badge).
-                                        .onSuccess { id -> openChat(mode, id); finish() }
+                                        // Bubble: stay over the source app; the chat head service shows the chat (panel or head + badge).
+                                        .onSuccess { id -> openChat(compact, id); finish() }
                                         .onFailure { error = it.message ?: "Could not share"; busy = false }
                                 }
                             }) { Text(if (busy) "Sending…" else "Send") }
@@ -112,10 +111,9 @@ class ShareActivity : ComponentActivity() {
         }
     }
 
-    private fun openChat(mode: ShareLogic.OpenMode, id: Long) {
-        if (mode == ShareLogic.OpenMode.FULL_APP) { startActivity(MainActivity.openTaskIntent(this, id)); return }
+    private fun openChat(bubble: Boolean, id: Long) {
+        if (!bubble) { startActivity(MainActivity.openTaskIntent(this, id)); return }
         val i = com.verdroid.app.chathead.ChatHeadService.startIntent(this, id)
-            .putExtra(com.verdroid.app.chathead.ChatHeadService.EXTRA_EXPAND, mode == ShareLogic.OpenMode.FLOATING)
         runCatching { androidx.core.content.ContextCompat.startForegroundService(this, i) }
             .onSuccess { com.verdroid.app.chathead.ShareHead.taskId = id }
             .onFailure { startActivity(MainActivity.openTaskIntent(this, id)) }
