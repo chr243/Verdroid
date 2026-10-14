@@ -50,7 +50,7 @@ fun TaskStatus.dotColor(): Color? {
 }
 
 @Composable
-fun TaskAvatar(type: TaskType, status: TaskStatus?, size: Dp = 52.dp, ring: Boolean = false) {
+fun TaskAvatar(type: TaskType, status: TaskStatus?, size: Dp = 52.dp, ring: Boolean = false, showStatusDot: Boolean = true) {
     Box(Modifier.size(size)) {
         Box(
             Modifier.fillMaxSize()
@@ -58,7 +58,7 @@ fun TaskAvatar(type: TaskType, status: TaskStatus?, size: Dp = 52.dp, ring: Bool
                 .clip(CircleShape).background(MaterialTheme.colorScheme.primaryContainer),
             contentAlignment = Alignment.Center,
         ) { Text(type.emoji(), fontSize = (size.value * 0.42f).sp) }
-        status?.dotColor()?.let { c ->
+        status?.dotColor()?.takeIf { showStatusDot }?.let { c ->
             Box(
                 Modifier.align(Alignment.BottomEnd).size(size * 0.28f)
                     .clip(CircleShape).background(MaterialTheme.colorScheme.surface).padding(2.dp)

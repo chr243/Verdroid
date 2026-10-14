@@ -97,7 +97,7 @@ private fun ChatHeadBubble(task: Task?, unread: Int) {
                     // No task attached yet: show the Verdroid mark instead of a generic chat avatar.
                     Image(painterResource(R.drawable.ic_verdroid_logo), contentDescription = "Verdroid", modifier = Modifier.size(54.dp))
                 } else {
-                    TaskAvatar(task, size = 54.dp)
+                    TaskAvatar(task, size = 54.dp, showStatusDot = false) // no status dot on the chat head; progress ring stays
                 }
             }
         }

@@ -109,9 +109,10 @@ object ChatAvatarStyle {
     fun isLetter(glyph: String) = glyph.length == 1 && glyph[0].isLetterOrDigit()
 }
 
-/** Varied avatar for a chat: hashed tonal color + topic glyph (see [ChatAvatarStyle]), status dot as before. */
+/** Varied avatar for a chat: hashed tonal color + topic glyph (see [ChatAvatarStyle]), status dot as before
+ * unless [showStatusDot] is false (the floating chat head shows no dot). */
 @Composable
-fun TaskAvatar(task: Task, size: Dp = 52.dp, ring: Boolean = false) {
+fun TaskAvatar(task: Task, size: Dp = 52.dp, ring: Boolean = false, showStatusDot: Boolean = true) {
     val dark = MaterialTheme.colorScheme.surface.luminance() < 0.5f
     val cs = MaterialTheme.colorScheme
     val shades = remember(cs.primary, cs.tertiary, dark) { ChatAvatarStyle.shades(cs.primary.toArgb(), cs.tertiary.toArgb(), dark) }
@@ -132,7 +133,7 @@ fun TaskAvatar(task: Task, size: Dp = 52.dp, ring: Boolean = false) {
                     color = Color(shade.fg))
             } else Text(glyph, fontSize = (size.value * 0.42f).sp)
         }
-        task.status.dotColor()?.let { c ->
+        task.status.dotColor()?.takeIf { showStatusDot }?.let { c ->
             Box(
                 Modifier.align(Alignment.BottomEnd).size(size * 0.28f)
                     .clip(CircleShape).background(MaterialTheme.colorScheme.surface).padding(2.dp)
