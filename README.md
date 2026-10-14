@@ -11,6 +11,7 @@ Also listed in [ARK-Store](https://github.com/topics/arkstore) (GitHub topic `ar
 
 - **📈 Crypto strategy backtesting, just by chatting.** Describe your idea ("buy when RSI dips below 30 on BTC 4h, sell at 55"). The agent asks about entries, exits and risk, writes the strategy as Python and runs it offline on free historical candles (Binance public data, Coinbase/Kraken fallback, no API key, cached locally). It reports return, CAGR, max drawdown, Sharpe, win rate and trades vs buy & hold, plus an equity chart (PNG/CSV in `Output/backtests/`). Strategies are saved so you can tweak and re-run them. Signals are applied on the next bar (no lookahead), with fees and slippage included. You install the Python libraries once with a single fast tap in Settings → Tools (*crypto-backtest*). It uses prebuilt Termux packages, so there's no slow compiling on the phone. *Not financial advice. Backtests can overfit.*
 - **📚 Whole-book translation on your phone.** Drop a MOBI, EPUB, PDF, DOCX or TXT into `Documents/Verdroid/Input` and ask for a language. `ebook_translate` gives you an ETA first, then translates chapter by chapter in Termux Python. It uses Google Translate with a MyMemory fallback, checks the language, handles rate limits and resumes if interrupted. The result lands in `Output/` as TXT (or DOCX). No API key.
+- **📤 Share to Verdroid from any app.** Share a link, text or a document and pick Summarize, Translate or Ask (X profile links start with "Who is this person?"), into a new chat or your last one. With "Display over other apps" the share card collapses into the chat bubble and the reply arrives there. [More](#share-to-verdroid)
 
 | Chats | Chat thread |
 |:---:|:---:|
@@ -27,7 +28,7 @@ Also listed in [ARK-Store](https://github.com/topics/arkstore) (GitHub topic `ar
 - **Device control:** `run_shell` via Shizuku (shell uid), `screen_*` tools via an Accessibility service, and `termux_run` (bash in Termux through its RUN_COMMAND service, cwd `Documents/Verdroid/Internal`, falling back to `~/verdroid-work` when Termux has no storage access) with optional Termux packages (ffmpeg, imagemagick, yt-dlp, jq, curl, pandoc, …) installable from Settings → Tools → Available to install. `termux_run` returns as soon as the command finishes; `timeout_seconds` is only an upper limit (background jobs left running are stopped).
 - **Headless Chromium + Selenium (in Termux):** the optional `chromium-selenium` add-on (Settings → Tools → Available to install: `x11-repo`/`tur-repo` Chromium + chromedriver, `pip install selenium`) powers `selenium_open` (title, visible text, links), `selenium_page_source` (rendered HTML) and `selenium_screenshot` (PNG), all headless, plus `termux_python` to run Python scrapers the agent writes. Scripts stay in the private app workspace (e.g. `scrapers/*.py`); scraped files go to `Documents/Verdroid/Output` (run `termux-setup-storage` in Termux once). Use it for JavaScript-heavy pages; `web_search`/`web_fetch` stay the default.
 - **Shared folder:** `/storage/emulated/0/Documents/Verdroid` with `Input/` (files you give Verdroid), `Output/` (its results: translations, screenshots, scripts, projects) and `Internal/` (the agent's helper scripts, strategies, cached market data and temp files, so the root stays clean), created at launch once *All files access* is granted (Settings → Tools → Shared folder, or Settings → Phone → Permissions). `workspace_list` / `workspace_read` / `workspace_write` / `workspace_delete` can only reach that tree (path escapes and symlinks are rejected).
-- **Tool presets per chat:** the chat ⋮ menu has **Tool presets** (All / Web / Files / Termux / Device), all on by default, to limit what the agent may use in that chat.
+- **Tool presets per chat:** the chat ⋮ menu has **Tool presets**, grouped like Settings → Tools (including Crypto backtesting), all on by default, to limit what the agent may use in that chat. Charts and the self-test are always on.
 - **AGENTS.md:** Settings → AGENTS.md holds your standing instructions for the agent; they're added to every chat.
 - **Skills:** the agent can save reusable multi-step procedures it worked out with you (`skill_save`, `skill_edit`, `skill_delete`, `skill_list`, `skill_get`) as `files/skills/<id>/SKILL.md` inside the app. Settings → Skills lists them with an on/off switch and Delete; the system prompt only gets an index of enabled skills (name + one-line description, required on save), and the agent loads the full SKILL.md with `skill_get` when a task matches. The agent offers to save a skill when a procedure looks reusable.
 - **rish:** in Settings → Shizuku & Git → rish, tap **Find rish** (with All files access it scans Download, Documents and Documents/Verdroid/Input) or **Pick rish file** for the `rish` exported by Shizuku (*Use Shizuku in terminal apps* → Export files; see [Shizuku-API/rish](https://github.com/RikkaApps/Shizuku-API/tree/master/rish)). Verdroid stages `rish` + `rish_shizuku.dex` in its private storage, then copies both to `/data/local/tmp/verdroid_rish/` through Shizuku and `chmod +x` both (**Fix rish permissions** repeats that; needs Shizuku running). The agent runs commands with `rish_run` from that folder with `RISH_APPLICATION_ID=com.termux`. Deliverables (including screenshots) go to `Documents/Verdroid/Output`.
@@ -37,6 +38,23 @@ Also listed in [ARK-Store](https://github.com/topics/arkstore) (GitHub topic `ar
 - **Git:** clone / status / commit / push with JGit inside the app workspace.
 - **Memory, MCP client, sandboxed file tools** and a keep-alive service that only runs while a task runs.
 - **Security first:** API keys in EncryptedSharedPreferences (Android Keystore), no backups, HTTPS only.
+
+## Share to Verdroid
+
+Share a link, some text or a document from any app (browser, news app, X, file manager) and pick an action:
+
+- **Summarize** a page (selected for links)
+- **Translate** into English
+- **Ask** your own question (X/Twitter profile links start with "Who is this person?")
+
+The link appears on its own line, without the page title or other text the sending app adds. Choose **New chat** (default) or **Last chat** before you tap Send. Images, video and audio are not share targets. Shared files are copied to `Documents/Verdroid/Input/`, which needs All files access.
+
+> 💡 **Tip:** allow **Display over other apps** (Settings → Chat heads → Permissions). The share card then opens over the app you're in and collapses into the chat head bubble after Send, and the reply shows up there with an unread badge. Without the permission, shares open the full Verdroid app.
+
+<p>
+  <img src="docs/images/share-summarize.gif" width="280" alt="Sharing a news link to Verdroid and summarizing it">
+  <img src="docs/images/share-x-profile.gif" width="280" alt="Sharing an X profile to Verdroid: Who is this person?">
+</p>
 
 ## Quick start
 

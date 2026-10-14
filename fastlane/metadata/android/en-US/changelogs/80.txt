@@ -1,0 +1,5 @@
+- Share to Verdroid: share links, text or documents from any app, then Summarize, Translate or Ask
+- X/Twitter profile links start with "Who is this person?"; shared links come without page titles
+- New chat / Last chat toggle; with "Display over other apps" the share card collapses into the chat head bubble
+- Tool presets match the Settings tool groups (incl. Crypto backtesting); charts and self-test always on
+- No status dot on the chat head

@@ -723,3 +723,10 @@ Released 2026-10-13. It bundles everything above since v1.0.48:
 Released 2026-10-13.
 - **File change confirmation:** `FileChangeGuard` and `DestructiveDetector` run in `ToolRegistry.execute`. `FileChangeConsent` shows the Allow/Deny dialog in the main app and the bubble, sends a notification, and denies after 10 minutes without an answer. It asks before deletes, moves and renames, and before overwrites outside `Internal/`.
 - **Contextual prompt:** the backtest guidance (`BACKTEST_GUIDANCE`) is added only when a `crypto_backtest*` tool is enabled. The live/paper-trading decline rule is in the tool descriptions. The disclaimer and `reply_instruction` are in the tool results. The base prompt tells the agent not to talk about its own instructions and not to add unrelated disclaimers.
+
+## v1.0.51
+
+Released 2026-10-14.
+- **Share to Verdroid:** `ui/share/ShareActivity` (ACTION_SEND / SEND_MULTIPLE, text and documents, no images) with pure logic in `domain/share/ShareLogic` + `ShareDraft`. Links are reduced to the URL only and shown read-only; the message field holds the instruction and `ShareDraft.outgoing` appends the link. Quick actions Summarize / Translate / Ask, X profile links prefill "Who is this person?". New chat / Last chat (`AppPrefs.shareToLastChat`).
+- **Bubble share:** with overlay permission the sheet is a compact card on a translucent window (`Theme.Verdroid.Share`, `VerdroidTheme(transparentWindow)`); after Send it starts `ChatHeadService` for the chat. `ShareHead` hides it while `MainActivity` is in front and restores it on leave only with an unread/running reply. Without overlay permission → full app.
+- **Tool presets** mirror the Settings tool groups; charts and self-test always on. Chat head has no status dot.
