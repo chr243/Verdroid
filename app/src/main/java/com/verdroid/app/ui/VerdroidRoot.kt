@@ -104,6 +104,12 @@ class RootViewModel @Inject constructor(
     val unread = notifications.observeUnreadCount().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
 }
 
+/** Pure: whether opening chat [target] needs a navigation (only not when exactly that chat is already on top). */
+object OpenChatNav {
+    fun needsNavigate(currentRoute: String?, currentTaskId: Long?, target: Long): Boolean =
+        !(currentRoute == Routes.CHAT && currentTaskId == target)
+}
+
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun VerdroidRoot(
@@ -116,7 +122,13 @@ fun VerdroidRoot(
 
     LaunchedEffect(openTaskId) {
         if (openTaskId != null && openTaskId != 0L) {
-            nav.navigate(Routes.chat(openTaskId)) { launchSingleTop = true }
+            // Open exactly this id. launchSingleTop alone would REUSE an open chat screen (same "chat/{taskId}" route
+            // pattern) and keep showing the old chat — e.g. after Share to Verdroid created a new one.
+            val cur = nav.currentBackStackEntry
+            val curId = cur?.arguments?.getLong("taskId")
+            if (OpenChatNav.needsNavigate(cur?.destination?.route, curId, openTaskId)) {
+                nav.navigate(Routes.chat(openTaskId)) { popUpTo(Routes.CHATS) }
+            }
             onOpenTaskConsumed()
         }
     }

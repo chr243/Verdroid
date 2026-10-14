@@ -75,3 +75,24 @@ object ShareLogic {
 
     fun canSend(fileCount: Int, userText: String): Boolean = fileCount > 0 || userText.isNotBlank()
 }
+
+/**
+ * Message box state of the share sheet. Each quick action (and "none" = the plain shared text) keeps its own text, so
+ * switching actions never discards what the user typed: an action's template is only used while its field is untouched,
+ * and tapping the already-selected action is a no-op.
+ */
+data class ShareDraft(
+    val shared: String,
+    val hasFiles: Boolean,
+    val selected: ShareLogic.QuickAction? = null,
+    private val edited: Map<ShareLogic.QuickAction?, String> = emptyMap(),
+) {
+    /** What the message field shows. */
+    val text: String get() = edited[selected] ?: template(selected)
+
+    private fun template(a: ShareLogic.QuickAction?): String = if (a == null) shared else ShareLogic.prefill(a, shared, hasFiles)
+
+    fun select(a: ShareLogic.QuickAction): ShareDraft = if (a == selected) this else copy(selected = a)
+
+    fun edit(newText: String): ShareDraft = copy(edited = edited + (selected to newText))
+}

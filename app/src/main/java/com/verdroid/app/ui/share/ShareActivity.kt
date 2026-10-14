@@ -51,7 +51,8 @@ class ShareActivity : ComponentActivity() {
         }
         setContent {
             VerdroidTheme {
-                var msg by remember { mutableStateOf(text) }
+                var draft by remember { mutableStateOf(com.verdroid.app.domain.share.ShareDraft(text, files.isNotEmpty())) }
+                val msg = draft.text
                 var busy by remember { mutableStateOf(false) }
                 var error by remember { mutableStateOf<String?>(null) }
                 val needsAccess = files.isNotEmpty() && !hasAccess.value
@@ -63,10 +64,10 @@ class ShareActivity : ComponentActivity() {
                             color = MaterialTheme.colorScheme.error)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             ShareLogic.QuickAction.entries.forEach { a ->
-                                AssistChip(onClick = { msg = ShareLogic.prefill(a, text, files.isNotEmpty()) }, label = { Text(a.label) })
+                                FilterChip(selected = draft.selected == a, onClick = { draft = draft.select(a) }, label = { Text(a.label) })
                             }
                         }
-                        OutlinedTextField(msg, { msg = it }, Modifier.fillMaxWidth().heightIn(min = 96.dp, max = 220.dp),
+                        OutlinedTextField(msg, { draft = draft.edit(it) }, Modifier.fillMaxWidth().heightIn(min = 96.dp, max = 220.dp),
                             label = { Text("Message") })
                         Text("Sharing always starts a new chat.", style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
