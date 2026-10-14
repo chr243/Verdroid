@@ -210,9 +210,13 @@ class SelfTestRunner @Inject constructor(
             check(handles(Intent.ACTION_SEND, "text/plain")) { "text/plain share not registered" }
             check(handles(Intent.ACTION_SEND_MULTIPLE, "application/pdf")) { "PDF share not registered" }
             check(!handles(Intent.ACTION_SEND, "image/jpeg")) { "images must not be a share target" }
+            val ai = pm.getActivityInfo(android.content.ComponentName(context, com.verdroid.app.ui.share.ShareActivity::class.java), PackageManager.GET_META_DATA)
+            check(ai.metaData?.containsKey("android.service.chooser.chooser_target_service") != true) { "unexpected Direct Share" }
+            val launcher = pm.getActivityInfo(android.content.ComponentName(context, com.verdroid.app.MainActivity::class.java), PackageManager.GET_META_DATA)
+            check(launcher.metaData?.containsKey("android.app.shortcuts") != true) { "Direct Share shortcuts must stay off (shares always start a new chat)" }
             val msg = com.verdroid.app.domain.share.ShareLogic.message(listOf(com.verdroid.app.domain.model.AttachmentText.prefix("Input/a.pdf", 1)), "Summarize")
             check(com.verdroid.app.domain.model.AttachmentText.forDisplay(msg).text == "Summarize") { "attachment line leaks into the UI" }
-            "text + documents registered, images not; attachment line hidden"
+            "text + documents registered, images not, no Direct Share (new chat only); attachment line hidden"
         },
         "file_guard" to {
             val D = com.verdroid.app.agent.tools.DestructiveDetector

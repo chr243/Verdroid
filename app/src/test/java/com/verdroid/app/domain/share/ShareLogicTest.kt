@@ -16,8 +16,8 @@ class ShareLogicTest {
 
     @Test fun `subject and text combine without duplication`() {
         assertEquals("https://x.y", ShareLogic.sharedText("https://x.y", null))
-        assertEquals("Title\nhttps://x.y", ShareLogic.sharedText("https://x.y", "Title"))
-        assertEquals("Title https://x.y", ShareLogic.sharedText("Title https://x.y", "Title"))
+        assertEquals("Link: https://x.y\n\nTitle", ShareLogic.sharedText("https://x.y", "Title"))
+        assertEquals("Link: https://x.y\n\nTitle", ShareLogic.sharedText("Title https://x.y", "Title"))
         assertEquals("Only", ShareLogic.sharedText(null, "Only"))
     }
 
@@ -38,5 +38,42 @@ class ShareLogicTest {
         assertEquals("", AttachmentText.forDisplay(ShareLogic.message(p, " ")).text)
         assertEquals("hi", ShareLogic.message(emptyList(), " hi "))
         assertFalse(ShareLogic.canSend(0, " ")); assertTrue(ShareLogic.canSend(1, ""))
+    }
+
+    @Test fun `localized link label is dropped and the full URL kept`() {
+        val url = "https://github.com/chr243/Verdroid/blob/main/README.md?a=1&b=2#install"
+        val out = ShareLogic.sharedText("\"Some selected text\"\nW tym link: $url", null)
+        assertEquals("Link: $url\n\n\"Some selected text\"", out)
+        assertFalse(out.contains("W tym"))
+        assertEquals(url, ShareLogic.sharedText("W tym link: $url", "W tym link: $url"))
+    }
+
+    @Test fun `prefills are English`() {
+        val english = Regex("^[\\x20-\\x7E\\n]*$")
+        ShareLogic.QuickAction.entries.forEach { a ->
+            assertTrue(english.matches(a.label))
+            listOf("https://a.b" to false, "plain" to false, "" to true).forEach { (t, f) ->
+                val p = ShareLogic.prefill(a, t, f)
+                assertTrue(p, english.matches(p))
+                assertFalse(p, p.contains("W tym"))
+            }
+        }
+        assertTrue(ShareLogic.prefill(ShareLogic.QuickAction.SUMMARIZE, ShareLogic.sharedText("x\nW tym link: https://a.b", null), false)
+            .startsWith("Summarize this page."))
+    }
+
+    @Test fun `multiple files all reach the model and the bubble`() {
+        assertEquals(listOf("a", "b", "c"), ShareLogic.mergeStreams(listOf("a", "b"), listOf("b", "c")))
+        assertEquals(listOf("x", "y"), ShareLogic.mergeStreams(emptyList(), listOf("x", "y")))
+        val p = listOf("Input/a.pdf" to 1L, "Input/b.epub" to 2L, "Input/c.txt" to 3L).map { AttachmentText.prefix(it.first, it.second) }
+        val msg = ShareLogic.message(p, "Compare them")
+        assertEquals(3, Regex("Attached file: ").findAll(msg).count())
+        val d = AttachmentText.forDisplay(msg)
+        assertEquals(listOf("a.pdf", "b.epub", "c.txt"), d.files.map { it.name })
+        assertEquals(listOf(1L, 2L, 3L), d.files.map { it.bytes })
+        assertEquals("Input/c.txt", d.files[2].path)
+        assertEquals("Compare them", d.text); assertEquals(2, d.moreFiles)
+        assertEquals(listOf("a.pdf"), AttachmentText.forDisplay(ShareLogic.message(p.take(1), "")).files.map { it.name })
+        assertTrue(AttachmentText.forDisplay("plain").files.isEmpty())
     }
 }

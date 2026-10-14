@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?>
-<!-- Direct Share: chat shortcuts with this category (BubbleNotifier) appear in the share sheet and open ShareActivity. -->
-<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
-    <share-target android:targetClass="com.verdroid.app.ui.share.ShareActivity">
-        <data android:mimeType="text/*" />
-        <data android:mimeType="application/*" />
-        <category android:name="com.verdroid.app.category.SHARE_TARGET" />
-    </share-target>
-</shortcuts>

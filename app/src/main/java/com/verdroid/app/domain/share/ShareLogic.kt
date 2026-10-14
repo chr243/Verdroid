@@ -17,14 +17,31 @@ object ShareLogic {
     fun acceptsFile(mime: String?, name: String?): Boolean =
         acceptsMime(mime) && (name == null || !AttachmentText.isImageName(name))
 
-    /** Shared text, with the subject (often a page title) in front when it adds something. */
+    private val URL_RE = Regex("https?://[^\\s<>\"]+")
+    /** "label: URL" lines in the sender's language (e.g. Chrome's Polish "W tym link: …"); the label is dropped. */
+    private val LABELLED_URL_LINE = Regex("^\\s*[^:/\\n]{1,40}:\\s*(https?://\\S+)\\s*$")
+
+    /**
+     * Shared subject + text cleaned into English-only structure: localized "label: URL" lines lose their label, the
+     * full URL is kept (never truncated), and text that comes with a link is laid out as "Link: <url>" + the text.
+     */
     fun sharedText(text: String?, subject: String?): String {
-        val t = text?.trim().orEmpty(); val s = subject?.trim().orEmpty()
-        return when {
+        fun clean(v: String?) = v.orEmpty().lines().map { l -> LABELLED_URL_LINE.find(l)?.groupValues?.get(1) ?: l }
+            .joinToString("\n").trim()
+        val t = clean(text)
+        val s = clean(subject)
+        val combined = when {
             s.isEmpty() || t.contains(s) -> t
             t.isEmpty() -> s
             else -> "$s\n$t"
         }
+        val urls = URL_RE.findAll(combined).map { it.value.trimEnd('.', ',', ')', ';') }.distinct().toList()
+        if (urls.isEmpty()) return combined
+        var rest = combined
+        urls.forEach { rest = rest.replace(it, "") }
+        rest = rest.lines().map { it.trim() }.filter { it.isNotEmpty() }.joinToString("\n")
+        val links = urls.joinToString("\n") { "Link: $it" }
+        return if (rest.isEmpty()) urls.joinToString("\n") else "$links\n\n$rest"
     }
 
     fun isLink(text: String): Boolean = Regex("^https?://\\S+$").matches(text.trim())
@@ -34,9 +51,8 @@ object ShareLogic {
     /** Prefill for the editable message box. [hasFiles] = files were shared; [text] = shared text/link. */
     fun prefill(action: QuickAction, text: String, hasFiles: Boolean): String {
         val what = when {
-            hasFiles && text.isNotBlank() -> "the attached file(s)"
             hasFiles -> "the attached file(s)"
-            isLink(text) -> "this page"
+            isLink(text) || text.trimStart().startsWith("Link: ") -> "this page"
             else -> "this text"
         }
         val head = when (action) {
@@ -53,6 +69,9 @@ object ShareLogic {
         if (attachmentPrefixes.isEmpty()) return t
         return attachmentPrefixes.joinToString("") + t.ifEmpty { AttachmentText.DEFAULT_PROMPT }
     }
+
+    /** EXTRA_STREAM entries first, then ClipData items not already listed (senders fill either or both). */
+    fun <T> mergeStreams(extra: List<T>, clip: List<T>): List<T> = (extra + clip).distinct()
 
     fun canSend(fileCount: Int, userText: String): Boolean = fileCount > 0 || userText.isNotBlank()
 }

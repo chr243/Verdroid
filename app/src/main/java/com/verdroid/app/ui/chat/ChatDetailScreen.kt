@@ -378,7 +378,7 @@ internal fun UserBubble(text: String) {
     val d = remember(text) { com.verdroid.app.data.storage.ChatAttachment.forDisplay(text) }
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         val b = com.verdroid.app.ui.theme.LocalBubbleColors.current
-        if (d.fileName != null) AttachmentChip(d.fileName, d.bytes, d.path.takeIf { d.isImage })
+        d.files.forEach { f -> AttachmentChip(f.name, f.bytes, f.path.takeIf { f.isImage }) } // one chip per file
         if (d.text.isNotBlank() || d.fileName == null) {
             Surface(color = b.user, shape = RoundedCornerShape(18.dp, 18.dp, 4.dp, 18.dp), modifier = Modifier.widthIn(max = 300.dp)) {
                 SelectionContainer { Text(d.text.trim(), color = b.onUser, modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp)) }

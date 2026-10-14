@@ -47,7 +47,13 @@ object AttachmentText {
 
     /** [path] is the attachment's path relative to Documents/Verdroid (e.g. Input/photo.jpg). */
     /** [moreFiles] counts further attachment lines (Share to Verdroid with several files); they are hidden too. */
-    data class Display(val fileName: String?, val bytes: Long?, val text: String, val path: String? = null, val moreFiles: Int = 0) {
+    data class File(val name: String, val bytes: Long?, val path: String) {
+        val isImage: Boolean get() = isImageName(name)
+    }
+
+    /** [files] = every attachment line in order (the first is also in [fileName]/[bytes]/[path]). */
+    data class Display(val fileName: String?, val bytes: Long?, val text: String, val path: String? = null, val moreFiles: Int = 0,
+                       val files: List<File> = emptyList()) {
         val isImage: Boolean get() = fileName != null && isImageName(fileName)
     }
 
@@ -62,14 +68,15 @@ object AttachmentText {
     /** File name + the user's own text; the default prompt is hidden when it was only added because nothing was typed. */
     fun forDisplay(content: String): Display {
         val m = PREFIX_RE.find(content) ?: return Display(null, null, content)
+        fun file(r: MatchResult) = File(r.groupValues[1].substringAfterLast('/'), r.groupValues[2].toLongOrNull(), r.groupValues[1])
+        val files = mutableListOf(file(m))
         var rest = content.substring(m.range.last + 1)
-        var more = 0
         while (true) {
             val n = PREFIX_RE.find(rest) ?: break
-            rest = rest.substring(n.range.last + 1); more++
+            files += file(n); rest = rest.substring(n.range.last + 1)
         }
         return Display(m.groupValues[1].substringAfterLast('/'), m.groupValues[2].toLongOrNull(),
-            if (isDefaultPrompt(rest)) "" else rest, m.groupValues[1], more)
+            if (isDefaultPrompt(rest)) "" else rest, m.groupValues[1], files.size - 1, files)
     }
 
     fun isDefaultPrompt(text: String): Boolean = text.trim().let { it == DEFAULT_PROMPT || it in LEGACY_DEFAULT_PROMPTS }
