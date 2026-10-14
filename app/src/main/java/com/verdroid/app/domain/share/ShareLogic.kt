@@ -87,6 +87,19 @@ object ShareLogic {
     fun <T> mergeStreams(extra: List<T>, clip: List<T>): List<T> = (extra + clip).distinct()
 
     fun canSend(fileCount: Int, userText: String): Boolean = fileCount > 0 || userText.isNotBlank()
+
+    /** Settings "Share opens in". FULL_APP = full-screen sheet + full app; the others = compact sheet over the source app. */
+    enum class OpenMode(val label: String, val subtitle: String) {
+        FULL_APP("Full app", "Full-screen share sheet, then the new chat opens in Verdroid"),
+        FLOATING("Floating window", "Compact share sheet; the new chat opens in the floating chat window over the current app"),
+        BUBBLE("Bubble", "Compact share sheet; collapses to the chat head (unread badge) while the reply comes in the background"),
+    }
+
+    /** Stored name → mode (unknown/missing = FULL_APP, the default). */
+    fun parseOpenMode(name: String?): OpenMode = OpenMode.entries.firstOrNull { it.name == name } ?: OpenMode.FULL_APP
+
+    /** Floating and Bubble need "Display over other apps"; without it the share falls back to the full app. */
+    fun effectiveOpenMode(mode: OpenMode, canDrawOverlays: Boolean): OpenMode = if (canDrawOverlays) mode else OpenMode.FULL_APP
 }
 
 /**

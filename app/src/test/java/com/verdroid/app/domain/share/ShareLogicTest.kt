@@ -88,4 +88,14 @@ class ShareLogicTest {
         assertEquals("Who is this person? https://x.com/elonmusk", ShareLogic.prefill(ShareLogic.QuickAction.ASK, x, false))
         assertEquals("just some text\nline two", ShareLogic.sharedText("just some text\nline two", null))
     }
+
+    @Test fun `share open mode defaults to full app and falls back without overlay`() {
+        assertEquals(ShareLogic.OpenMode.FULL_APP, ShareLogic.parseOpenMode(null))
+        assertEquals(ShareLogic.OpenMode.FULL_APP, ShareLogic.parseOpenMode("bogus"))
+        assertEquals(ShareLogic.OpenMode.BUBBLE, ShareLogic.parseOpenMode("BUBBLE"))
+        ShareLogic.OpenMode.entries.forEach {
+            assertEquals(ShareLogic.OpenMode.FULL_APP, ShareLogic.effectiveOpenMode(it, false))
+            assertEquals(it, ShareLogic.effectiveOpenMode(it, true))
+        }
+    }
 }

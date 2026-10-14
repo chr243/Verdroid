@@ -6,6 +6,8 @@ import android.os.Bundle
 import android.provider.OpenableColumns
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -35,6 +37,7 @@ import javax.inject.Inject
 class ShareActivity : ComponentActivity() {
     @Inject lateinit var sharedFolder: SharedFolder
     @Inject lateinit var startConversation: StartConversationUseCase
+    @Inject lateinit var appPrefs: com.verdroid.app.data.prefs.AppPrefs
 
     private data class Shared(val uri: Uri, val name: String)
 
@@ -49,6 +52,8 @@ class ShareActivity : ComponentActivity() {
             val name = displayName(u)
             if (ShareLogic.acceptsFile(runCatching { contentResolver.getType(u) }.getOrNull(), name)) Shared(u, name ?: ChatAttachment.fallbackName(u.lastPathSegment)) else null
         }
+        val mode = ShareLogic.effectiveOpenMode(appPrefs.shareOpenMode.value, android.provider.Settings.canDrawOverlays(this))
+        val compact = mode != ShareLogic.OpenMode.FULL_APP
         setContent {
             VerdroidTheme {
                 var draft by remember { mutableStateOf(com.verdroid.app.domain.share.ShareDraft.initial(text, files.isNotEmpty())) }
@@ -56,8 +61,13 @@ class ShareActivity : ComponentActivity() {
                 var busy by remember { mutableStateOf(false) }
                 var error by remember { mutableStateOf<String?>(null) }
                 val needsAccess = files.isNotEmpty() && !hasAccess.value
-                Surface(Modifier.fillMaxSize()) {
-                    Column(Modifier.fillMaxSize().systemBarsPadding().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                // Full app: opaque full-screen sheet. Floating/Bubble: compact card over the (visible) source app; tap outside = Cancel.
+                Box(Modifier.fillMaxSize().then(if (compact) Modifier.background(androidx.compose.ui.graphics.Color.Black.copy(alpha = 0.32f))
+                    .clickable(interactionSource = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }, indication = null) { finish() } else Modifier)
+                    .systemBarsPadding().imePadding(), contentAlignment = Alignment.BottomCenter) {
+                Surface(if (compact) Modifier.fillMaxWidth().padding(8.dp).clickable(enabled = false) {} else Modifier.fillMaxSize(),
+                    shape = if (compact) MaterialTheme.shapes.extraLarge else androidx.compose.ui.graphics.RectangleShape, tonalElevation = if (compact) 6.dp else 0.dp) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("Share to Verdroid", style = MaterialTheme.typography.titleLarge)
                         if (files.isNotEmpty()) Text("📎 " + files.joinToString { it.name }, style = MaterialTheme.typography.bodyMedium)
                         if (files.isEmpty() && text.isBlank()) Text("Nothing Verdroid can use was shared (images are not supported).",
@@ -75,7 +85,7 @@ class ShareActivity : ComponentActivity() {
                             label = { Text("Message") })
                         Text("Sharing always starts a new chat.", style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(Modifier.weight(1f))
+                        if (!compact) Spacer(Modifier.weight(1f))
                         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                         if (needsAccess) {
                             Text("Shared files go to Documents/Verdroid/Input, which needs All files access.",
@@ -89,15 +99,25 @@ class ShareActivity : ComponentActivity() {
                                 lifecycleScope.launch {
                                     runCatching { send(files, msg) }
                                         // Open the new chat in Verdroid's own task (warm: onNewIntent; cold: onCreate) and drop the sheet so Back skips it.
-                                        .onSuccess { id -> startActivity(MainActivity.openTaskIntent(this@ShareActivity, id)); finish() }
+                                        // Floating/Bubble: stay over the source app; the chat head service shows the chat (panel or head + badge).
+                                        .onSuccess { id -> openChat(mode, id); finish() }
                                         .onFailure { error = it.message ?: "Could not share"; busy = false }
                                 }
                             }) { Text(if (busy) "Sending…" else "Send") }
                         }
                     }
                 }
+                }
             }
         }
+    }
+
+    private fun openChat(mode: ShareLogic.OpenMode, id: Long) {
+        if (mode == ShareLogic.OpenMode.FULL_APP) { startActivity(MainActivity.openTaskIntent(this, id)); return }
+        val i = com.verdroid.app.chathead.ChatHeadService.startIntent(this, id)
+            .putExtra(com.verdroid.app.chathead.ChatHeadService.EXTRA_EXPAND, mode == ShareLogic.OpenMode.FLOATING)
+        runCatching { androidx.core.content.ContextCompat.startForegroundService(this, i) }
+            .onFailure { startActivity(MainActivity.openTaskIntent(this, id)) }
     }
 
     /** Sharing always creates a NEW chat (no picker, no Direct Share into existing chats). */

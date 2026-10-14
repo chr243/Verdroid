@@ -217,7 +217,11 @@ class SelfTestRunner @Inject constructor(
             val msg = com.verdroid.app.domain.share.ShareLogic.message(listOf(com.verdroid.app.domain.model.AttachmentText.prefix("Input/a.pdf", 1)), "Summarize")
             check(com.verdroid.app.domain.model.AttachmentText.forDisplay(msg).text == "Summarize") { "attachment line leaks into the UI" }
             check(com.verdroid.app.domain.share.ShareLogic.sharedText("Link:\nhttps://a.b/c\n\n86\nTitle", null) == "https://a.b/c") { "shared link keeps extra text (title)" }
-            "text + documents registered, images not, no Direct Share (new chat only); attachment line hidden; links shared without title"
+            val om = com.verdroid.app.domain.share.ShareLogic
+            check(om.parseOpenMode(null) == com.verdroid.app.domain.share.ShareLogic.OpenMode.FULL_APP) { "Share opens in must default to Full app" }
+            check(om.effectiveOpenMode(com.verdroid.app.domain.share.ShareLogic.OpenMode.BUBBLE, false) == com.verdroid.app.domain.share.ShareLogic.OpenMode.FULL_APP) { "no overlay permission must fall back to Full app" }
+            "text + documents registered, images not, no Direct Share (new chat only); attachment line hidden; links shared without title; " +
+                "opens in ${om.effectiveOpenMode(om.parseOpenMode(context.getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE).getString("share_open_mode", null)), android.provider.Settings.canDrawOverlays(context)).label}"
         },
         "file_guard" to {
             val D = com.verdroid.app.agent.tools.DestructiveDetector

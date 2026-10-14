@@ -236,6 +236,8 @@ class ChatHeadService : Service(), LifecycleOwner, SavedStateRegistryOwner, View
             return START_NOT_STICKY
         }
         showHead()
+        // Share "Floating window" mode: open the panel right away instead of just the head.
+        if (intent?.getBooleanExtra(EXTRA_EXPAND, false) == true && panelView == null) headView?.post { expand() }
         return START_NOT_STICKY
     }
 
@@ -737,6 +739,7 @@ class ChatHeadService : Service(), LifecycleOwner, SavedStateRegistryOwner, View
 
     companion object {
         const val EXTRA_TASK_ID = "taskId"
+        const val EXTRA_EXPAND = "expand"
         const val ACTION_START = "com.verdroid.app.chathead.START"
         const val ACTION_STOP = "com.verdroid.app.chathead.STOP"
         private const val TAG = "ChatHead"

@@ -33,7 +33,13 @@ class AppPrefs @Inject constructor(@ApplicationContext context: Context) {
     val kiloNoticeSeen: StateFlow<Boolean> = _kiloNotice.asStateFlow()
     fun dismissKiloNotice() { prefs.edit().putBoolean(KEY_KILO_NOTICE, true).apply(); _kiloNotice.value = true }
 
+    private val _shareOpen = MutableStateFlow(com.verdroid.app.domain.share.ShareLogic.parseOpenMode(prefs.getString(KEY_SHARE_OPEN, null)))
+    /** "Share opens in" — default Full app. */
+    val shareOpenMode: StateFlow<com.verdroid.app.domain.share.ShareLogic.OpenMode> = _shareOpen.asStateFlow()
+    fun setShareOpenMode(v: com.verdroid.app.domain.share.ShareLogic.OpenMode) { prefs.edit().putString(KEY_SHARE_OPEN, v.name).apply(); _shareOpen.value = v }
+
     private companion object {
+        const val KEY_SHARE_OPEN = "share_open_mode"
         const val KEY_MEM_KILO = "send_memories_to_kilo"
         const val KEY_KILO_NOTICE = "kilo_notice_seen"
         const val KEY_NOTIFY_FINISH = "notify_on_finish"
