@@ -46,6 +46,21 @@ object ShareLogic {
 
     fun containsUrl(text: String): Boolean = URL_RE.containsMatchIn(text)
 
+    private val X_HOSTS = setOf("x.com", "twitter.com", "mobile.x.com", "mobile.twitter.com", "www.x.com", "www.twitter.com")
+    private val X_RESERVED = setOf("home", "explore", "search", "i", "settings", "notifications", "messages", "hashtag",
+        "compose", "login", "logout", "signup", "tos", "privacy", "share", "intent", "account", "about", "jobs")
+    private val X_PROFILE_RE = Regex("^https?://([^/?#]+)/([A-Za-z0-9_]{1,15})/?(?:[?#].*)?$", RegexOption.IGNORE_CASE)
+
+    /** True for an X/Twitter profile link (x.com/<handle>), not posts, reserved pages or other sites. */
+    fun isXProfileUrl(url: String): Boolean {
+        val m = X_PROFILE_RE.matchEntire(url.trim()) ?: return false
+        return m.groupValues[1].lowercase() in X_HOSTS && m.groupValues[2].lowercase() !in X_RESERVED
+    }
+
+    /** The X profile URL in [text], if any (first URL only). */
+    fun xProfileUrl(text: String): String? =
+        URL_RE.find(text)?.value?.trimEnd('.', ',', ')', ';')?.takeIf(::isXProfileUrl)
+
     fun isLink(text: String): Boolean = Regex("^https?://\\S+$").matches(text.trim())
 
     enum class QuickAction(val label: String) { SUMMARIZE("Summarize"), TRANSLATE("Translate"), ASK("Ask") }
@@ -60,7 +75,7 @@ object ShareLogic {
         val head = when (action) {
             QuickAction.SUMMARIZE -> "Summarize $what."
             QuickAction.TRANSLATE -> "Translate $what into English."
-            QuickAction.ASK -> ""
+            QuickAction.ASK -> if (!hasFiles) xProfileUrl(text)?.let { return "Who is this person? $it" } ?: "" else ""
         }
         return listOf(head, text.trim()).filter { it.isNotEmpty() }.joinToString("\n\n")
     }
@@ -100,8 +115,12 @@ data class ShareDraft(
     fun edit(newText: String): ShareDraft = copy(edited = edited + (selected to newText))
 
     companion object {
-        /** Sheet start: Summarize for a shared link (no files), Ask for plain text and files. */
-        fun initial(shared: String, hasFiles: Boolean): ShareDraft =
-            ShareDraft(shared, hasFiles, if (!hasFiles && ShareLogic.containsUrl(shared)) ShareLogic.QuickAction.SUMMARIZE else ShareLogic.QuickAction.ASK)
+        /** Sheet start: Ask ("Who is this person?") for an X profile link, Summarize for other links, Ask for text/files. */
+        fun initial(shared: String, hasFiles: Boolean): ShareDraft = ShareDraft(shared, hasFiles, when {
+            hasFiles -> ShareLogic.QuickAction.ASK
+            ShareLogic.xProfileUrl(shared) != null -> ShareLogic.QuickAction.ASK
+            ShareLogic.containsUrl(shared) -> ShareLogic.QuickAction.SUMMARIZE
+            else -> ShareLogic.QuickAction.ASK
+        })
     }
 }

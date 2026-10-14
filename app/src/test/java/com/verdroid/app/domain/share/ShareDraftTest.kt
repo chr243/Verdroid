@@ -58,4 +58,26 @@ class ShareDraftTest {
         assertEquals("short summary", d.text)
         assertSame(link, link.select(SUMMARIZE))
     }
+
+    @Test fun `X profile links are detected`() {
+        listOf("https://x.com/elonmusk", "https://x.com/elonmusk/", "https://twitter.com/jack?lang=en", "https://mobile.x.com/a_b",
+            "https://www.twitter.com/Jack", "http://www.x.com/user123?s=21&t=abc", "HTTPS://X.COM/someone#top")
+            .forEach { assertTrue(it, ShareLogic.isXProfileUrl(it)) }
+        listOf("https://x.com/elonmusk/status/123", "https://x.com/home", "https://x.com/explore", "https://x.com/search?q=a",
+            "https://x.com/i/flow/login", "https://x.com/settings", "https://x.com/notifications", "https://x.com/messages",
+            "https://x.com/hashtag/kotlin", "https://x.com/compose/post", "https://x.com/", "https://x.com",
+            "https://evilx.com/elonmusk", "https://x.com.evil.io/elonmusk", "https://github.com/elonmusk",
+            "https://x.com/this_handle_is_too_long_x", "https://x.com/a/likes")
+            .forEach { assertFalse(it, ShareLogic.isXProfileUrl(it)) }
+    }
+
+    @Test fun `X profile opens with Ask who-is prefill, posts and other links keep Summarize`() {
+        val p = ShareDraft.initial(ShareLogic.sharedText("https://x.com/elonmusk", "Elon Musk (@elonmusk) / X"), false)
+        assertEquals(ASK, p.selected); assertEquals("Who is this person? https://x.com/elonmusk", p.text)
+        assertTrue(p.select(SUMMARIZE).text.startsWith("Summarize this page."))
+        assertEquals(SUMMARIZE, ShareDraft.initial("https://x.com/elonmusk/status/1", false).selected)
+        assertEquals(SUMMARIZE, ShareDraft.initial("https://github.com/x", false).selected)
+        assertEquals(ASK, ShareDraft.initial("https://x.com/elonmusk", true).selected)
+        assertEquals("https://x.com/elonmusk", ShareDraft.initial("https://x.com/elonmusk", true).text)
+    }
 }
