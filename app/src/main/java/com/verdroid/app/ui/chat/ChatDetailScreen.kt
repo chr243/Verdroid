@@ -180,8 +180,9 @@ fun ChatDetailScreen(onBack: () -> Unit, onChatMemory: (Long) -> Unit = {}, vm: 
                         var overflow by remember { mutableStateOf(false) }
                         var showPresets by remember { mutableStateOf(false) }
                         if (showPresets) {
-                            val off by vm.presetsOff.collectAsStateWithLifecycle()
-                            ToolPresetsDialog(off, vm::setPreset, vm::setAllPresets) { showPresets = false }
+                            val off by vm.presetOverrides.collectAsStateWithLifecycle()
+                            val global by vm.presetsGlobal.collectAsStateWithLifecycle()
+                            ToolPresetsDialog(off, global, vm::setPreset, vm::setAllPresets) { showPresets = false }
                         }
                         Box {
                             IconButton(onClick = { overflow = true }) {
@@ -333,7 +334,8 @@ fun ChatDetailScreen(onBack: () -> Unit, onChatMemory: (Long) -> Unit = {}, vm: 
 /** Per-chat tool presets: one per Settings → Tools group (memory/skills, charts & other and MCP excluded), plus All. Everything is on by default. */
 @Composable
 private fun ToolPresetsDialog(
-    off: Set<com.verdroid.app.data.tools.ToolPreset>,
+    off: Map<com.verdroid.app.data.tools.ToolPreset, Boolean>,
+    global: Map<com.verdroid.app.data.tools.ToolPreset, com.verdroid.app.data.tools.ToolPreset.Companion.Global>,
     onSet: (com.verdroid.app.data.tools.ToolPreset, Boolean) -> Unit,
     onSetAll: (Boolean) -> Unit,
     onDismiss: () -> Unit,
@@ -344,14 +346,15 @@ private fun ToolPresetsDialog(
         title = { Text("Tool presets") },
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
-                Text("Which tools the agent can use in this chat. Memory & skills, charts & other (incl. self-test) and MCP always stay on; " +
-                    "Settings → Tools still applies.", style = MaterialTheme.typography.bodySmall,
+                Text("Per chat; overrides Settings → Tools for this chat. Memory & skills, charts & other (incl. self-test) and MCP " +
+                    "follow Settings.", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(8.dp))
-                PresetRow("All", "Every tool category", off.isEmpty()) { onSetAll(it) }
+                PresetRow("All", "Every tool category", com.verdroid.app.data.tools.ToolPreset.allOn(off, global)) { onSetAll(it) }
                 HorizontalDivider(Modifier.padding(vertical = 4.dp))
                 com.verdroid.app.data.tools.ToolPreset.entries.forEach { p ->
-                    PresetRow(p.label, p.description, p !in off) { onSet(p, it) }
+                    // Effective state: the chat override if set, else Settings → Tools.
+                    PresetRow(p.label, p.description, com.verdroid.app.data.tools.ToolPreset.shownOn(p, off, global)) { onSet(p, it) }
                 }
             }
         },

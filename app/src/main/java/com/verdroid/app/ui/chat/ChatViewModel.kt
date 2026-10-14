@@ -37,6 +37,8 @@ class ChatViewModel @Inject constructor(
     val chatHeads: ChatHeadController,
     private val sharedFolder: SharedFolder,
     private val presets: com.verdroid.app.data.tools.ChatToolPresets,
+    private val toolPrefs: com.verdroid.app.data.tools.ToolPrefs,
+    private val toolRegistry: com.verdroid.app.agent.tools.ToolRegistry,
     @ApplicationContext private val appContext: Context,
 ) : ViewModel() {
     /** 0 = a brand-new conversation that is created on the first send. */
@@ -57,24 +59,29 @@ class ChatViewModel @Inject constructor(
     val isGenerating: StateFlow<Boolean> = combine(taskId, agent.runningTaskIds) { id, running -> id in running }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 
-    /** Presets switched off on a brand-new chat (taskId 0), saved to the chat when the first message creates it. */
-    private val draftPresetsOff = MutableStateFlow<Set<com.verdroid.app.data.tools.ToolPreset>>(emptySet())
+    /** Overrides picked on a brand-new chat (taskId 0), saved to the chat when the first message creates it. */
+    private val draftPresets = MutableStateFlow<Map<com.verdroid.app.data.tools.ToolPreset, Boolean>>(emptyMap())
 
-    /** Tool presets switched off for this chat (empty = All on, the default). */
-    val presetsOff: StateFlow<Set<com.verdroid.app.data.tools.ToolPreset>> =
-        taskId.flatMapLatest { if (it == 0L) draftPresetsOff else presets.observe(it) }
-            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
+    /** This chat's per-group overrides (empty = follows Settings → Tools, the default). */
+    val presetOverrides: StateFlow<Map<com.verdroid.app.data.tools.ToolPreset, Boolean>> =
+        taskId.flatMapLatest { if (it == 0L) draftPresets else presets.observe(it) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
-    fun setPreset(preset: com.verdroid.app.data.tools.ToolPreset, enabled: Boolean) {
+    /** Settings → Tools state per preset (live; drives the dialog switches; effective = override, else Settings). */
+    val presetsGlobal: StateFlow<Map<com.verdroid.app.data.tools.ToolPreset, com.verdroid.app.data.tools.ToolPreset.Companion.Global>> =
+        toolPrefs.disabled.map { com.verdroid.app.data.tools.ToolPreset.globalState(toolRegistry.tools.map { t -> t.name }, it) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
+    private fun updatePresets(f: (Map<com.verdroid.app.data.tools.ToolPreset, Boolean>) -> Map<com.verdroid.app.data.tools.ToolPreset, Boolean>) {
         val id = taskId.value
-        if (id == 0L) draftPresetsOff.update { if (enabled) it - preset else it + preset }
-        else presets.setEnabled(id, preset, enabled)
+        if (id == 0L) draftPresets.update(f) else presets.set(id, f(presets.overrides(id)))
     }
-    fun setAllPresets(enabled: Boolean) {
-        val id = taskId.value
-        if (id == 0L) draftPresetsOff.value = if (enabled) emptySet() else com.verdroid.app.data.tools.ToolPreset.entries.toSet()
-        else presets.setAll(id, enabled)
-    }
+
+    fun setPreset(preset: com.verdroid.app.data.tools.ToolPreset, enabled: Boolean) =
+        updatePresets { com.verdroid.app.data.tools.ToolPreset.toggle(it, preset, enabled, presetsGlobal.value) }
+
+    fun setAllPresets(enabled: Boolean) =
+        updatePresets { com.verdroid.app.data.tools.ToolPreset.toggleAll(it, enabled, presetsGlobal.value) }
 
     private val _pendingAttach = MutableStateFlow<ChatAttachment.Saved?>(null)
     val pendingAttach: StateFlow<ChatAttachment.Saved?> = _pendingAttach.asStateFlow()
@@ -119,7 +126,7 @@ class ChatViewModel @Inject constructor(
         viewModelScope.launch {
             val id = taskId.value
             if (id == 0L) {
-                val draft = draftPresetsOff.value
+                val draft = draftPresets.value
                 // Bind the new id BEFORE the agent starts, so the chat head (Home → auto head, or the head button)
                 // already points at this chat during its first in-flight turn, not at "chat 0".
                 val newId = startConversation(body) { newId ->
@@ -127,7 +134,7 @@ class ChatViewModel @Inject constructor(
                     taskId.value = newId
                 }
                 taskId.value = newId
-                draftPresetsOff.value = emptySet()
+                draftPresets.value = emptyMap()
             } else sendMessage(id, body)
             _pendingAttach.value = null
         }

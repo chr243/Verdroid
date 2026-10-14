@@ -99,6 +99,8 @@ class SelfTestRunner @Inject constructor(
             "insert/read/delete ok"
         },
         "settings" to {
+            val gs = com.verdroid.app.data.tools.ToolPreset.globalState(listOf("git_status", "web_search", "web_fetch"), setOf("git_status", "web_fetch"))
+            check(gs.getValue(com.verdroid.app.data.tools.ToolPreset.GIT).offInSettings && com.verdroid.app.data.tools.ToolPreset.shownOn(com.verdroid.app.data.tools.ToolPreset.WEB, emptyMap(), gs) && !com.verdroid.app.data.tools.ToolPreset.shownOn(com.verdroid.app.data.tools.ToolPreset.GIT, emptyMap(), gs)) { "presets must reflect Settings → Tools" }
             check(com.verdroid.app.data.tools.ToolPreset.entries.all { p -> com.verdroid.app.data.tools.ToolGroups.ORDER.any { it.id == p.groupId && it.description == p.description } }) { "tool group descriptions out of sync" }
             check(!com.verdroid.app.data.network.ModelIds.openRouterUsable(listOf("openrouter/free"), 0)) { "no-key OpenRouter must be skipped" }
             check(com.verdroid.app.domain.model.DefaultModels.list.any(com.verdroid.app.data.network.ModelIds::isKilo)) { "defaults need a keyless kilo fallback" }
@@ -132,7 +134,13 @@ class SelfTestRunner @Inject constructor(
             check(or in 200..299) { "OpenRouter models HTTP $or" }
             val configured = com.verdroid.app.data.network.ProviderPresets.ALL.filter { customStore.isConfigured(it.id) }
             val custom = if (configured.isEmpty()) "no other providers set up" else buildList {
-                for (p in configured) add(customLlm.listModels(p.id).fold({ "${p.shortName}: ${it.size} models" }, { e -> throw IllegalStateException("${p.shortName}: ${e.message}") }))
+                for (p in configured) add(customLlm.listModels(p.id).fold({ "${p.shortName}: ${it.size} models" }, { e ->
+                    // A local server (Ollama/LM Studio/LAN) that is simply off is skipped, not failed.
+                    val base = customStore.baseFor(p.id)
+                    if (com.verdroid.app.data.network.ProviderProbe.classify(base, e) == com.verdroid.app.data.network.ProviderProbe.Verdict.SKIP)
+                        "skipped: " + com.verdroid.app.data.network.ProviderProbe.skipNote(p.shortName, base)
+                    else throw IllegalStateException("${p.shortName}: ${e.message}")
+                }))
             }.joinToString(", ")
             "OpenRouter models $or, Kilo models $kilo, $custom"
         },

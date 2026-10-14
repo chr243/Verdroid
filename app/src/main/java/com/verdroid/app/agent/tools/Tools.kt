@@ -128,8 +128,8 @@ class ToolRegistry(val tools: List<AgentTool>, private val switches: com.verdroi
     val enabledTools: List<AgentTool> get() = allTools.filter { switches.isEnabled(it.name) }
     val names: Set<String> get() = enabledTools.map { it.name }.toSet()
 
-    /** Tools enabled in Settings and in this chat's presets. */
-    fun enabledFor(taskId: Long): List<AgentTool> = enabledTools.filter { chatFilter.allowed(taskId, it.name) }
+    /** Tools effectively on in this chat: the chat's preset override if set, else Settings → Tools. */
+    fun enabledFor(taskId: Long): List<AgentTool> = allTools.filter { chatFilter.allowed(taskId, it.name, switches.isEnabled(it.name)) }
     fun namesFor(taskId: Long): Set<String> = enabledFor(taskId).map { it.name }.toSet()
 
     fun schemas(): JsonArray = schemasOf(enabledTools)
@@ -146,8 +146,9 @@ class ToolRegistry(val tools: List<AgentTool>, private val switches: com.verdroi
 
     suspend fun execute(name: String, argumentsJson: String, taskId: Long = 0L): ToolResult {
         val tool = staticByName[name] ?: dynamic().firstOrNull { it.name == name } ?: return ToolResult(errorJson("Unknown tool: $name"), true)
-        if (!switches.isEnabled(name)) return ToolResult(errorJson("The tool $name is turned off by the user (Settings > Tools). Do not call it; use another approach or tell the user."), true)
-        if (!chatFilter.allowed(taskId, name)) {
+        val globallyOn = switches.isEnabled(name)
+        if (!chatFilter.allowed(taskId, name, globallyOn)) {
+            if (!globallyOn) return ToolResult(errorJson("The tool $name is turned off by the user (Settings > Tools). Do not call it; use another approach or tell the user."), true)
             val preset = com.verdroid.app.data.tools.ToolPreset.of(name)?.label ?: "its"
             return ToolResult(errorJson("The tool $name is turned off in this chat (the $preset tool preset is off; chat menu → Tool presets). Do not call it or work around it; tell the user to turn the preset on if it's needed."), true)
         }

@@ -41,7 +41,7 @@ class ToolPresetsTest {
     @Test fun `registry hides and refuses tools of an off preset only in that chat`() = runTest {
         val web = Echo("web_search"); val mem = Echo("memory_save")
         val off = mutableMapOf(7L to setOf(ToolPreset.WEB))
-        val reg = ToolRegistry(listOf(web, mem), chatFilter = { id, n -> ToolPreset.allowed(n, off[id].orEmpty()) })
+        val reg = ToolRegistry(listOf(web, mem), chatFilter = { id, n, g -> g && ToolPreset.allowed(n, off[id].orEmpty()) })
         assertEquals(setOf("memory_save"), reg.namesFor(7))
         assertEquals(1, reg.schemas(7).size)
         assertEquals(setOf("web_search", "memory_save"), reg.namesFor(8))
@@ -80,7 +80,7 @@ class ToolPresetsTest {
     @Test fun `backtest guidance only in prompt when crypto tools are enabled`() = runTest {
         val bt = Echo("crypto_backtest_script"); val mem = Echo("memory_save")
         val off = mapOf(1L to setOf(ToolPreset.CRYPTO))
-        val reg = ToolRegistry(listOf(bt, mem), chatFilter = { id, n -> ToolPreset.allowed(n, off[id].orEmpty()) })
+        val reg = ToolRegistry(listOf(bt, mem), chatFilter = { id, n, g -> g && ToolPreset.allowed(n, off[id].orEmpty()) })
         val g = com.verdroid.app.agent.AgentLoop.BACKTEST_GUIDANCE
         assertFalse(com.verdroid.app.agent.AgentLoop.systemPrompt(reg.namesFor(1)).contains(g))
         assertTrue(com.verdroid.app.agent.AgentLoop.systemPrompt(reg.namesFor(2)).contains(g))
@@ -94,5 +94,51 @@ class ToolPresetsTest {
         com.verdroid.app.data.selftest.SelfTestCoverage.TOOL_CHECKS.keys.forEach { t ->
             assertEquals(t, ToolGroups.groupOf(t), ToolPreset.of(t)?.groupId ?: ToolGroups.groupOf(t).also { assertTrue(it in setOf("memory", "other", "mcp")) })
         }
+    }
+
+    @Test fun `per-chat overrides beat Settings, inherit follows it`() {
+        val tools = listOf("git_status", "git_commit", "web_search", "web_fetch", "termux_run", "memory_save")
+        val g = ToolPreset.globalState(tools, setOf("git_status", "git_commit", "web_fetch"))
+        assertTrue(g.getValue(ToolPreset.GIT).offInSettings)
+        assertFalse(g.getValue(ToolPreset.WEB).offInSettings)
+        assertFalse(g.getValue(ToolPreset.CRYPTO).offInSettings) // no tools registered → not "off in Settings"
+        // dialog shows the effective state: inherit → Settings (partly on = on)
+        assertFalse(ToolPreset.shownOn(ToolPreset.GIT, emptyMap(), g))
+        assertTrue(ToolPreset.shownOn(ToolPreset.WEB, emptyMap(), g))
+        // turning GIT on while it is off in Settings stores a forced-on override; turning it back off clears it
+        val on = ToolPreset.toggle(emptyMap(), ToolPreset.GIT, true, g)
+        assertEquals(mapOf(ToolPreset.GIT to true), on)
+        assertTrue(ToolPreset.toggle(on, ToolPreset.GIT, false, g).isEmpty())
+        // turning WEB off stores forced off; back on → inherit
+        val off = ToolPreset.toggle(emptyMap(), ToolPreset.WEB, false, g)
+        assertEquals(mapOf(ToolPreset.WEB to false), off)
+        assertTrue(ToolPreset.toggle(off, ToolPreset.WEB, true, g).isEmpty())
+        // effective per tool: override if set, else Settings; non-preset tools always follow Settings
+        assertTrue(ToolPreset.effective("git_status", false, on))
+        assertFalse(ToolPreset.effective("git_status", false, emptyMap()))
+        assertFalse(ToolPreset.effective("web_search", true, off))
+        assertTrue(ToolPreset.effective("web_search", true, emptyMap()))
+        assertFalse(ToolPreset.effective("memory_save", false, on))
+        // All
+        assertFalse(ToolPreset.allOn(emptyMap(), g))
+        val all = ToolPreset.toggleAll(emptyMap(), true, g)
+        assertTrue(ToolPreset.allOn(all, g)); assertEquals(true, all[ToolPreset.GIT]); assertNull(all[ToolPreset.WEB])
+        assertTrue(ToolPreset.toggleAll(all, false, g).values.all { !it })
+        // prompt note mentions forced-on groups
+        assertTrue(ToolPreset.promptNote(on).contains("turned on: Git"))
+        assertEquals("", ToolPreset.promptNote(emptyMap<ToolPreset, Boolean>()))
+    }
+
+    @Test fun `registry gives a forced-on group even when Settings has it off`() = kotlinx.coroutines.runBlocking {
+        val git = object : com.verdroid.app.agent.tools.AgentTool {
+            override val name = "git_status"; override val description = "d"
+            override val parameters = kotlinx.serialization.json.buildJsonObject { }
+            override suspend fun execute(args: kotlinx.serialization.json.JsonObject) = "{}"
+        }
+        val over = mapOf(1L to mapOf(ToolPreset.GIT to true))
+        val reg = com.verdroid.app.agent.tools.ToolRegistry(listOf(git), switches = { false },
+            chatFilter = { id, n, g -> ToolPreset.effective(n, g, over[id].orEmpty()) })
+        assertEquals(setOf("git_status"), reg.namesFor(1)); assertTrue(reg.namesFor(2).isEmpty())
+        assertFalse(reg.execute("git_status", "{}", 1).isError); assertTrue(reg.execute("git_status", "{}", 2).isError)
     }
 }

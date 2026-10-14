@@ -83,7 +83,7 @@ class AgentLoop internal constructor(
             }
         },
         userInstructions = { agentsMd.promptBlock() },
-        presetNote = { id -> com.verdroid.app.data.tools.ToolPreset.promptNote(presets.off(id)) },
+        presetNote = { id -> com.verdroid.app.data.tools.ToolPreset.promptNote(presets.overrides(id)) },
     )
 
     private suspend fun fullSystemPrompt(taskId: Long): String = systemPrompt(registry.namesFor(taskId)) +
