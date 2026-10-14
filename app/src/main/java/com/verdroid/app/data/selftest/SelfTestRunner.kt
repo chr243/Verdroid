@@ -216,7 +216,8 @@ class SelfTestRunner @Inject constructor(
             check(launcher.metaData?.containsKey("android.app.shortcuts") != true) { "Direct Share shortcuts must stay off (shares always start a new chat)" }
             val msg = com.verdroid.app.domain.share.ShareLogic.message(listOf(com.verdroid.app.domain.model.AttachmentText.prefix("Input/a.pdf", 1)), "Summarize")
             check(com.verdroid.app.domain.model.AttachmentText.forDisplay(msg).text == "Summarize") { "attachment line leaks into the UI" }
-            "text + documents registered, images not, no Direct Share (new chat only); attachment line hidden"
+            check(com.verdroid.app.domain.share.ShareLogic.sharedText("Link:\nhttps://a.b/c\n\n86\nTitle", null) == "https://a.b/c") { "shared link keeps extra text (title)" }
+            "text + documents registered, images not, no Direct Share (new chat only); attachment line hidden; links shared without title"
         },
         "file_guard" to {
             val D = com.verdroid.app.agent.tools.DestructiveDetector

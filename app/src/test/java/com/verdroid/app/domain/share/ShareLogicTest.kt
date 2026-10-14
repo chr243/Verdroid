@@ -16,8 +16,8 @@ class ShareLogicTest {
 
     @Test fun `subject and text combine without duplication`() {
         assertEquals("https://x.y", ShareLogic.sharedText("https://x.y", null))
-        assertEquals("Link: https://x.y\n\nTitle", ShareLogic.sharedText("https://x.y", "Title"))
-        assertEquals("Link: https://x.y\n\nTitle", ShareLogic.sharedText("Title https://x.y", "Title"))
+        assertEquals("https://x.y", ShareLogic.sharedText("https://x.y", "Title"))
+        assertEquals("https://x.y", ShareLogic.sharedText("Title https://x.y", "Title"))
         assertEquals("Only", ShareLogic.sharedText(null, "Only"))
     }
 
@@ -43,7 +43,7 @@ class ShareLogicTest {
     @Test fun `localized link label is dropped and the full URL kept`() {
         val url = "https://github.com/chr243/Verdroid/blob/main/README.md?a=1&b=2#install"
         val out = ShareLogic.sharedText("\"Some selected text\"\nW tym link: $url", null)
-        assertEquals("Link: $url\n\n\"Some selected text\"", out)
+        assertEquals(url, out)
         assertFalse(out.contains("W tym"))
         assertEquals(url, ShareLogic.sharedText("W tym link: $url", "W tym link: $url"))
     }
@@ -75,5 +75,17 @@ class ShareLogicTest {
         assertEquals("Compare them", d.text); assertEquals(2, d.moreFiles)
         assertEquals(listOf("a.pdf"), AttachmentText.forDisplay(ShareLogic.message(p.take(1), "")).files.map { it.name })
         assertTrue(AttachmentText.forDisplay("plain").files.isEmpty())
+    }
+
+    @Test fun `shared link drops the title and extra text`() {
+        val url = "https://wiadomosci.wp.pl/ofensywa-zurka-przekazal-kogo-odsunal-od-orzekania-7339897142413760a"
+        val shared = ShareLogic.sharedText("Link:\n$url\n\n86\nOfensywa Żurka. \"Natychmiastowe odsunięcie\" trzech sędziów", null)
+        assertEquals(url, shared)
+        assertEquals(url, ShareLogic.sharedText("Some title", url))
+        assertEquals("Summarize this page.\n\n$url", ShareLogic.prefill(ShareLogic.QuickAction.SUMMARIZE, shared, false))
+        assertEquals("Translate this page into English.\n\n$url", ShareLogic.prefill(ShareLogic.QuickAction.TRANSLATE, shared, false))
+        val x = ShareLogic.sharedText("Check this guy\nhttps://x.com/elonmusk", null)
+        assertEquals("Who is this person? https://x.com/elonmusk", ShareLogic.prefill(ShareLogic.QuickAction.ASK, x, false))
+        assertEquals("just some text\nline two", ShareLogic.sharedText("just some text\nline two", null))
     }
 }

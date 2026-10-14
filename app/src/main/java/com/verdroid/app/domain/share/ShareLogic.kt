@@ -23,7 +23,7 @@ object ShareLogic {
 
     /**
      * Shared subject + text cleaned into English-only structure: localized "label: URL" lines lose their label, the
-     * full URL is kept (never truncated), and text that comes with a link is laid out as "Link: <url>" + the text.
+     * full URL is kept (never truncated), and text that comes with a link (titles etc.) is dropped: only the URL(s) remain.
      */
     fun sharedText(text: String?, subject: String?): String {
         fun clean(v: String?) = v.orEmpty().lines().map { l -> LABELLED_URL_LINE.find(l)?.groupValues?.get(1) ?: l }
@@ -36,12 +36,8 @@ object ShareLogic {
             else -> "$s\n$t"
         }
         val urls = URL_RE.findAll(combined).map { it.value.trimEnd('.', ',', ')', ';') }.distinct().toList()
-        if (urls.isEmpty()) return combined
-        var rest = combined
-        urls.forEach { rest = rest.replace(it, "") }
-        rest = rest.lines().map { it.trim() }.filter { it.isNotEmpty() }.joinToString("\n")
-        val links = urls.joinToString("\n") { "Link: $it" }
-        return if (rest.isEmpty()) urls.joinToString("\n") else "$links\n\n$rest"
+        // A shared link carries only the link: titles, counters and other text the sender adds are dropped.
+        return if (urls.isEmpty()) combined else urls.joinToString("\n")
     }
 
     fun containsUrl(text: String): Boolean = URL_RE.containsMatchIn(text)
