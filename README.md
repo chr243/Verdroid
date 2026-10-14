@@ -136,3 +136,7 @@ Personal project; release builds are signed with the project's own key. There is
 ## License
 
 Verdroid is licensed under the GNU General Public License v3.0 (`GPL-3.0-only`). See [LICENSE](LICENSE) for the full text.
+
+## Support
+
+If you find Verdroid useful, you can [buy me a coffee](https://www.buymeacoffee.com/chr243).
