@@ -49,6 +49,32 @@ object ProviderPresets {
 }
 
 /** Pure URL / header rules (unit-tested). */
+/** Self-test: a local server (Ollama, LM Studio, …) being off is normal → skip; real misconfiguration still fails. */
+object ProviderProbe {
+    enum class Verdict { SKIP, FAIL }
+
+    /** localhost, loopback, private LAN ranges (10/8, 172.16/12, 192.168/16, 169.254/16) and *.local. */
+    fun isLocal(baseUrl: String): Boolean {
+        if (Regex("^[a-zA-Z][a-zA-Z0-9+.-]*://\\[(::1|fe80:[^\\]]*|f[cd][0-9a-f]{2}:[^\\]]*)\\]", RegexOption.IGNORE_CASE).containsMatchIn(baseUrl.trim())) return true
+        val host = Regex("^[a-zA-Z][a-zA-Z0-9+.-]*://\\[?([^/\\]:?#]+)").find(baseUrl.trim())?.groupValues?.get(1)?.lowercase() ?: return false
+        if (host == "localhost" || host.endsWith(".local") || host == "::1" || host.startsWith("127.") || host.startsWith("10.") ||
+            host.startsWith("192.168.") || host.startsWith("169.254.")) return true
+        val m = Regex("^172\\.(\\d+)\\.").find(host) ?: return false
+        return m.groupValues[1].toInt() in 16..31
+    }
+
+    /** Connection refused / timeout / no route / unknown host (anywhere in the cause chain). */
+    fun isUnreachable(e: Throwable): Boolean = generateSequence(e) { it.cause }.take(8).any {
+        it is java.net.ConnectException || it is java.net.SocketTimeoutException || it is java.net.NoRouteToHostException ||
+            it is java.net.UnknownHostException || it is java.io.InterruptedIOException && it.message.orEmpty().contains("timeout", true) ||
+            it.message.orEmpty().let { m -> m.contains("Failed to connect", true) || m.contains("ECONNREFUSED") || m.contains("Connection refused", true) }
+    }
+
+    fun classify(baseUrl: String, e: Throwable): Verdict = if (isLocal(baseUrl) && isUnreachable(e)) Verdict.SKIP else Verdict.FAIL
+
+    fun skipNote(name: String, baseUrl: String) = "$name server not reachable at $baseUrl (not running?)"
+}
+
 object ProviderUrls {
     /**
      * Normalizes a user-typed base URL to `scheme://host[:port]/path/` (trailing slash, no `/chat/completions` or
