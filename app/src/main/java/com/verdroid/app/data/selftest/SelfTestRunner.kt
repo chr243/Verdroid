@@ -220,6 +220,8 @@ class SelfTestRunner @Inject constructor(
             val om = com.verdroid.app.domain.share.ShareLogic
             val dr = com.verdroid.app.domain.share.ShareDraft.initial("https://x.com/abc", false)
             check(dr.text == "Who is this person?" && dr.outgoing == "Who is this person? https://x.com/abc") { "shared link must stay out of the message field and be appended on Send" }
+            val scoped = om.withScope("Summarize this page.\n\nhttps://www.example.com/a", "https://www.example.com/a")
+            check("site:example.com" in scoped && com.verdroid.app.domain.model.AttachmentText.forDisplay(scoped).text == "Summarize this page.\n\nhttps://www.example.com/a") { "share scope note missing or visible" }
             check(!om.shareUsesBubble(false) && om.shareUsesBubble(true)) { "share must use Bubble mode, Full app without overlay permission" }
             check(!om.restoreShareHead(0, false, true) && om.restoreShareHead(1, false, true)) { "share head must only return with an unread/running reply" }
             "text + documents registered, images not, no Direct Share (new chat only); attachment line hidden; links shared without title; " +

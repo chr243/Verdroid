@@ -100,4 +100,21 @@ class ShareLogicTest {
         assertFalse(ShareLogic.restoreShareHead(0, false, true))
         assertFalse(ShareLogic.restoreShareHead(3, true, false))
     }
+
+    @Test fun `shared links get a hidden scope note for every action`() {
+        val url = "https://assetstore.unity.com/packages/tools/some-asset-123"
+        listOf(ShareLogic.QuickAction.ASK, ShareLogic.QuickAction.SUMMARIZE, ShareLogic.QuickAction.TRANSLATE).forEach { a ->
+            val d = ShareDraft.initial(url, false).select(a).let { if (a == ShareLogic.QuickAction.ASK) it.edit("Is this any good?") else it }
+            val sent = ShareLogic.withScope(d.outgoing, d.link)
+            assertTrue(sent, sent.contains("Stay on the shared site (assetstore.unity.com)"))
+            assertTrue(sent.contains("site:assetstore.unity.com"))
+            assertTrue(sent.contains("don't search or fetch them unless I ask"))
+            assertEquals(d.outgoing, com.verdroid.app.domain.model.AttachmentText.forDisplay(sent).text)
+        }
+        assertEquals("example.com", ShareLogic.domainOf("https://www.Example.com:8080/x"))
+        val x = ShareLogic.scopeNote("https://x.com/elonmusk")!!
+        assertTrue(x.contains("search the web generally")); assertFalse(x.contains("Stay on"))
+        assertNull(ShareLogic.scopeNote(null))
+        assertEquals("plain", ShareLogic.withScope("plain", null))
+    }
 }

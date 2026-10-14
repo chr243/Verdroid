@@ -97,6 +97,26 @@ object ShareLogic {
         }
     }
 
+    /** Host of [url] without "www." (null if none). */
+    fun domainOf(url: String): String? =
+        Regex("^https?://([^/?#:]+)", RegexOption.IGNORE_CASE).find(url.trim())?.groupValues?.get(1)?.lowercase()?.removePrefix("www.")
+
+    /**
+     * Hidden, model-only note for a share with a link (all actions): stay on the shared site; other sites may only be
+     * suggested at the end. X profile links are the exception: a general web search about the person is allowed.
+     */
+    fun scopeNote(link: String?): String? {
+        val url = link?.let { URL_RE.find(it)?.value } ?: return null
+        val domain = domainOf(url) ?: return null
+        if (isXProfileUrl(url)) return "${AttachmentText.SCOPE_TAG} This is an X profile. You may search the web generally about this person " +
+            "(other sites are fine); say which sources you used and don't guess facts."
+        return "${AttachmentText.SCOPE_TAG} Stay on the shared site ($domain): fetch that page and, if needed, search with site:$domain. " +
+            "You may suggest other sites at the end of your answer, but don't search or fetch them unless I ask."
+    }
+
+    /** Appends the hidden [scopeNote] (if any) to the outgoing message. */
+    fun withScope(message: String, link: String?): String = scopeNote(link)?.let { "$message\n\n$it" } ?: message
+
     /** Message to send: one attachment line per saved file (hidden in the UI by [AttachmentText]) + the user's text. */
     fun message(attachmentPrefixes: List<String>, userText: String): String {
         val t = userText.trim()

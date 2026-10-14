@@ -113,7 +113,7 @@ class ShareActivity : ComponentActivity() {
                             Button(enabled = !busy && !needsAccess && ShareLogic.canSend(files.size, draft.outgoing), onClick = {
                                 busy = true; error = null
                                 lifecycleScope.launch {
-                                    runCatching { send(files, draft.outgoing, toLast) }
+                                    runCatching { send(files, draft.outgoing, toLast, draft.link) }
                                         // Open the new chat in Verdroid's own task (warm: onNewIntent; cold: onCreate) and drop the sheet so Back skips it.
                                         // Bubble: stay over the source app; the chat head service shows the chat (panel or head + badge).
                                         .onSuccess { id -> openChat(compact, id); finish() }
@@ -137,9 +137,9 @@ class ShareActivity : ComponentActivity() {
     }
 
     /** New chat, or the most recently used chat when [toLast] (falls back to a new chat if there is none). */
-    private suspend fun send(files: List<Shared>, text: String, toLast: Boolean): Long {
+    private suspend fun send(files: List<Shared>, text: String, toLast: Boolean, link: String? = null): Long {
         val saved = withContext(Dispatchers.IO) { files.map { ChatAttachment.saveToInput(this@ShareActivity, sharedFolder, it.uri) } }
-        val body = ShareLogic.message(saved.map(ChatAttachment::messagePrefix), text)
+        val body = ShareLogic.withScope(ShareLogic.message(saved.map(ChatAttachment::messagePrefix), text), link)
         val last = if (toLast) taskRepo.observeConversations().first().maxByOrNull { it.task.updatedAt }?.task?.id else null
         if (last != null) { sendMessage(last, body); return last }
         return startConversation(body)

@@ -65,8 +65,16 @@ object AttachmentText {
     /** A stored title made from the raw prefix by the old titleFrom (first 6 words, maybe with "…"). */
     private val RAW_TITLE_RE = Regex("^\\s*Attached file:\\s*(.*)$")
 
+    /** Model-only note at the end of a share-originated message (scope to the shared site); hidden in every UI path. */
+    const val SCOPE_TAG = "[Share scope]"
+    private val SCOPE_RE = Regex("\\s*\\n\\Q$SCOPE_TAG\\E[^\\n]*\\s*$")
+
+    /** [content] without the hidden share-scope note. */
+    fun stripScope(content: String): String = if (SCOPE_TAG !in content) content else content.replace(SCOPE_RE, "")
+
     /** File name + the user's own text; the default prompt is hidden when it was only added because nothing was typed. */
-    fun forDisplay(content: String): Display {
+    fun forDisplay(raw: String): Display {
+        val content = stripScope(raw)
         val m = PREFIX_RE.find(content) ?: return Display(null, null, content)
         fun file(r: MatchResult) = File(r.groupValues[1].substringAfterLast('/'), r.groupValues[2].toLongOrNull(), r.groupValues[1])
         val files = mutableListOf(file(m))
