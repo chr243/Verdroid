@@ -76,6 +76,27 @@ object ShareLogic {
         return listOf(head, text.trim()).filter { it.isNotEmpty() }.joinToString("\n\n")
     }
 
+    /** Instruction-only prefill when a link is shown separately (read-only line); [action] null = plain/empty. */
+    fun instruction(action: QuickAction?, link: String): String = when (action) {
+        QuickAction.SUMMARIZE -> "Summarize this page."
+        QuickAction.TRANSLATE -> "Translate this page into English."
+        QuickAction.ASK -> if (xProfileUrl(link) != null) X_QUESTION else ""
+        null -> ""
+    }
+
+    const val X_QUESTION = "Who is this person?"
+
+    /** Final text = instruction + link: a one-line question gets "<q> <url>", anything else "<text>\n\n<url>". */
+    fun withLink(text: String, link: String?): String {
+        val t = text.trim()
+        return when {
+            link == null -> t
+            t.isEmpty() -> link
+            t.endsWith("?") && '\n' !in t -> "$t $link"
+            else -> "$t\n\n$link"
+        }
+    }
+
     /** Message to send: one attachment line per saved file (hidden in the UI by [AttachmentText]) + the user's text. */
     fun message(attachmentPrefixes: List<String>, userText: String): String {
         val t = userText.trim()
@@ -112,10 +133,17 @@ data class ShareDraft(
     val selected: ShareLogic.QuickAction? = ShareLogic.QuickAction.ASK,
     private val edited: Map<ShareLogic.QuickAction?, String> = emptyMap(),
 ) {
+    /** Shared link (no files): shown read-only under the title, kept out of the editable field, appended on Send. */
+    val link: String? get() = if (!hasFiles && ShareLogic.containsUrl(shared)) shared.trim() else null
+
     /** What the message field shows. */
     val text: String get() = edited[selected] ?: template(selected)
 
-    private fun template(a: ShareLogic.QuickAction?): String = if (a == null) shared else ShareLogic.prefill(a, shared, hasFiles)
+    /** What is sent to the agent: the field text plus the link. */
+    val outgoing: String get() = ShareLogic.withLink(text, link)
+
+    private fun template(a: ShareLogic.QuickAction?): String = link?.let { ShareLogic.instruction(a, it) }
+        ?: if (a == null) shared else ShareLogic.prefill(a, shared, hasFiles)
 
     fun select(a: ShareLogic.QuickAction): ShareDraft = if (a == selected) this else copy(selected = a)
 

@@ -9,16 +9,16 @@ import org.junit.Test
 class ShareDraftTest {
     @Test fun `typed text survives re-tapping and switching actions`() {
         var d = ShareDraft("https://a.b", hasFiles = false)
-        assertEquals("https://a.b", d.text); assertEquals(ASK, d.selected)
+        assertEquals("", d.text); assertEquals("https://a.b", d.link); assertEquals("https://a.b", d.outgoing); assertEquals(ASK, d.selected)
         d = d.select(ASK).edit("my question")
         d = d.select(ASK)
         assertEquals("my question", d.text)
         d = d.select(SUMMARIZE)
-        assertEquals("Summarize this page.\n\nhttps://a.b", d.text)
+        assertEquals("Summarize this page.", d.text); assertEquals("Summarize this page.\n\nhttps://a.b", d.outgoing)
         d = d.edit("Summarize briefly")
         d = d.select(ASK); assertEquals("my question", d.text)
         d = d.select(SUMMARIZE); assertEquals("Summarize briefly", d.text)
-        d = d.select(TRANSLATE); assertEquals("Translate this page into English.\n\nhttps://a.b", d.text)
+        d = d.select(TRANSLATE); assertEquals("Translate this page into English.", d.text); assertEquals("Translate this page into English.\n\nhttps://a.b", d.outgoing)
     }
 
     @Test fun `clearing a field is kept, not re-prefilled`() {
@@ -46,9 +46,13 @@ class ShareDraftTest {
     }
 
     @Test fun `a shared link opens with Summarize, text and files with Ask`() {
-        val link = ShareDraft.initial("Link: https://a.b/c\n\nTitle", false)
+        val link = ShareDraft.initial(ShareLogic.sharedText("Link: https://a.b/c\n\nTitle", null), false)
         assertEquals(SUMMARIZE, link.selected)
-        assertEquals("Summarize this page.\n\nLink: https://a.b/c\n\nTitle", link.text)
+        assertEquals("Summarize this page.", link.text); assertEquals("https://a.b/c", link.link)
+        assertEquals("Summarize this page.\n\nhttps://a.b/c", link.outgoing)
+        assertEquals("my q\n\nhttps://a.b/c", link.select(ASK).edit("my q").outgoing)
+        assertNull(ShareDraft.initial("just some text", false).link)
+        assertEquals("just some text", ShareDraft.initial("just some text", false).outgoing)
         assertEquals(SUMMARIZE, ShareDraft.initial("https://a.b", false).selected)
         assertEquals(ASK, ShareDraft.initial("just some text", false).selected)
         assertEquals(ASK, ShareDraft.initial("", true).selected)
@@ -73,7 +77,7 @@ class ShareDraftTest {
 
     @Test fun `X profile opens with Ask who-is prefill, posts and other links keep Summarize`() {
         val p = ShareDraft.initial(ShareLogic.sharedText("https://x.com/elonmusk", "Elon Musk (@elonmusk) / X"), false)
-        assertEquals(ASK, p.selected); assertEquals("Who is this person? https://x.com/elonmusk", p.text)
+        assertEquals(ASK, p.selected); assertEquals("Who is this person?", p.text); assertEquals("Who is this person? https://x.com/elonmusk", p.outgoing)
         assertTrue(p.select(SUMMARIZE).text.startsWith("Summarize this page."))
         assertEquals(SUMMARIZE, ShareDraft.initial("https://x.com/elonmusk/status/1", false).selected)
         assertEquals(SUMMARIZE, ShareDraft.initial("https://github.com/x", false).selected)

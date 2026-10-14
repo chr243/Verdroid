@@ -25,6 +25,7 @@ import com.verdroid.app.ui.theme.VerdroidTheme
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
@@ -37,6 +38,9 @@ import javax.inject.Inject
 class ShareActivity : ComponentActivity() {
     @Inject lateinit var sharedFolder: SharedFolder
     @Inject lateinit var startConversation: StartConversationUseCase
+    @Inject lateinit var sendMessage: com.verdroid.app.domain.usecase.SendMessageUseCase
+    @Inject lateinit var taskRepo: com.verdroid.app.domain.repository.TaskRepository
+    @Inject lateinit var appPrefs: com.verdroid.app.data.prefs.AppPrefs
 
     private data class Shared(val uri: Uri, val name: String)
 
@@ -57,6 +61,7 @@ class ShareActivity : ComponentActivity() {
             VerdroidTheme(transparentWindow = compact) {
                 var draft by remember { mutableStateOf(com.verdroid.app.domain.share.ShareDraft.initial(text, files.isNotEmpty())) }
                 val msg = draft.text
+                val toLast by appPrefs.shareToLastChat.collectAsState()
                 var busy by remember { mutableStateOf(false) }
                 var error by remember { mutableStateOf<String?>(null) }
                 val needsAccess = files.isNotEmpty() && !hasAccess.value
@@ -68,6 +73,10 @@ class ShareActivity : ComponentActivity() {
                     shape = if (compact) MaterialTheme.shapes.extraLarge else androidx.compose.ui.graphics.RectangleShape, tonalElevation = if (compact) 6.dp else 0.dp) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text("Share to Verdroid", style = MaterialTheme.typography.titleLarge)
+                        draft.link?.let { l ->
+                            Text("🔗 $l", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                        }
                         if (files.isNotEmpty()) Text("📎 " + files.joinToString { it.name }, style = MaterialTheme.typography.bodyMedium)
                         if (files.isEmpty() && text.isBlank()) Text("Nothing Verdroid can use was shared (images are not supported).",
                             color = MaterialTheme.colorScheme.error)
@@ -82,8 +91,6 @@ class ShareActivity : ComponentActivity() {
                         }
                         OutlinedTextField(msg, { draft = draft.edit(it) }, Modifier.fillMaxWidth().heightIn(min = 96.dp, max = 220.dp),
                             label = { Text("Message") })
-                        Text("Sharing always starts a new chat.", style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
                         if (!compact) Spacer(Modifier.weight(1f))
                         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                         if (needsAccess) {
@@ -92,11 +99,21 @@ class ShareActivity : ComponentActivity() {
                             OutlinedButton(onClick = { startActivity(SharedFolder.accessIntent(this@ShareActivity)) }) { Text("Grant All files access") }
                         }
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
+                            // New chat (default) / Last chat; the choice is remembered.
+                            SingleChoiceSegmentedButtonRow {
+                                listOf(false to "New chat", true to "Last chat").forEachIndexed { i, (v, label) ->
+                                    SegmentedButton(selected = toLast == v, onClick = { appPrefs.setShareToLastChat(v) },
+                                        shape = SegmentedButtonDefaults.itemShape(i, 2), icon = {}) {
+                                        Text(label, style = MaterialTheme.typography.labelSmall, maxLines = 1)
+                                    }
+                                }
+                            }
+                            Spacer(Modifier.weight(1f))
                             TextButton(onClick = { finish() }) { Text("Cancel") }
-                            Button(enabled = !busy && !needsAccess && ShareLogic.canSend(files.size, msg), onClick = {
+                            Button(enabled = !busy && !needsAccess && ShareLogic.canSend(files.size, draft.outgoing), onClick = {
                                 busy = true; error = null
                                 lifecycleScope.launch {
-                                    runCatching { send(files, msg) }
+                                    runCatching { send(files, draft.outgoing, toLast) }
                                         // Open the new chat in Verdroid's own task (warm: onNewIntent; cold: onCreate) and drop the sheet so Back skips it.
                                         // Bubble: stay over the source app; the chat head service shows the chat (panel or head + badge).
                                         .onSuccess { id -> openChat(compact, id); finish() }
@@ -119,10 +136,12 @@ class ShareActivity : ComponentActivity() {
             .onFailure { startActivity(MainActivity.openTaskIntent(this, id)) }
     }
 
-    /** Sharing always creates a NEW chat (no picker, no Direct Share into existing chats). */
-    private suspend fun send(files: List<Shared>, text: String): Long {
+    /** New chat, or the most recently used chat when [toLast] (falls back to a new chat if there is none). */
+    private suspend fun send(files: List<Shared>, text: String, toLast: Boolean): Long {
         val saved = withContext(Dispatchers.IO) { files.map { ChatAttachment.saveToInput(this@ShareActivity, sharedFolder, it.uri) } }
         val body = ShareLogic.message(saved.map(ChatAttachment::messagePrefix), text)
+        val last = if (toLast) taskRepo.observeConversations().first().maxByOrNull { it.task.updatedAt }?.task?.id else null
+        if (last != null) { sendMessage(last, body); return last }
         return startConversation(body)
     }
 

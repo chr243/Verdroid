@@ -218,6 +218,8 @@ class SelfTestRunner @Inject constructor(
             check(com.verdroid.app.domain.model.AttachmentText.forDisplay(msg).text == "Summarize") { "attachment line leaks into the UI" }
             check(com.verdroid.app.domain.share.ShareLogic.sharedText("Link:\nhttps://a.b/c\n\n86\nTitle", null) == "https://a.b/c") { "shared link keeps extra text (title)" }
             val om = com.verdroid.app.domain.share.ShareLogic
+            val dr = com.verdroid.app.domain.share.ShareDraft.initial("https://x.com/abc", false)
+            check(dr.text == "Who is this person?" && dr.outgoing == "Who is this person? https://x.com/abc") { "shared link must stay out of the message field and be appended on Send" }
             check(!om.shareUsesBubble(false) && om.shareUsesBubble(true)) { "share must use Bubble mode, Full app without overlay permission" }
             check(!om.restoreShareHead(0, false, true) && om.restoreShareHead(1, false, true)) { "share head must only return with an unread/running reply" }
             "text + documents registered, images not, no Direct Share (new chat only); attachment line hidden; links shared without title; " +

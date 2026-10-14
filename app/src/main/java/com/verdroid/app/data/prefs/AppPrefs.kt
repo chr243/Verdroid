@@ -34,7 +34,13 @@ class AppPrefs @Inject constructor(@ApplicationContext context: Context) {
     val kiloNoticeSeen: StateFlow<Boolean> = _kiloNotice.asStateFlow()
     fun dismissKiloNotice() { prefs.edit().putBoolean(KEY_KILO_NOTICE, true).apply(); _kiloNotice.value = true }
 
+    private val _shareLast = MutableStateFlow(prefs.getBoolean(KEY_SHARE_LAST, false))
+    /** Share sheet target: false = New chat (default), true = Last chat. Remembers the last choice. */
+    val shareToLastChat: StateFlow<Boolean> = _shareLast.asStateFlow()
+    fun setShareToLastChat(v: Boolean) { prefs.edit().putBoolean(KEY_SHARE_LAST, v).apply(); _shareLast.value = v }
+
     private companion object {
+        const val KEY_SHARE_LAST = "share_to_last_chat"
         /** Removed "Share opens in" setting; any stored value is dropped on start. */
         const val KEY_SHARE_OPEN = "share_open_mode"
         const val KEY_MEM_KILO = "send_memories_to_kilo"
