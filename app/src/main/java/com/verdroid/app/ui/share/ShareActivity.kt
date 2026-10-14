@@ -55,7 +55,7 @@ class ShareActivity : ComponentActivity() {
         val mode = ShareLogic.effectiveOpenMode(appPrefs.shareOpenMode.value, android.provider.Settings.canDrawOverlays(this))
         val compact = mode != ShareLogic.OpenMode.FULL_APP
         setContent {
-            VerdroidTheme {
+            VerdroidTheme(transparentWindow = compact) {
                 var draft by remember { mutableStateOf(com.verdroid.app.domain.share.ShareDraft.initial(text, files.isNotEmpty())) }
                 val msg = draft.text
                 var busy by remember { mutableStateOf(false) }

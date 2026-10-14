@@ -215,7 +215,8 @@ private data class SchemeRoles(
 
 /** Applies the saved mode + palette; changes in the Theme screen apply instantly everywhere. */
 @Composable
-fun VerdroidTheme(content: @Composable () -> Unit) {
+/** [transparentWindow] = leave the window background transparent (compact share sheet over the source app). */
+fun VerdroidTheme(transparentWindow: Boolean = false, content: @Composable () -> Unit) {
     val context = LocalContext.current
     val store = remember { ThemeStore.get(context) }
     val mode by store.mode.collectAsState()
@@ -248,6 +249,7 @@ private fun SystemBarsEffect(scheme: ColorScheme, dark: Boolean) {
         c.isAppearanceLightStatusBars = !dark
         c.isAppearanceLightNavigationBars = !dark
         // Bars are transparent (enableEdgeToEdge); the theme's background/surfaceContainer (bottom bar) shows through.
-        window.decorView.setBackgroundColor(scheme.background.toArgb())
+        // Translucent windows (compact share sheet) must stay see-through, otherwise this paints an opaque backdrop.
+        window.decorView.setBackgroundColor(if (transparentWindow) android.graphics.Color.TRANSPARENT else scheme.background.toArgb())
     }
 }
