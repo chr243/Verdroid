@@ -21,7 +21,7 @@ abstract class XPostsTool(termux: TermuxRunner, folder: SharedFolder, private va
         val url = target(args) ?: return errorJson("Missing or invalid input")
         val cookies = BrowserCookies.forX(vault.all())
         if (cookies.none { it.name == "auth_token" })
-            return errorJson("Not logged in to X (no auth_token saved). Call cookie_login first, then retry.")
+            return errorJson("NOT_LOGGED_IN: no X login saved (no auth_token). Call cookie_login once (the user logs in), then retry this same tool.")
         val count = (args.int("count") ?: 20).coerceIn(1, 100)
         val (file, preamble) = cookiePreamble(cookies)
         val cli = listOf("xposts", url, "--wait", "0", "--count", count.toString(), "--cookies", file)
@@ -38,7 +38,7 @@ abstract class XPostsTool(termux: TermuxRunner, folder: SharedFolder, private va
     }
 
     protected companion object {
-        const val STEER = "Use this for X/Twitter instead of cookie_open + parsing HTML. Uses the user's X login (cookie_login first). " +
+        const val STEER = "Use this for X/Twitter instead of cookie_open + parsing HTML. Assume the X login is already saved and call this directly — never call cookie_login or cookie_clear first. Only if the result says NOT_LOGGED_IN / not logged in, call cookie_login once and retry. " +
             "Returns 'Post N: @handle (Name) - text - time - link' lines. Read-only."
     }
 }

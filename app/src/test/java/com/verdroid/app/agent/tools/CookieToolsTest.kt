@@ -129,7 +129,7 @@ class XToolsTest {
 
     @Test fun needsLogin() = runTest {
         val r = XTimelineTool(T("{}"), folder, CookieVault.InMemory()).execute(buildJsonObject {})
-        assertTrue(r.contains("cookie_login"))
+        assertTrue(r.contains("cookie_login")); assertTrue(r.contains("NOT_LOGGED_IN")); assertTrue(r.contains("retry"))
     }
 
     @Test fun formatsWithoutFilesAndBuildsUrls() = runTest {

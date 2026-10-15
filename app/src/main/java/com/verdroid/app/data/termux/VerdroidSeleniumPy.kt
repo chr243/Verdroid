@@ -170,7 +170,7 @@ def scrape_x(drv, count, max_idle):
     except Exception:
         cur = drv.current_url or ""
         if "/login" in cur or "/i/flow/" in cur:
-            return {"ok": False, "error": "X shows the login page: not logged in. Call cookie_login first.", "url": cur}
+            return {"ok": False, "error": "NOT_LOGGED_IN: X shows the login page (saved login missing or expired). Call cookie_login once, then retry this same tool.", "url": cur}
         body = (drv.execute_script("return document.body ? document.body.innerText : '';") or "")[:1500]
         return {"ok": False, "error": "No posts appeared on the page within 25 s.", "page_text": body}
     seen, posts, idle = set(), [], 0

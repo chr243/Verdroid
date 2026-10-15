@@ -69,7 +69,7 @@ class CookieListTool(private val vault: CookieVault) : AgentTool {
 
 class CookieClearTool(private val vault: CookieVault) : AgentTool {
     override val name = "cookie_clear"
-    override val description = "$COOKIE_NOTE Remove stored browser cookies for a domain (or all with domain=\"*\"). Only when the user asks."
+    override val description = "$COOKIE_NOTE Remove stored browser cookies for a domain (or all with domain=\"*\"). Only when the user explicitly asks; never to fix or retry an X tool."
     override val parameters = schema(listOf("domain"), "domain" to prop("string", "Domain such as x.com, or * for all"))
     override suspend fun execute(args: JsonObject): String {
         val d = args.str("domain")?.trim()?.lowercase()?.takeIf { it.isNotEmpty() } ?: return errorJson("domain is required")
@@ -108,7 +108,7 @@ class CookieLoginTool(
     private val timeoutMs: Long = 10 * 60_000L,
 ) : AgentTool {
     override val name = "cookie_login"
-    override val description = "$COOKIE_NOTE Open a full-screen in-app browser so the user logs in to a site themselves (default x.com), " +
+    override val description = "$COOKIE_NOTE Fallback only: for X, call it only after x_timeline/x_user_posts/x_search report NOT_LOGGED_IN (never first or just in case). Opens a full-screen in-app browser so the user logs in to a site themselves (default x.com), " +
         "then taps Done; the session cookies are saved encrypted for cookie_open. Waits up to 10 min. Tell the user to log in and tap Done. " +
         "Some sites (e.g. Google) block this kind of login."
     override val parameters = schema(emptyList(), "url" to prop("string", "Login page URL (default https://x.com/i/flow/login)"))
