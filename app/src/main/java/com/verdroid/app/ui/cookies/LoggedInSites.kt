@@ -34,11 +34,10 @@ fun LoggedInSitesSection(vm: LoggedInSitesViewModel = hiltViewModel()) {
     LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) { vm.refresh() }
     Column(Modifier.padding(horizontal = 16.dp)) {
         Text("Logged-in sites (beta)", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 20.dp))
-        Text("For the Browser cookies tools: log in once in an in-app browser and cookie_open can read those pages. " +
+        Text("For the cookie_* tools (Web) and the Twitter tools: log in once in an in-app browser and cookie_open can read those pages. " +
             "Cookies are stored encrypted on this phone. Some sites (e.g. Google) block this kind of login; " +
             "you can also import a cookie export file with cookie_import.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        com.verdroid.app.ui.consent.XPostSetting(Modifier.padding(horizontal = (-16).dp))
         OutlinedButton(onClick = { ask = true }, modifier = Modifier.padding(vertical = 8.dp)) { Text("Log in to a site") }
         if (sites.isEmpty()) Text("No saved sites", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         sites.forEach { (site, n) ->

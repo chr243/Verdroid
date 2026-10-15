@@ -18,7 +18,7 @@ import javax.inject.Singleton
  * Groups added later (Crypto) start ON for existing chats — the same as before, when those tools were not gated.
  */
 enum class ToolPreset(val groupId: String) {
-    FILES("files"), WEB("web"), COOKIES("cookies"), TERMUX("termux"), PDF("pdf"), SYSTEM("system"), GIT("git"), CRYPTO("crypto");
+    FILES("files"), WEB("web"), TWITTER("twitter"), TERMUX("termux"), PDF("pdf"), SYSTEM("system"), GIT("git"), CRYPTO("crypto");
 
     /** Same one-line description as the Settings > Tools group (shared in [ToolGroups.ORDER]). */
     val description: String get() = ToolGroups.ORDER.first { it.id == groupId }.description
@@ -91,7 +91,14 @@ enum class ToolPreset(val groupId: String) {
         }
 
         /** Persisted names from before presets mirrored the Settings groups. */
-        private val LEGACY = mapOf("DEVICE" to listOf(SYSTEM, GIT), "FILES" to listOf(FILES, PDF))
+        private val LEGACY = mapOf("DEVICE" to listOf(SYSTEM, GIT), "FILES" to listOf(FILES, PDF), "COOKIES" to listOf(TWITTER))
+
+        /**
+         * Browser cookies (COOKIES, Oct 2026) was split into Twitter + the cookie tools in Web. A chat that had it forced ON
+         * keeps both on (TWITTER + WEB); forced OFF only turns Twitter off (Web is not forced off).
+         */
+        fun decode(raw: Set<String>?, on: Boolean): Set<ToolPreset> =
+            decode(raw) + if (on && raw.orEmpty().contains("COOKIES")) setOf(WEB) else emptySet()
     }
 }
 
@@ -118,7 +125,7 @@ class ChatToolPresets @Inject constructor(@ApplicationContext context: Context) 
             val on = k.startsWith(ON_PREFIX)
             val id = k.removePrefix(if (on) ON_PREFIX else OFF_PREFIX).toLongOrNull() ?: return@forEach
             @Suppress("UNCHECKED_CAST")
-            val set = ToolPreset.decode(v as? Set<String>)
+            val set = ToolPreset.decode(v as? Set<String>, on)
             out[id] = out[id].orEmpty() + set.associateWith { on }
         }
         return out.filterValues { it.isNotEmpty() }

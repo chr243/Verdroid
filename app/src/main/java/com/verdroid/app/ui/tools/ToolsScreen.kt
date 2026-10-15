@@ -35,6 +35,9 @@ fun ToolsScreen(onBack: () -> Unit, vm: ToolsViewModel = hiltViewModel()) {
     val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
     // Sections start collapsed; open ones survive rotation.
     var expanded by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(setOf<String>()) }
+    // Twitter ToS warning: the action to run after "I understand, turn on".
+    var tosPending by remember { mutableStateOf<(() -> Unit)?>(null) }
+    tosPending?.let { act -> com.verdroid.app.ui.consent.TwitterTosDialog(onConfirm = { act(); tosPending = null }, onCancel = { tosPending = null }) }
     LaunchedEffect(Unit) {
         vm.events.collect { e ->
             when (e) {
@@ -84,7 +87,10 @@ fun ToolsScreen(onBack: () -> Unit, vm: ToolsViewModel = hiltViewModel()) {
                         Icon(if (open) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown, null,
                             tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(Modifier.width(8.dp))
-                        Switch(checked = ToolGroups.switchOn(m), onCheckedChange = { on -> names.forEach { vm.setEnabled(it, on) } },
+                        Switch(checked = ToolGroups.switchOn(m), onCheckedChange = { on ->
+                                if (ToolGroups.needsTosWarning(g.id, ToolGroups.switchOn(m), on)) tosPending = { names.forEach { vm.setEnabled(it, true) } }
+                                else names.forEach { vm.setEnabled(it, on) }
+                            },
                             modifier = Modifier.semantics { contentDescription = "Turn all ${g.title} tools ${if (ToolGroups.switchOn(m)) "off" else "on"}" })
                     }
                 }
@@ -105,12 +111,24 @@ fun ToolsScreen(onBack: () -> Unit, vm: ToolsViewModel = hiltViewModel()) {
                                     })
                             }
                         },
-                        trailingContent = { Switch(checked = on, onCheckedChange = { vm.setEnabled(t.name, it) }) },
+                        trailingContent = { Switch(checked = on, onCheckedChange = {
+                            if (ToolGroups.needsTosWarning(g.id, ToolGroups.switchOn(m), it)) tosPending = { vm.setEnabled(t.name, true) }
+                            else vm.setEnabled(t.name, it)
+                        }) },
                     )
                 }
             }
-            if ("cookies" in expanded || ToolGroups.group(state.tools) { it.name }.any { (g, t) -> g.id == "cookies" && t.any { it.name !in disabled } })
+            val groupsNow = ToolGroups.group(state.tools) { it.name }
+            // Logged-in sites: with the Web group's cookie tools; "Post to X without asking": with the Twitter group.
+            if ("web" in expanded || groupsNow.any { (g, t) -> g.id == "web" && t.any { it.name.startsWith("cookie_") && it.name !in disabled } })
                 item(key = "logged-in-sites") { com.verdroid.app.ui.cookies.LoggedInSitesSection() }
+            if ("twitter" in expanded || groupsNow.any { (g, t) -> g.id == "twitter" && t.any { it.name !in disabled } })
+                item(key = "twitter-settings") {
+                    Column {
+                        Text("Twitter", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = 16.dp, top = 20.dp, end = 16.dp))
+                        com.verdroid.app.ui.consent.XPostSetting()
+                    }
+                }
             item {
                 Text("Shared folder", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = 16.dp, top = 20.dp, end = 16.dp))
                 SharedFolderCard(state.storage,

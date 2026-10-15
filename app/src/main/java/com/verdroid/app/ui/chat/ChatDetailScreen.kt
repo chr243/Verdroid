@@ -182,7 +182,19 @@ fun ChatDetailScreen(onBack: () -> Unit, onChatMemory: (Long) -> Unit = {}, vm: 
                         if (showPresets) {
                             val off by vm.presetOverrides.collectAsStateWithLifecycle()
                             val global by vm.presetsGlobal.collectAsStateWithLifecycle()
-                            ToolPresetsDialog(off, global, vm::setPreset, vm::setAllPresets) { showPresets = false }
+                            var tosPending by remember { mutableStateOf<(() -> Unit)?>(null) }
+                            val tw = com.verdroid.app.data.tools.ToolPreset.TWITTER
+                            val twOn = com.verdroid.app.data.tools.ToolPreset.shownOn(tw, off, global)
+                            ToolPresetsDialog(off, global,
+                                { p, on -> if (p == tw && com.verdroid.app.data.tools.ToolGroups.needsTosWarning("twitter", twOn, on)) tosPending = { vm.setPreset(p, true) } else vm.setPreset(p, on) },
+                                { on ->
+                                    if (com.verdroid.app.data.tools.ToolGroups.needsTosWarning("twitter", twOn, on)) {
+                                        // Everything else on now; Twitter only after the warning.
+                                        vm.setAllPresets(true); vm.setPreset(tw, false)
+                                        tosPending = { vm.setPreset(tw, true) }
+                                    } else vm.setAllPresets(on)
+                                }) { showPresets = false }
+                            tosPending?.let { act -> com.verdroid.app.ui.consent.TwitterTosDialog(onConfirm = { act(); tosPending = null }, onCancel = { tosPending = null }) }
                         }
                         Box {
                             IconButton(onClick = { overflow = true }) {

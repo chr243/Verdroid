@@ -106,3 +106,13 @@ fun XPostSetting(modifier: Modifier = Modifier) {
         Switch(checked = on, onCheckedChange = { consent.setAlways(it) })
     }
 }
+
+/** Shown every time the Twitter tools are switched on (globally or forced on in a chat). Cancel leaves them off. */
+@Composable
+fun TwitterTosDialog(onConfirm: () -> Unit, onCancel: () -> Unit) {
+    AlertDialog(onDismissRequest = onCancel,
+        title = { Text("Turn on Twitter tools?") },
+        text = { Text(com.verdroid.app.data.tools.ToolGroups.TWITTER_TOS_WARNING) },
+        confirmButton = { Button(onClick = onConfirm) { Text("I understand, turn on") } },
+        dismissButton = { TextButton(onClick = onCancel) { Text("Cancel") } })
+}

@@ -80,6 +80,7 @@ fun SettingsScreen(onNavigate: (String) -> Unit, onBack: () -> Unit, unreadNotif
             ))
             SettingsGroup("Appearance", listOf(item("Theme", "Light / dark mode and color palette", Routes.THEME)))
             SettingsGroup("App", listOf({ i -> AppUpdateRow(vm.updater, i) },
+                { i -> CrashLogRow(i) },
                 { i -> LinkItem("Feedback / Feature request", "Report a bug or suggest an idea on GitHub", i) { com.verdroid.app.data.feedback.FeedbackLinks.CHOOSER } }))
             Text("Verdroid v${com.verdroid.app.BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 28.dp, top = 16.dp))
@@ -283,4 +284,43 @@ private fun LinkItem(title: String, subtitle: String, index: Int, url: (android.
     MenuItem(title, subtitle, index) {
         runCatching { context.startActivity(android.content.Intent(android.content.Intent.ACTION_VIEW, android.net.Uri.parse(url(context)))) }
     }
+}
+
+/** Settings → App → Crash log: the latest crash report (view, copy via selection, share as text). */
+@Composable
+private fun CrashLogRow(index: Int) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    var text by remember { mutableStateOf<Pair<String, String>?>(null) }
+    var open by remember { mutableStateOf(false) }
+    fun load(): Pair<String, String>? {
+        val app = context.applicationContext
+        val shared = com.verdroid.app.data.storage.SharedFolder.android()
+        val dirs = com.verdroid.app.data.crash.CrashLog.dirs(shared.internal.takeIf { runCatching { shared.hasAccess() }.getOrDefault(false) }, app.filesDir)
+        return com.verdroid.app.data.crash.CrashLog.latest(dirs)?.let { f -> f.path to runCatching { f.readText() }.getOrDefault("(unreadable)") }
+    }
+    MenuItem("Crash log", "Latest crash report (Documents/Verdroid/Internal/crash)", index) { text = load(); open = true }
+    if (open) AlertDialog(onDismissRequest = { open = false },
+        title = { Text("Latest crash") },
+        text = {
+            Column(Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState())) {
+                val t = text
+                if (t == null) Text("No crashes recorded since crash logging was added.")
+                else {
+                    Text(t.first, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    androidx.compose.foundation.text.selection.SelectionContainer {
+                        Text(t.second, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, fontSize = androidx.compose.ui.unit.TextUnit(11f, androidx.compose.ui.unit.TextUnitType.Sp))
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            text?.let { t ->
+                TextButton(onClick = {
+                    val send = android.content.Intent(android.content.Intent.ACTION_SEND).setType("text/plain")
+                        .putExtra(android.content.Intent.EXTRA_SUBJECT, "Verdroid crash log").putExtra(android.content.Intent.EXTRA_TEXT, t.second)
+                    runCatching { context.startActivity(android.content.Intent.createChooser(send, "Share crash log")) }
+                }) { Text("Share") }
+            }
+        },
+        dismissButton = { TextButton(onClick = { open = false }) { Text("Close") } })
 }

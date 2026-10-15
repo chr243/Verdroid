@@ -234,6 +234,7 @@ class CookieLoginActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        handler.removeCallbacksAndMessages(null)
         if (!finished && isFinishing) CookieLoginBridge.pending?.complete(CookieLoginResult(false, emptyList(), 0))
         super.onDestroy()
     }

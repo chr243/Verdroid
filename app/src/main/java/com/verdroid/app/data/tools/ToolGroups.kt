@@ -8,8 +8,8 @@ object ToolGroups {
 
     val ORDER = listOf(
         Group("files", "Files", "Documents/Verdroid (workspace_*), private scratch files"),
-        Group("web", "Web", "web_search, web_fetch, headless Chromium (selenium_*)"),
-        Group("cookies", "Browser cookies (beta)", "Beta for testing logged-in pages: log in once in-app (or import a cookie file), then read pages in headless Chromium (cookie_*, x_timeline/x_user_posts/x_search, x_post with confirmation); stored encrypted"),
+        Group("web", "Web", "web_search, web_fetch, headless Chromium (selenium_*); beta: logged-in pages with your own cookies (cookie_*, stored encrypted)"),
+        Group("twitter", "Twitter", "Beta: read your X timeline, profiles and search (x_timeline, x_user_posts, x_search) and post with confirmation (x_post), using your saved X login. Against X's Terms of Service: the account may be limited or banned"),
         Group("termux", "Termux & Python", "termux_run, termux_python"),
         Group("pdf", "PDF & documents", "PDF read/edit (pdf_*), ebook translation"),
         Group("system", "Shizuku & phone screen", "Shizuku shell, rish, screen control (accessibility)"),
@@ -23,8 +23,8 @@ object ToolGroups {
     fun groupOf(name: String): String = when {
         name.startsWith("mcp__") -> "mcp"
         name in setOf("read_file", "write_file", "list_dir") || name.startsWith("workspace_") -> "files"
-        name.startsWith("cookie_") || name in setOf("x_timeline", "x_user_posts", "x_search", "x_post") -> "cookies"
-        name.startsWith("web_") || name.startsWith("selenium_") -> "web"
+        name in setOf("x_timeline", "x_user_posts", "x_search", "x_post") -> "twitter"
+        name.startsWith("web_") || name.startsWith("selenium_") || name.startsWith("cookie_") -> "web"
         name == "termux_run" || name == "termux_python" -> "termux"
         name.startsWith("pdf_") || name == "ebook_translate" -> "pdf"
         name == "run_shell" || name == "rish_run" || name.startsWith("screen_") -> "system"
@@ -33,6 +33,12 @@ object ToolGroups {
         name.startsWith("memory_") || name.startsWith("skill_") -> "memory"
         else -> "other"
     }
+
+    const val TWITTER_TOS_WARNING = "Automating X with your login is against X's Terms of Service and may get your account " +
+        "limited or banned. Use at your own risk."
+
+    /** Warn before the Twitter group goes from off to on (Settings switch, a tool switch or a per-chat preset). */
+    fun needsTosWarning(groupId: String, wasOn: Boolean, turningOn: Boolean): Boolean = groupId == "twitter" && !wasOn && turningOn
 
     /** Tools grouped in [ORDER]; empty groups dropped; tool order kept. */
     fun <T> group(items: List<T>, name: (T) -> String): List<Pair<Group, List<T>>> {

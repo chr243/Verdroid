@@ -9,7 +9,7 @@ import java.net.URI
 import java.util.Base64
 
 /**
- * Beta (Settings → Tools → "Browser cookies (beta)", off by default): inject the user's own cookies into the headless
+ * Beta (Settings → Tools → Web, cookie_* off by default; Logged-in sites section): inject the user's own cookies into the headless
  * Chromium to read logged-in pages. Values live only in [CookieVault] (encrypted, app-private); tool results show
  * names and redacted values only, and any value that shows up in helper output is scrubbed.
  */

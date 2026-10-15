@@ -228,6 +228,20 @@ class SelfTestRunner @Inject constructor(
             if ("selenium-ok" !in out) throw SkipCheck("chromium-selenium add-on not installed")
             "parse/redaction ok, Selenium present"
         },
+        "crash_log" to {
+            check(Thread.getDefaultUncaughtExceptionHandler() != null) { "no crash handler installed" }
+            val dirs = com.verdroid.app.data.crash.CrashLog.dirs(shared.internal.takeIf { shared.hasAccess() }, context.filesDir)
+            val probe = java.io.File(dirs.first().apply { mkdirs() }, ".selftest")
+            check(runCatching { probe.writeText("ok"); probe.delete() }.isSuccess) { "crash folder not writable: ${dirs.first()}" }
+            "handler installed; crash logs go to ${dirs.first()}" +
+                (com.verdroid.app.data.crash.CrashLog.latest(dirs)?.let { "; latest: ${it.name}" } ?: "; no crashes recorded")
+        },
+        "twitter_tos" to {
+            check(com.verdroid.app.data.tools.ToolGroups.needsTosWarning("twitter", false, true) &&
+                !com.verdroid.app.data.tools.ToolGroups.needsTosWarning("twitter", true, true)) { "ToS warning rule" }
+            check("Terms of Service" in com.verdroid.app.data.tools.ToolGroups.ORDER.first { it.id == "twitter" }.description) { "group description" }
+            "warning shown when turning Twitter on"
+        },
         "overwrite_policy" to {
             val dir = java.io.File(context.cacheDir, "st-overwrite-${System.nanoTime()}").apply { mkdirs() }
             try {

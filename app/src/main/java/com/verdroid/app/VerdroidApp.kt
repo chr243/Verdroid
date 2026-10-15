@@ -36,6 +36,11 @@ class VerdroidApp : Application(), Configuration.Provider {
 
     override fun onCreate() {
         super.onCreate()
+        // Crash log (Settings → App → Crash log): Documents/Verdroid/Internal/crash/, app-private fallback; chains to the default handler.
+        com.verdroid.app.data.crash.CrashLog.install(
+            dirs = { com.verdroid.app.data.crash.CrashLog.dirs(sharedFolder.internal.takeIf { runCatching { sharedFolder.hasAccess() }.getOrDefault(false) }, filesDir) },
+            version = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+            device = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}, Android ${android.os.Build.VERSION.RELEASE} (SDK ${android.os.Build.VERSION.SDK_INT})")
         // Phase 3: re-queue interrupted tasks and make sure paused ones keep their WorkManager resume job.
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch { scheduler.recover() }
         QuotaPollWorker.schedule(this)

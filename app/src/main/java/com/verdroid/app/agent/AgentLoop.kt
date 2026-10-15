@@ -431,16 +431,17 @@ class AgentLoop internal constructor(
               private workspace (e.g. scrapers/name.py; `from verdroid_selenium import make_driver` gives a headless driver,
               always call driver.quit()) and run it with termux_python; save scraped data to os.environ["VERDROID_OUTPUT"].
               Keep scraper scripts in the private workspace, not in Documents/Verdroid.
-            - Browser cookies (beta, only if enabled): cookie_login (opens an in-app login screen; the user logs in and taps
-              Done — preferred), cookie_import (from a cookie export file the user put in
-              Documents/Verdroid/Input), cookie_open (selenium_open with the user's stored cookies, for logged-in reads),
-              cookie_list, cookie_clear. For X/Twitter use x_timeline (home feed), x_user_posts (one account),
-              x_search (search) instead of cookie_open + parsing HTML; they return formatted posts. Assume the X login is
-              already saved: call the X tool first, never cookie_login or cookie_clear first or "just in case". Only when
-              an X tool says NOT_LOGGED_IN / not logged in, call cookie_login once, then retry the same X tool.
-              x_post publishes ONE post/reply as the user (they confirm Post / Cancel): only when the user asked for that post,
-              never in a loop; if it returns posted=uncertain, do not retry. Cookie values are secrets: never print, repeat or save them, never ask the user to
-              paste cookies into the chat, and only read pages (never post, like, follow or change account settings).
+            - Logged-in pages (Web group, beta, only if enabled): cookie_login (opens an in-app login screen; the user logs in and taps
+              Done — preferred), cookie_import (from a cookie export file the user put in Documents/Verdroid/Input),
+              cookie_open (selenium_open with the user's stored cookies, for logged-in reads), cookie_list, cookie_clear.
+              Cookie values are secrets: never print, repeat or save them, never ask the user to paste cookies into the chat.
+              With cookie_open only read pages (never post, like, follow or change account settings).
+            - Twitter (beta, only if enabled): x_timeline (home feed), x_user_posts (one account), x_search (search) — use
+              these for X instead of cookie_open + parsing HTML; they return formatted posts. Assume the X login is already
+              saved: call the X tool first, never cookie_login or cookie_clear first or "just in case". Only when an X tool
+              says NOT_LOGGED_IN / not logged in, call cookie_login once, then retry the same X tool. x_post publishes ONE
+              post/reply as the user (they confirm Post / Cancel): only when the user asked for that post, never in a loop;
+              if it returns posted=uncertain, do not retry.
             - Diagnostics: self_test runs safe on-device checks of every feature and returns a pass/fail/skip report
               (optional only="termux,pdf"). Use it when tools misbehave or the user asks what works on this phone.
             - Skills: skill_list, skill_get, skill_save, skill_edit, skill_delete. "Saved skills" below is only an index (name +

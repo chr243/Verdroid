@@ -9,7 +9,7 @@ import kotlinx.serialization.json.*
 import java.net.URLEncoder
 
 /**
- * Beta (Browser cookies group): read posts from X with the user's own login cookies. The Selenium helper extracts posts
+ * Beta (Twitter group): read posts from X with the user's own login cookies. The Selenium helper extracts posts
  * via X's data-testid attributes, scrolls and dedupes; here they are formatted and returned to the agent (nothing is written to files).
  */
 abstract class XPostsTool(termux: TermuxRunner, folder: SharedFolder, private val vault: CookieVault) : TermuxSeleniumBase(termux, folder) {

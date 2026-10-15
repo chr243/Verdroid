@@ -67,14 +67,28 @@ class CookieToolsTest {
         assertEquals(listOf("b"), vault.all().map { it.name })
     }
 
-    @Test fun ownGroupOffByDefaultAndPreset() {
-        listOf("cookie_import", "cookie_list", "cookie_clear", "cookie_open").forEach {
-            assertEquals("cookies", ToolGroups.groupOf(it))
-            assertTrue(it in ToolPrefs.DEFAULT_OFF)
-            assertEquals(ToolPreset.COOKIES, ToolPreset.of(it))
-            assertTrue(ToolPreset.effective(it, false, mapOf(ToolPreset.COOKIES to true)))
+    @Test fun cookieToolsInWebXToolsInTwitter() {
+        listOf("cookie_import", "cookie_list", "cookie_clear", "cookie_open", "cookie_login").forEach {
+            assertEquals("web", ToolGroups.groupOf(it)); assertTrue(it in ToolPrefs.DEFAULT_OFF); assertEquals(ToolPreset.WEB, ToolPreset.of(it))
         }
-        assertTrue(ToolGroups.ORDER.first { it.id == "cookies" }.description.contains("Beta for testing logged-in"))
+        listOf("x_timeline", "x_user_posts", "x_search", "x_post").forEach {
+            assertEquals("twitter", ToolGroups.groupOf(it)); assertTrue(it in ToolPrefs.DEFAULT_OFF)
+            assertEquals(ToolPreset.TWITTER, ToolPreset.of(it))
+            assertTrue(ToolPreset.effective(it, false, mapOf(ToolPreset.TWITTER to true)))
+        }
+        assertEquals("Twitter", ToolGroups.ORDER.first { it.id == "twitter" }.title)
+        assertTrue(ToolGroups.ORDER.none { it.id == "cookies" })
+        assertTrue(ToolGroups.ORDER.first { it.id == "twitter" }.description.contains("Terms of Service"))
+        assertTrue(ToolGroups.needsTosWarning("twitter", wasOn = false, turningOn = true))
+        assertFalse(ToolGroups.needsTosWarning("twitter", wasOn = true, turningOn = true))
+        assertFalse(ToolGroups.needsTosWarning("twitter", wasOn = false, turningOn = false))
+        assertFalse(ToolGroups.needsTosWarning("web", wasOn = false, turningOn = true))
+    }
+
+    @Test fun legacyCookiesPresetMigrates() {
+        assertEquals(setOf(ToolPreset.TWITTER, ToolPreset.WEB), ToolPreset.decode(setOf("COOKIES"), on = true))
+        assertEquals(setOf(ToolPreset.TWITTER), ToolPreset.decode(setOf("COOKIES"), on = false))
+        assertEquals(setOf(ToolPreset.GIT), ToolPreset.decode(setOf("GIT"), on = true))
     }
 }
 
