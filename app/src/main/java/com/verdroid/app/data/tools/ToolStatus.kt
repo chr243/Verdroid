@@ -34,6 +34,8 @@ data class ToolStatus(val ready: Boolean, val text: String) {
             name in setOf("x_timeline", "x_user_posts", "x_search") ->
                 if (env.termuxReady) ToolStatus(true, "Beta: needs chromium-selenium and an X login (Logged-in sites / cookie_login)")
                 else ToolStatus(false, "Needs Termux + the chromium-selenium add-on (Settings > Tools)")
+            name == "x_post" -> if (env.termuxReady) ToolStatus(true, "Beta, posts as you: asks Post / Cancel first (unless allowed)")
+                else ToolStatus(false, "Needs Termux + the chromium-selenium add-on (Settings > Tools)")
             name == "cookie_login" -> ToolStatus(true, "Beta: opens an in-app login screen; the user taps Done")
             name.startsWith("cookie_") -> ToolStatus(true, "Beta: cookies stored encrypted in the app; import from a file in Documents/Verdroid")
             name.startsWith("selenium_") || name == "termux_python" ->

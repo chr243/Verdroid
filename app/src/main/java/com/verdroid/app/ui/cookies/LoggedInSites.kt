@@ -38,6 +38,7 @@ fun LoggedInSitesSection(vm: LoggedInSitesViewModel = hiltViewModel()) {
             "Cookies are stored encrypted on this phone. Some sites (e.g. Google) block this kind of login; " +
             "you can also import a cookie export file with cookie_import.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        com.verdroid.app.ui.consent.XPostSetting(Modifier.padding(horizontal = (-16).dp))
         OutlinedButton(onClick = { ask = true }, modifier = Modifier.padding(vertical = 8.dp)) { Text("Log in to a site") }
         if (sites.isEmpty()) Text("No saved sites", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         sites.forEach { (site, n) ->

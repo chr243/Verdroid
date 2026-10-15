@@ -172,7 +172,8 @@ class AgentLoopTest {
         assertFalse(c.contains("Not financial advice") || c.contains("paper trading"))
         assertFalse(AgentLoop.systemPrompt(listOf("web_search", "web_fetch")).contains("backtest", ignoreCase = true))
         assertTrue(p.contains("Prefer English-language sources"))
-        for (gone in listOf("web_scrape", "web_click", "web_type", "web_session", "web_screenshot", "x_post", "x_scrape", "fb_",
+        // x_post is back as an opt-in Browser cookies (beta) tool with Post/Cancel confirmation (Oct 2026), so it is no longer banned here.
+        for (gone in listOf("web_scrape", "web_click", "web_type", "web_session", "web_screenshot", "x_scrape", "fb_",
             "reset_browser", "Firefox", "tbp", "crypto_place_order", "crypto_ticker")) assertFalse(gone, p.contains(gone))
         assertTrue(p.contains("termux_run") && p.contains("run_shell"))
         assertTrue(p.contains("web_search first") && p.contains("format=markdown"))

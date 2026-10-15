@@ -437,7 +437,9 @@ class AgentLoop internal constructor(
               cookie_list, cookie_clear. For X/Twitter use x_timeline (home feed), x_user_posts (one account),
               x_search (search) instead of cookie_open + parsing HTML; they return formatted posts. Assume the X login is
               already saved: call the X tool first, never cookie_login or cookie_clear first or "just in case". Only when
-              an X tool says NOT_LOGGED_IN / not logged in, call cookie_login once, then retry the same X tool. Cookie values are secrets: never print, repeat or save them, never ask the user to
+              an X tool says NOT_LOGGED_IN / not logged in, call cookie_login once, then retry the same X tool.
+              x_post publishes ONE post/reply as the user (they confirm Post / Cancel): only when the user asked for that post,
+              never in a loop; if it returns posted=uncertain, do not retry. Cookie values are secrets: never print, repeat or save them, never ask the user to
               paste cookies into the chat, and only read pages (never post, like, follow or change account settings).
             - Diagnostics: self_test runs safe on-device checks of every feature and returns a pass/fail/skip report
               (optional only="termux,pdf"). Use it when tools misbehave or the user asks what works on this phone.

@@ -241,6 +241,21 @@ class SelfTestRunner @Inject constructor(
             } finally { dir.deleteRecursively() }
             "overwrite allowed without prompt; delete still asks"
         },
+        "x_post_guard" to {
+            // Never posts: length rules, reply URL check, and that a Cancel stops before any browser runs.
+            check(com.verdroid.app.agent.tools.XText.weightedLength("hi https://example.com/very/long/link") == 26) { "url weighting" }
+            check(com.verdroid.app.agent.tools.XText.replyUrl("https://twitter.com/a_b/status/12?s=20") == "https://x.com/a_b/status/12") { "reply url" }
+            var ran = false
+            val fake = object : com.verdroid.app.data.termux.TermuxRunner {
+                override fun isInstalled() = true
+                override fun hasRunCommandPermission() = true
+                override suspend fun runAndWait(command: String, tag: String, timeoutMs: Long, label: String): com.verdroid.app.data.termux.TermuxResult? { ran = true; return null }
+            }
+            val vault = com.verdroid.app.data.cookies.CookieVault.InMemory(listOf(com.verdroid.app.data.cookies.BrowserCookie("auth_token", "selftest", ".x.com")))
+            val r = com.verdroid.app.agent.tools.XPostTool(fake, shared, vault) { _, _, _ -> false }.execute(args("text" to "self-test"))
+            check("CANCELLED" in r && !ran) { "cancel must stop before posting" }
+            "length/reply checks ok; Cancel blocks posting (nothing posted)"
+        },
         "x_posts" to {
             val sample = kotlinx.serialization.json.Json.parseToJsonElement(
                 "[{\"name\":\"N\",\"handle\":\"@h\",\"text\":\"hi\",\"rel\":\"1h\",\"url\":\"https://x.com/h/status/1\",\"likes\":\"3 Likes. Like\"}]")

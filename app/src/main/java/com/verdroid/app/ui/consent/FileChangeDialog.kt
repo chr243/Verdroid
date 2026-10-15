@@ -18,7 +18,7 @@ import dagger.hilt.components.SingletonComponent
 
 @EntryPoint
 @InstallIn(SingletonComponent::class)
-interface FileChangeConsentEntryPoint { fun consent(): FileChangeConsent }
+interface FileChangeConsentEntryPoint { fun consent(): FileChangeConsent; fun xPost(): com.verdroid.app.data.consent.XPostConsent }
 
 /** Shows the oldest pending file-change question (Allow / Deny). Back/outside tap does nothing: the user must choose. */
 @Composable
@@ -64,5 +64,45 @@ fun OverwriteSetting(modifier: Modifier = Modifier) {
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Switch(checked = on, onCheckedChange = { prefs.setAlways(it) })
+    }
+}
+
+/** Post / Cancel before x_post publishes (main app + bubble). Shows the exact text and reply target. */
+@Composable
+fun XPostDialog() {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val consent = remember { EntryPointAccessors.fromApplication(context.applicationContext, FileChangeConsentEntryPoint::class.java).xPost() }
+    val pending by consent.pending.collectAsState()
+    val p = pending.firstOrNull() ?: return
+    AlertDialog(
+        onDismissRequest = {},
+        title = { Text(if (p.replyTo != null) "Post this reply on X?" else "Post this on X?") },
+        text = {
+            Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                p.replyTo?.let { Text("Replying to $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                SelectionContainer { Text(p.text, style = MaterialTheme.typography.bodyLarge) }
+                Text("${com.verdroid.app.agent.tools.XText.weightedLength(p.text)}/280 · posts publicly as you",
+                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                OutlinedButton(onClick = { consent.answer(p.id, post = true, always = true) }) { Text("Always allow") }
+            }
+        },
+        confirmButton = { Button(onClick = { consent.answer(p.id, post = true) }) { Text("Post") } },
+        dismissButton = { TextButton(onClick = { consent.answer(p.id, post = false) }) { Text("Cancel") } },
+    )
+}
+
+/** Settings → Tools: "Post to X without asking" (off by default). */
+@Composable
+fun XPostSetting(modifier: Modifier = Modifier) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val consent = remember { EntryPointAccessors.fromApplication(context.applicationContext, FileChangeConsentEntryPoint::class.java).xPost() }
+    val on by consent.always.collectAsState()
+    Row(modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text("Post to X without asking", style = MaterialTheme.typography.bodyLarge)
+            Text("x_post publishes immediately, without showing you the text first. Posts are public and can't be unsent.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Switch(checked = on, onCheckedChange = { consent.setAlways(it) })
     }
 }

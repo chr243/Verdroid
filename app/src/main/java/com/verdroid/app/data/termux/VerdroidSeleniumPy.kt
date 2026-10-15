@@ -201,6 +201,92 @@ def scrape_x(drv, count, max_idle):
     return {"posts": posts[:count], "post_count": min(len(posts), count)}
 
 
+X_EDITORS = ['[data-testid="tweetTextarea_0"]', '[data-testid^="tweetTextarea"]', 'div[role="textbox"][contenteditable="true"]']
+
+
+def _norm(t):
+    return re.sub(r"\s+", " ", (t or "").replace("\u200b", "")).strip()
+
+
+def post_x(drv, text, url):
+    # One session: open composer (or the status + Reply), insert text, verify, click Post ONCE, verify. Never re-clicks.
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support import expected_conditions as EC
+    from selenium.webdriver.support.ui import WebDriverWait
+    cur = drv.current_url or ""
+    if "/login" in cur or "/i/flow/" in cur:
+        return {"ok": False, "error": "NOT_LOGGED_IN: X shows the login page (saved login missing or expired). Call cookie_login once, then retry this same tool."}
+    reply = "/status/" in (url or "")
+    if reply:
+        try:
+            btn = WebDriverWait(drv, 25).until(EC.element_to_be_clickable((By.CSS_SELECTOR, 'article[data-testid="tweet"] [data-testid="reply"]')))
+            btn.click()
+        except Exception:
+            return {"ok": False, "posted": False, "error": "Could not find the Reply button on the post.", "url": drv.current_url}
+    editor = None
+    end = time.time() + 25
+    while editor is None and time.time() < end:
+        for sel in X_EDITORS:
+            els = [e for e in drv.find_elements(By.CSS_SELECTOR, sel) if e.is_displayed()]
+            if els:
+                editor = els[-1] if reply else els[0]
+                break
+        if editor is None:
+            time.sleep(0.4)
+    if editor is None:
+        cur = drv.current_url or ""
+        if "/login" in cur or "/i/flow/" in cur:
+            return {"ok": False, "error": "NOT_LOGGED_IN: X shows the login page (saved login missing or expired). Call cookie_login once, then retry this same tool."}
+        return {"ok": False, "posted": False, "error": "Compose box did not appear within 25 s.", "url": cur}
+    editor.click()
+    drv.execute_script("arguments[0].focus();", editor)
+    try:
+        drv.execute_cdp_cmd("Input.insertText", {"text": text})
+    except Exception:
+        drv.execute_script("document.execCommand('insertText', false, arguments[0]);", text)
+    time.sleep(0.6)
+    got = drv.execute_script("return arguments[0].innerText;", editor) or ""
+    if _norm(got) != _norm(text):
+        return {"ok": False, "posted": False, "error": "Editor text did not match after typing; nothing was posted.", "editor_chars": len(got), "text_chars": len(text)}
+    button = None
+    end = time.time() + 15
+    while button is None and time.time() < end:
+        for sel in ('[data-testid="tweetButton"]', '[data-testid="tweetButtonInline"]'):
+            for b in drv.find_elements(By.CSS_SELECTOR, sel):
+                if b.is_displayed() and b.get_attribute("aria-disabled") != "true" and b.is_enabled():
+                    button = b
+                    break
+            if button is not None:
+                break
+        if button is None:
+            time.sleep(0.4)
+    if button is None:
+        return {"ok": False, "posted": False, "error": "Post button stayed disabled (too long, or X rejected the text). Nothing was posted."}
+    try:
+        button.click()
+    except Exception as e:
+        return {"ok": False, "posted": "uncertain", "error": "Clicking Post failed (%s). Check X before trying again." % type(e).__name__}
+    link, closed = "", False
+    end = time.time() + 15
+    while time.time() < end:
+        toast = drv.execute_script(
+            "var t=document.querySelector('[data-testid=\"toast\"]');"
+            "var a=t&&t.querySelector('a[href*=\"/status/\"]');return a?a.href:'';") or ""
+        if toast:
+            link = toast
+            break
+        if not [e for e in drv.find_elements(By.CSS_SELECTOR, X_EDITORS[0]) if e.is_displayed() and _norm(e.text)]:
+            closed = True
+        if closed and time.time() > end - 10:
+            break
+        time.sleep(0.5)
+    if link:
+        return {"ok": True, "posted": True, "post_url": link}
+    if closed:
+        return {"ok": True, "posted": True, "post_url": "", "note": "Compose box closed (posted), but X did not show the post link. Check the profile for the URL."}
+    return {"ok": False, "posted": "uncertain", "error": "Could not confirm the post. Do NOT retry: check X first to avoid a double post."}
+
+
 def _save(path, data, binary=False):
     d = os.path.dirname(path)
     if d:
@@ -212,7 +298,7 @@ def _save(path, data, binary=False):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="verdroid_selenium")
-    ap.add_argument("cmd", choices=["open", "source", "shot", "xposts"])
+    ap.add_argument("cmd", choices=["open", "source", "shot", "xposts", "xpost"])
     ap.add_argument("url")
     ap.add_argument("--wait", type=float, default=2.0)
     ap.add_argument("--wait-for", default=None)
@@ -225,6 +311,7 @@ def main(argv=None):
     ap.add_argument("--cookies", default=None)
     ap.add_argument("--count", type=int, default=20)
     ap.add_argument("--max-idle", type=int, default=4)
+    ap.add_argument("--text-b64", default=None)
     a = ap.parse_args(argv)
     out = {"ok": True}
     drv = None
@@ -253,6 +340,9 @@ def main(argv=None):
             if a.save:
                 out["saved"] = a.save
                 out["bytes"] = _save(a.save, drv.page_source)
+        elif a.cmd == "xpost":
+            import base64
+            out.update(post_x(drv, base64.b64decode(a.text_b64 or "").decode("utf-8"), a.url))
         elif a.cmd == "xposts":
             out.update(scrape_x(drv, max(1, min(a.count, 100)), a.max_idle))
         elif a.cmd == "source":

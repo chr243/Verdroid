@@ -147,3 +147,53 @@ class XToolsTest {
         assertTrue(XTimelineTool(t, folder, vault).execute(buildJsonObject { put("url", "https://evil.com/") }).contains("error"))
     }
 }
+
+class XPostToolTest {
+    private val folder = SharedFolder(java.nio.file.Files.createTempDirectory("vp").toFile()) { true }
+    private val loggedIn = CookieVault.InMemory(listOf(com.verdroid.app.data.cookies.BrowserCookie("auth_token", "TOKENSECRET99", ".x.com")))
+    private class T(val reply: String?) : TermuxRunner {
+        val cmds = mutableListOf<String>()
+        override fun isInstalled() = true
+        override fun hasRunCommandPermission() = true
+        override suspend fun runAndWait(command: String, tag: String, timeoutMs: Long, label: String): TermuxResult? {
+            cmds += command; return reply?.let { TermuxResult(tag, VerdroidSeleniumPy.MARKER + it + "\n", "", 0, -1, null) }
+        }
+    }
+
+    @Test fun lengthRules() {
+        assertEquals(5, XText.weightedLength("hello"))
+        assertEquals(23 + 2, XText.weightedLength("https://example.com/a/very/long/path?x=1 !"))
+        assertEquals(2, XText.weightedLength("😀"))
+        assertEquals("https://x.com/a/status/1", XText.replyUrl("https://mobile.twitter.com/a/status/1/photo/1"))
+        assertEquals("", XText.replyUrl("https://evil.com/a/status/1"))
+        assertNull(XText.replyUrl(" "))
+    }
+
+    @Test fun overLimitAndNotLoggedInNeverAsk() = runTest {
+        var asked = 0; val t = T("{}")
+        val long = XPostTool(t, folder, loggedIn) { _, _, _ -> asked++; true }.execute(buildJsonObject { put("text", "a".repeat(281)) })
+        assertTrue(long.contains("limit is 280"))
+        val nl = XPostTool(t, folder, CookieVault.InMemory()) { _, _, _ -> asked++; true }.execute(buildJsonObject { put("text", "hi") })
+        assertTrue(nl.contains("NOT_LOGGED_IN"))
+        assertEquals(0, asked); assertTrue(t.cmds.isEmpty())
+    }
+
+    @Test fun confirmGating() = runTest {
+        val t = T("""{"ok":true,"posted":true,"post_url":"https://x.com/me/status/9"}""")
+        var seen: Triple<Long, String, String?>? = null
+        val cancel = XPostTool(t, folder, loggedIn) { id, txt, r -> seen = Triple(id, txt, r); false }
+            .execute(buildJsonObject { put("text", "hello"); put("reply_to_url", "https://x.com/a/status/5") }, ToolContext(7))
+        assertTrue(cancel.contains("CANCELLED")); assertTrue(t.cmds.isEmpty())
+        assertEquals(Triple(7L, "hello", "https://x.com/a/status/5"), seen)
+        assertTrue(XPostTool(t, folder, loggedIn) { _, _, _ -> null }.execute(buildJsonObject { put("text", "x") }).contains("No answer"))
+        val ok = XPostTool(t, folder, loggedIn) { _, _, _ -> true }.execute(buildJsonObject { put("text", "hello") })
+        assertTrue(ok.contains("https://x.com/me/status/9"))
+        val cmd = t.cmds.single()
+        assertTrue(cmd.contains("'xpost' 'https://x.com/compose/post'")); assertFalse(cmd.contains("TOKENSECRET99"))
+    }
+
+    @Test fun timeoutIsUncertain() = runTest {
+        val r = XPostTool(T(null), folder, loggedIn) { _, _, _ -> true }.execute(buildJsonObject { put("text", "hi") })
+        assertTrue(r.contains("\"posted\":\"uncertain\""))
+    }
+}
