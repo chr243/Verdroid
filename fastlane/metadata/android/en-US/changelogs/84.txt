@@ -1,0 +1,1 @@
+- x_post: more reliable Post click (dismiss overlays, scroll into view, one JS fallback if covered)

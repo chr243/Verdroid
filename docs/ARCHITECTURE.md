@@ -754,3 +754,9 @@ Released 2026-10-15.
 - **Per-chat model pin:** `ChatModelPins` (`chat_model_pins` prefs) + `ModelPins.resolve`; `OpenRouterClient.complete` uses only the pin (or pin first when *Allow fallback*), `PinnedOutcome` turns failures/no-key into a clear "pinned" error. Chat ⋮ → Model dialog, 📌 in the header. Self-test `model_pins`.
 - **Overwrite consent:** `OverwritePolicy` in `FileChangeGuard`; overwrite-only requests (`DestructiveDetector.overwriteOnly`) skip the prompt when allowed (Settings → Tools switch or "This chat"); delete/move/rename always ask. Self-test `overwrite_policy`.
 - **Crash log:** `CrashLog` default UncaughtExceptionHandler (chains to the previous one) → `Internal/crash/crash_*.txt`, app-private fallback; Settings → App → Crash log. Self-tests `crash_log`, `twitter_tos`, `x_post_guard`, `x_posts`, `cookie_webview`, `cookies`.
+
+
+## v1.0.55
+
+Released 2026-10-15.
+- **x_post click reliability:** `post_x` dismisses known overlays (`_dismiss_overlays`: cookie/"Got it"/"Not now" sheets, toasts/masks), scrolls the Post button into view, then `_click_post_once`: native click; on `ElementClickInterceptedException` only (click never reached the button), after verifying the compose box still holds our text, one JS `arguments[0].click()` on the same button — still a single post attempt; success/uncertain detection unchanged. Never re-clicks after a successful click.
