@@ -197,7 +197,7 @@ object AppModule {
         dynamic = mcp::agentTools,
         chatFilter = chatPresets,
         // Yes/No dialog before agent-driven deletes/moves/renames and overwrites outside Internal/
-        fileGuard = com.verdroid.app.agent.tools.FileChangeGuard(fileConsent, shared = sharedFolder.root) { tool, a ->
+        fileGuard = com.verdroid.app.agent.tools.FileChangeGuard(fileConsent, shared = sharedFolder.root, overwritePolicy = fileConsent.overwrite) { tool, a ->
             val p = (a["path"] as? kotlinx.serialization.json.JsonPrimitive)?.content
             val st = (a["strategy"] as? kotlinx.serialization.json.JsonPrimitive)?.content
             runCatching {

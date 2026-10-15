@@ -39,10 +39,30 @@ fun FileChangeDialog() {
                 p.req.command?.let { c ->
                     SelectionContainer { Text(c, fontFamily = FontFamily.Monospace, fontSize = 12.sp) }
                 }
+                if (p.req.overwriteOnly) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = { consent.allowOverwrites(p.req.id, thisChatOnly = true) }) { Text("This chat") }
+                    OutlinedButton(onClick = { consent.allowOverwrites(p.req.id, thisChatOnly = false) }) { Text("Always allow") }
+                }
                 if (pending.size > 1) Text("${pending.size - 1} more waiting", style = MaterialTheme.typography.labelSmall)
             }
         },
-        confirmButton = { TextButton(onClick = { consent.answer(p.req.id, true) }) { Text("Allow") } },
-        dismissButton = { Button(onClick = { consent.answer(p.req.id, false) }) { Text("Deny") } },
+        confirmButton = { TextButton(onClick = { consent.answer(p.req.id, true) }) { Text(if (p.req.overwriteOnly) "Yes" else "Allow") } },
+        dismissButton = { Button(onClick = { consent.answer(p.req.id, false) }) { Text(if (p.req.overwriteOnly) "No" else "Deny") } },
     )
+}
+
+/** Settings → Tools: "Allow overwriting files without asking" (overwrites only; deletes/moves/renames always ask). */
+@Composable
+fun OverwriteSetting(modifier: Modifier = Modifier) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val prefs = remember { EntryPointAccessors.fromApplication(context.applicationContext, FileChangeConsentEntryPoint::class.java).consent().overwrite }
+    val on by prefs.always.collectAsState()
+    Row(modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text("Allow overwriting files without asking", style = MaterialTheme.typography.bodyLarge)
+            Text("The agent may replace existing files outside Internal/ without a Yes/No. Deleting, moving and renaming always ask.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Switch(checked = on, onCheckedChange = { prefs.setAlways(it) })
+    }
 }

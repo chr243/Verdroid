@@ -81,10 +81,31 @@ object DestructiveDetector {
     }
 
     private fun unquote(s: String) = s.trim().removeSurrounding("\"").removeSurrounding("'")
+
+    /** A reason that only overwrites/edits content (no delete/move/rename). */
+    fun isOverwriteReason(r: String): Boolean {
+        val l = r.lowercase()
+        if (Regex("""delete|move|rename|unlink|rmdir|rm\b|shred|git |rsync|find -|trash|remove|replace|rmtree""").containsMatchIn(l)) return false
+        return "overwrite" in l || l.startsWith("append to") || l.startsWith("dd of=") || l.startsWith("sed -i")
+    }
+
+    /** Every reason is an overwrite (the "Always allow overwriting" setting may skip the prompt). */
+    fun overwriteOnly(reasons: List<String>): Boolean = reasons.isNotEmpty() && reasons.all(::isOverwriteReason)
+}
+
+/**
+ * "Allow overwriting files without asking" (global setting) or "this chat only". Applies to OVERWRITES only: deletes,
+ * moves and renames always ask.
+ */
+fun interface OverwritePolicy {
+    fun allowsOverwrite(taskId: Long): Boolean
+    companion object { val NEVER = OverwritePolicy { false } }
 }
 
 /** One pending Yes/No question shown to the user. */
-data class FileChangeRequest(val id: Long, val taskId: Long, val tool: String, val summary: String, val details: List<String>, val command: String?)
+data class FileChangeRequest(val id: Long, val taskId: Long, val tool: String, val summary: String, val details: List<String>, val command: String?,
+    /** Only overwrites: the dialog may offer "Always allow" / "This chat". */
+    val overwriteOnly: Boolean = false)
 
 /** Asks the user (dialog / notification). true = Allow. Implementations must default to false (deny) on timeout. */
 fun interface FileChangeConfirmer {
@@ -105,6 +126,7 @@ fun interface FileChangeConfirmer {
 class FileChangeGuard(
     private val confirmer: FileChangeConfirmer,
     private val shared: File? = null,
+    private val overwritePolicy: OverwritePolicy = OverwritePolicy.NEVER,
     private val readScript: (tool: String, args: JsonObject) -> String? = { _, _ -> null },
 ) {
     private var nextId = 1L
@@ -143,9 +165,11 @@ class FileChangeGuard(
     /** null = go ahead; else the error JSON to return instead of running the tool. */
     suspend fun check(taskId: Long, tool: String, args: JsonObject): String? {
         val (reasons, shown) = inspect(tool, args) ?: return null
+        val overwriteOnly = DestructiveDetector.overwriteOnly(reasons)
+        if (overwriteOnly && overwritePolicy.allowsOverwrite(taskId)) return null
         val req = FileChangeRequest(synchronized(this) { nextId++ }, taskId, tool,
             if (reasons.any { "overwrite" in it || "append" in it } && reasons.none { "delete" in it || "move" in it }) "Overwrite existing file(s)" else "Delete / move / rename files",
-            reasons, shown?.take(4000))
+            reasons, shown?.take(4000), overwriteOnly)
         return if (confirmer.confirm(req)) null else denied(tool, reasons)
     }
 

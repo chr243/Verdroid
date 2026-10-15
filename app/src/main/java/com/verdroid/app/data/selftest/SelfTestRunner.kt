@@ -228,6 +228,19 @@ class SelfTestRunner @Inject constructor(
             if ("selenium-ok" !in out) throw SkipCheck("chromium-selenium add-on not installed")
             "parse/redaction ok, Selenium present"
         },
+        "overwrite_policy" to {
+            val dir = java.io.File(context.cacheDir, "st-overwrite-${System.nanoTime()}").apply { mkdirs() }
+            try {
+                java.io.File(dir, "Output").mkdirs(); java.io.File(dir, "Output/a.txt").writeText("x")
+                var asked = 0
+                val g = com.verdroid.app.agent.tools.FileChangeGuard({ asked++; false }, shared = dir, overwritePolicy = { true })
+                val w = g.check(1, "workspace_write", args("path" to "Output/a.txt", "content" to "y"))
+                check(w == null && asked == 0) { "overwrite should skip the prompt when allowed" }
+                val d = g.check(1, "workspace_delete", args("path" to "Output/a.txt"))
+                check(d != null && asked == 1) { "delete must still ask" }
+            } finally { dir.deleteRecursively() }
+            "overwrite allowed without prompt; delete still asks"
+        },
         "x_posts" to {
             val sample = kotlinx.serialization.json.Json.parseToJsonElement(
                 "[{\"name\":\"N\",\"handle\":\"@h\",\"text\":\"hi\",\"rel\":\"1h\",\"url\":\"https://x.com/h/status/1\",\"likes\":\"3 Likes. Like\"}]")
