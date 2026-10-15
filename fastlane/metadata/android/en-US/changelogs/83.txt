@@ -1,0 +1,5 @@
+- Twitter group (opt-in, against X's ToS): read your timeline, profiles and search; post only after you confirm
+- Log in to sites in an in-app browser; cookie tools in the Web group read logged-in pages
+- Per-chat model: pin one model for a chat (chat menu → Model)
+- Overwrites can be allowed for one chat or always; deletes/moves/renames still ask
+- Crash log in Settings → App
