@@ -208,6 +208,60 @@ def _norm(t):
     return re.sub(r"\s+", " ", (t or "").replace("\u200b", "")).strip()
 
 
+OVERLAY_JS = r'''
+var n = 0;
+var labels = ["Got it", "Not now", "Accept all cookies", "Refuse non-essential cookies", "Close", "Dismiss", "Maybe later", "Skip for now"];
+Array.from(document.querySelectorAll('[data-testid="BottomBar"] [role="button"], [role="dialog"] [role="button"], [data-testid="sheetDialog"] [role="button"], [data-testid="app-bar-close"], [data-testid="xMigrationBottomBar"] [role="button"]')).forEach(function (b) {
+  var t = (b.innerText || b.getAttribute("aria-label") || "").trim();
+  if (labels.indexOf(t) >= 0 && !b.closest('[data-testid="tweetButton"]') && !b.closest('[aria-labelledby*="modal-header"] [data-testid^="tweetTextarea"]')) { try { b.click(); n++; } catch (e) {} }
+});
+Array.from(document.querySelectorAll('[data-testid="toast"], [data-testid="mask"]')).forEach(function (e) {
+  if (e.getAttribute("data-testid") === "mask" && document.querySelector('[data-testid^="tweetTextarea"]') && e.parentElement && e.parentElement.querySelector('[data-testid^="tweetTextarea"]')) return;
+  e.style.pointerEvents = "none"; n++;
+});
+return n;
+'''
+
+
+def _dismiss_overlays(drv):
+    # Close known banners/sheets (cookie consent, "Got it"/"Not now") and make toasts/masks click-through; wait briefly for them to go.
+    n = 0
+    try:
+        n = drv.execute_script(OVERLAY_JS) or 0
+    except Exception:
+        pass
+    if n:
+        time.sleep(0.8)
+    return n
+
+
+def _editor_still_has(drv, editor, text):
+    try:
+        return editor.is_displayed() and _norm(drv.execute_script("return arguments[0].innerText;", editor)) == _norm(text)
+    except Exception:
+        return False
+
+
+def _click_post_once(drv, button, editor, text):
+    # One post attempt. A native click that raises ElementClickInterceptedException never reached the button, so (after
+    # checking the compose box still holds our text, i.e. nothing was posted) a single JS click on the same button is
+    # still that one attempt. Returns (True, method) or (False, result_dict).
+    try:
+        button.click()
+        return True, "native"
+    except Exception as e:
+        if type(e).__name__ != "ElementClickInterceptedException":
+            return False, {"ok": False, "posted": "uncertain", "error": "Clicking Post failed (%s). Check X before trying again." % type(e).__name__}
+    time.sleep(0.5)
+    if not _editor_still_has(drv, editor, text):
+        return False, {"ok": False, "posted": "uncertain", "error": "Post click was intercepted and the compose box changed. Check X before trying again."}
+    try:
+        drv.execute_script("arguments[0].click();", button)
+        return True, "js_fallback"
+    except Exception as e:
+        return False, {"ok": False, "posted": False, "error": "Post button was covered and the JS click failed (%s); nothing was posted." % type(e).__name__}
+
+
 def post_x(drv, text, url):
     # One session: open composer (or the status + Reply), insert text, verify, click Post ONCE, verify. Never re-clicks.
     from selenium.webdriver.common.by import By
@@ -262,10 +316,16 @@ def post_x(drv, text, url):
             time.sleep(0.4)
     if button is None:
         return {"ok": False, "posted": False, "error": "Post button stayed disabled (too long, or X rejected the text). Nothing was posted."}
+    _dismiss_overlays(drv)
     try:
-        button.click()
-    except Exception as e:
-        return {"ok": False, "posted": "uncertain", "error": "Clicking Post failed (%s). Check X before trying again." % type(e).__name__}
+        drv.execute_script("arguments[0].scrollIntoView({block: 'center', inline: 'center'});", button)
+        time.sleep(0.3)
+    except Exception:
+        pass
+    clicked, how = _click_post_once(drv, button, editor, text)
+    if not clicked:
+        return how
+    out_click = {"click": how}
     link, closed = "", False
     end = time.time() + 15
     while time.time() < end:
@@ -281,10 +341,10 @@ def post_x(drv, text, url):
             break
         time.sleep(0.5)
     if link:
-        return {"ok": True, "posted": True, "post_url": link}
+        return dict(out_click, ok=True, posted=True, post_url=link)
     if closed:
-        return {"ok": True, "posted": True, "post_url": "", "note": "Compose box closed (posted), but X did not show the post link. Check the profile for the URL."}
-    return {"ok": False, "posted": "uncertain", "error": "Could not confirm the post. Do NOT retry: check X first to avoid a double post."}
+        return dict(out_click, ok=True, posted=True, post_url="", note="Compose box closed (posted), but X did not show the post link. Check the profile for the URL.")
+    return dict(out_click, ok=False, posted="uncertain", error="Could not confirm the post. Do NOT retry: check X first to avoid a double post.")
 
 
 def _save(path, data, binary=False):
