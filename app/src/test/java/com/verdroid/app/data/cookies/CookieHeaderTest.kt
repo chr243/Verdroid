@@ -32,4 +32,10 @@ class CookieHeaderTest {
         val none = CookieLoginBridge.capture("https://x.com/", CookieVault.InMemory()) { null }
         assertFalse(none.saved)
     }
+
+    @Test fun webViewUserAgentBecomesChrome() {
+        val wv = "Mozilla/5.0 (Linux; Android 14; 23078PND5G Build/UKQ1; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/129.0.6668.100 Mobile Safari/537.36"
+        assertEquals("Mozilla/5.0 (Linux; Android 14; 23078PND5G Build/UKQ1) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.6668.100 Mobile Safari/537.36",
+            CookieLoginBridge.chromeUserAgent(wv))
+    }
 }

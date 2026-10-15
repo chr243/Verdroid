@@ -83,7 +83,7 @@ class CookieLoginToolTest {
         var opened: String? = null
         val t = CookieLoginTool({ u -> opened = u; kotlinx.coroutines.CompletableDeferred(Triple(true, listOf("x.com"), 5)) })
         val r = t.execute(buildJsonObject {})
-        assertEquals("https://x.com/login", opened)
+        assertEquals("https://x.com/i/flow/login", opened)
         assertTrue(r.contains("\"cookies_saved\":5"))
     }
 

@@ -5,6 +5,9 @@ import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.webkit.CookieManager
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.activity.ComponentActivity
@@ -31,7 +34,11 @@ object CookieLoginBridge {
         .putExtra(EXTRA_URL, url).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
     const val EXTRA_URL = "url"
-    const val DEFAULT_URL = "https://x.com/login"
+    const val DEFAULT_URL = "https://x.com/i/flow/login"
+
+    /** WebView UA → plain mobile Chrome UA (drop "; wv" and "Version/4.0"); X serves a blank page to WebView UAs. */
+    fun chromeUserAgent(ua: String): String =
+        ua.replace("; wv)", ")").replace(Regex("\\s*Version/\\d+(\\.\\d+)*"), "").replace(Regex("\\s{2,}"), " ").trim()
 
     /** Reads the WebView's cookies for the URL's site (+ siblings) and stores them in [vault]. */
     fun capture(url: String, vault: CookieVault, read: (String) -> String?): CookieLoginResult {
@@ -58,6 +65,8 @@ class CookieLoginActivity : ComponentActivity() {
         setContent {
             VerdroidTheme {
                 var title by remember { mutableStateOf(url) }
+                var progress by remember { mutableIntStateOf(0) }
+                var error by remember { mutableStateOf<String?>(null) }
                 Scaffold(topBar = {
                     TopAppBar(
                         title = { Text("Log in, then tap Done", style = MaterialTheme.typography.titleMedium) },
@@ -69,13 +78,53 @@ class CookieLoginActivity : ComponentActivity() {
                         Text("Cookies are saved encrypted on this phone for cookie_open. Some sites (e.g. Google) block logins in this screen. $title",
                             style = MaterialTheme.typography.bodySmall, maxLines = 2,
                             modifier = Modifier.padding(horizontal = 12.dp(), vertical = 4.dp()))
-                        AndroidView(modifier = Modifier.fillMaxSize(), factory = { ctx ->
+                        if (progress in 1..99) LinearProgressIndicator(progress = { progress / 100f }, modifier = Modifier.fillMaxWidth().height(2.dp()))
+                        error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(horizontal = 12.dp(), vertical = 4.dp())) }
+                        AndroidView(modifier = Modifier.fillMaxWidth().weight(1f), factory = { ctx ->
                             WebView(ctx).apply {
+                                layoutParams = android.view.ViewGroup.LayoutParams(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.MATCH_PARENT)
                                 settings.javaScriptEnabled = true
                                 settings.domStorageEnabled = true
+                                @Suppress("DEPRECATION")
+                                settings.databaseEnabled = true
+                                settings.loadWithOverviewMode = true
+                                settings.useWideViewPort = true
+                                settings.javaScriptCanOpenWindowsAutomatically = true
+                                settings.setSupportMultipleWindows(true) // window.open → onCreateWindow → same WebView
+                                settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
+                                settings.userAgentString = CookieLoginBridge.chromeUserAgent(settings.userAgentString)
+                                CookieManager.getInstance().setAcceptCookie(true)
                                 CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
+                                webChromeClient = object : WebChromeClient() {
+                                    override fun onProgressChanged(view: WebView?, newProgress: Int) { progress = newProgress }
+                                    override fun onCreateWindow(view: WebView?, isDialog: Boolean, isUserGesture: Boolean, resultMsg: android.os.Message?): Boolean {
+                                        val main = view ?: return false
+                                        // Popup (e.g. X's login flow): catch its first URL and load it in this WebView instead.
+                                        val tmp = WebView(main.context)
+                                        tmp.webViewClient = object : WebViewClient() {
+                                            override fun shouldOverrideUrlLoading(v: WebView?, r: WebResourceRequest?): Boolean {
+                                                r?.url?.toString()?.let { main.loadUrl(it) }; tmp.destroy(); return true
+                                            }
+                                            override fun onPageStarted(v: WebView?, u: String?, f: android.graphics.Bitmap?) {
+                                                if (!u.isNullOrBlank() && u != "about:blank") { main.loadUrl(u); tmp.stopLoading(); tmp.destroy() }
+                                            }
+                                        }
+                                        (resultMsg?.obj as? WebView.WebViewTransport)?.webView = tmp
+                                        resultMsg?.sendToTarget()
+                                        return true
+                                    }
+                                }
                                 webViewClient = object : WebViewClient() {
-                                    override fun onPageFinished(view: WebView?, u: String?) { title = u.orEmpty() }
+                                    override fun onPageStarted(view: WebView?, u: String?, favicon: android.graphics.Bitmap?) { error = null }
+                                    override fun onPageFinished(view: WebView?, u: String?) { title = u.orEmpty(); progress = 100 }
+                                    override fun onReceivedError(view: WebView?, request: WebResourceRequest?, err: WebResourceError?) {
+                                        if (request?.isForMainFrame == true) error = "Couldn't load page: ${err?.description ?: "error"}"
+                                    }
+                                    override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean {
+                                        val scheme = request?.url?.scheme ?: return false
+                                        return scheme != "http" && scheme != "https" // keep web pages here; ignore intent:/app links
+                                    }
                                 }
                                 loadUrl(url)
                             }
