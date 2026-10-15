@@ -37,6 +37,8 @@ class ChatViewModel @Inject constructor(
     val chatHeads: ChatHeadController,
     private val sharedFolder: SharedFolder,
     private val presets: com.verdroid.app.data.tools.ChatToolPresets,
+    private val modelPins: com.verdroid.app.data.settings.ChatModelPinStore,
+    private val settingsRepo: com.verdroid.app.domain.repository.SettingsRepository,
     private val toolPrefs: com.verdroid.app.data.tools.ToolPrefs,
     private val toolRegistry: com.verdroid.app.agent.tools.ToolRegistry,
     @ApplicationContext private val appContext: Context,
@@ -58,6 +60,23 @@ class ChatViewModel @Inject constructor(
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val isGenerating: StateFlow<Boolean> = combine(taskId, agent.runningTaskIds) { id, running -> id in running }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    /** Model pinned on a brand-new chat (taskId 0), saved when the first message creates it. */
+    private val draftPin = MutableStateFlow<com.verdroid.app.data.settings.ModelPin?>(null)
+
+    /** This chat's pinned model (null = Settings → Model priority, the default). */
+    val modelPin: StateFlow<com.verdroid.app.data.settings.ModelPin?> =
+        taskId.flatMapLatest { if (it == 0L) draftPin else modelPins.observe(it) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    /** Global Model priority (offered in the chat's Model picker). */
+    val globalModels: StateFlow<List<String>> = settingsRepo.modelPriority
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun setModelPin(pin: com.verdroid.app.data.settings.ModelPin?) {
+        val id = taskId.value
+        if (id == 0L) draftPin.value = pin else modelPins.set(id, pin)
+    }
 
     /** Overrides picked on a brand-new chat (taskId 0), saved to the chat when the first message creates it. */
     private val draftPresets = MutableStateFlow<Map<com.verdroid.app.data.tools.ToolPreset, Boolean>>(emptyMap())
@@ -127,14 +146,17 @@ class ChatViewModel @Inject constructor(
             val id = taskId.value
             if (id == 0L) {
                 val draft = draftPresets.value
+                val pinDraft = draftPin.value
                 // Bind the new id BEFORE the agent starts, so the chat head (Home → auto head, or the head button)
                 // already points at this chat during its first in-flight turn, not at "chat 0".
                 val newId = startConversation(body) { newId ->
                     if (draft.isNotEmpty()) presets.set(newId, draft)
+                    pinDraft?.let { modelPins.set(newId, it) }
                     taskId.value = newId
                 }
                 taskId.value = newId
                 draftPresets.value = emptyMap()
+                draftPin.value = null
             } else sendMessage(id, body)
             _pendingAttach.value = null
         }

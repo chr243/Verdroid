@@ -228,6 +228,17 @@ class SelfTestRunner @Inject constructor(
             if ("selenium-ok" !in out) throw SkipCheck("chromium-selenium add-on not installed")
             "parse/redaction ok, Selenium present"
         },
+        "model_pins" to {
+            val g = listOf("a/one:free", "kilo:two")
+            val m = com.verdroid.app.data.settings.ModelPins
+            check(m.resolve(g, null) == g) { "inherit" }
+            check(m.resolve(g, com.verdroid.app.data.settings.ModelPin("paid/x")) == listOf("paid/x")) { "pinned = only the pin" }
+            check(m.resolve(g, com.verdroid.app.data.settings.ModelPin("kilo:two", true)) == listOf("kilo:two", "a/one:free")) { "fallback" }
+            check(m.decode(m.encode(com.verdroid.app.data.settings.ModelPin("prov:ollama:llama3", true))) == com.verdroid.app.data.settings.ModelPin("prov:ollama:llama3", true)) { "persist" }
+            check(com.verdroid.app.data.network.PinnedOutcome.map(com.verdroid.app.data.settings.ModelPin("paid/x"), "paid/x",
+                com.verdroid.app.data.network.ChatOutcome.Failure("HTTP 500")).let { it is com.verdroid.app.data.network.ChatOutcome.Failure && "pinned" in it.message }) { "pinned failure message" }
+            "inherit / pinned / fallback resolution ok"
+        },
         "crash_log" to {
             check(Thread.getDefaultUncaughtExceptionHandler() != null) { "no crash handler installed" }
             val dirs = com.verdroid.app.data.crash.CrashLog.dirs(shared.internal.takeIf { shared.hasAccess() }, context.filesDir)

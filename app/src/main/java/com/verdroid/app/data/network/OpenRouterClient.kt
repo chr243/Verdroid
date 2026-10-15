@@ -26,6 +26,17 @@ sealed interface ChatOutcome {
     data object NoApiKey : ChatOutcome
 }
 
+/** Outcome of a pinned chat (no fallback): failures get a clear "pinned" message; rate limits wait for the same model. */
+object PinnedOutcome {
+    fun map(pin: com.verdroid.app.data.settings.ModelPin, label: String, out: ChatOutcome): ChatOutcome = when (out) {
+        is ChatOutcome.Failure -> ChatOutcome.Failure(com.verdroid.app.data.settings.ModelPins.failureMessage(pin, label, out.message))
+        ChatOutcome.NoApiKey -> ChatOutcome.Failure(com.verdroid.app.data.settings.ModelPins.failureMessage(pin, label,
+            "no API key for its provider (add one in Settings → LLM providers)"))
+        is ChatOutcome.RateLimited -> out.copy(message = "Pinned model $label: ${out.message}")
+        is ChatOutcome.Success -> out
+    }
+}
+
 /**
  * Sends chat completions with Phase-2 fallback:
  *  - 429 / 5xx / upstream / bad-request on a model -> cooldown that model, try the next one in the priority list
@@ -44,6 +55,7 @@ class OpenRouterClient @Inject constructor(
     private val custom: CustomLlmClient,
     private val appPrefs: com.verdroid.app.data.prefs.AppPrefs,
     private val vision: ModelCapabilities,
+    private val pins: com.verdroid.app.data.settings.ChatModelPinStore,
 ) {
     /** Keeps images only for models whose metadata lists image input. */
     private suspend fun forModel(id: String, msgs: List<ApiMessage>): List<ApiMessage> =
@@ -65,7 +77,21 @@ class OpenRouterClient @Inject constructor(
         taskId: Long?,
         status: suspend (String) -> Unit = {},
     ): ChatOutcome {
-        val models = settings.currentModels().ifEmpty { com.verdroid.app.domain.model.DefaultModels.list }
+        val global = settings.currentModels().ifEmpty { com.verdroid.app.domain.model.DefaultModels.list }
+        // Per-chat pin (chat ⋮ → Model): only that model, unless the pin allows fallback. No silent swap.
+        val pin = taskId?.takeIf { it > 0 }?.let { pins.pin(it) }
+        val models = com.verdroid.app.data.settings.ModelPins.resolve(global, pin)
+        val out = completeWith(models, messages, tools, taskId, status)
+        return if (pin != null && !pin.allowFallback) PinnedOutcome.map(pin, ModelIds.label(pin.model), out) else out
+    }
+
+    private suspend fun completeWith(
+        models: List<String>,
+        messages: List<ApiMessage>,
+        tools: JsonArray?,
+        taskId: Long?,
+        status: suspend (String) -> Unit,
+    ): ChatOutcome {
         val kiloModels = models.filter(ModelIds::isKilo)
         val customModels = models.filter(ModelIds::isCustom)
         val orModels = models.filter(ModelIds::isOpenRouter)

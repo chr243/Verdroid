@@ -219,6 +219,7 @@ abstract class BindingsModule {
     @Binds abstract fun taskRepo(impl: TaskRepositoryImpl): TaskRepository
     @Binds abstract fun keyRepo(impl: SecureApiKeyRepository): ApiKeyRepository
     @Binds abstract fun settingsRepo(impl: SettingsDataStoreRepository): SettingsRepository
+    @Binds abstract fun modelPins(impl: com.verdroid.app.data.settings.ChatModelPins): com.verdroid.app.data.settings.ChatModelPinStore
     @Binds abstract fun rateLimitRepo(impl: RateLimitRepositoryImpl): RateLimitRepository
     @Binds abstract fun notificationRepo(impl: NotificationRepositoryImpl): NotificationRepository
     @Binds abstract fun quotaRepo(impl: QuotaRepositoryImpl): QuotaRepository

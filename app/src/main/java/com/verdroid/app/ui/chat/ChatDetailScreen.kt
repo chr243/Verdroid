@@ -168,7 +168,10 @@ fun ChatDetailScreen(onBack: () -> Unit, onChatMemory: (Long) -> Unit = {}, vm: 
                         Spacer(Modifier.width(10.dp))
                         Column {
                             Text(t?.title ?: "New conversation", maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
-                            if (t != null) Text(t.subtitle, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                            val pin by vm.modelPin.collectAsStateWithLifecycle()
+                            val sub = listOfNotNull(pin?.let { "📌 " + com.verdroid.app.data.network.ModelIds.label(it.model) + if (it.allowFallback) " (+fallback)" else "" }, t?.subtitle)
+                                .joinToString(" · ")
+                            if (sub.isNotEmpty()) Text(sub, maxLines = 1, overflow = TextOverflow.Ellipsis,
                                 style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     }
@@ -179,6 +182,12 @@ fun ChatDetailScreen(onBack: () -> Unit, onChatMemory: (Long) -> Unit = {}, vm: 
                         // No chat-head button (v0.9.18): the chat head starts automatically; settings in Settings > Chat heads.
                         var overflow by remember { mutableStateOf(false) }
                         var showPresets by remember { mutableStateOf(false) }
+                        var showModel by remember { mutableStateOf(false) }
+                        if (showModel) {
+                            val pin by vm.modelPin.collectAsStateWithLifecycle()
+                            val global by vm.globalModels.collectAsStateWithLifecycle()
+                            ChatModelDialog(pin, global, onPick = { vm.setModelPin(it); showModel = false }, onUpdate = { vm.setModelPin(it) }) { showModel = false }
+                        }
                         if (showPresets) {
                             val off by vm.presetOverrides.collectAsStateWithLifecycle()
                             val global by vm.presetsGlobal.collectAsStateWithLifecycle()
@@ -206,6 +215,9 @@ fun ChatDetailScreen(onBack: () -> Unit, onChatMemory: (Long) -> Unit = {}, vm: 
                                     val id = task?.id
                                     if (id != null) onChatMemory(id)
                                     else Toast.makeText(context, "Chat memory is empty until the first message.", Toast.LENGTH_SHORT).show()
+                                })
+                                DropdownMenuItem(text = { Text("Model") }, onClick = {
+                                    overflow = false; showModel = true
                                 })
                                 DropdownMenuItem(text = { Text("Tool presets") }, onClick = {
                                     overflow = false; showPresets = true
@@ -535,4 +547,52 @@ internal fun AttachmentThumb(relativePath: String, size: androidx.compose.ui.uni
             contentScale = androidx.compose.ui.layout.ContentScale.Crop, modifier = Modifier.fillMaxSize())
         else Text("🖼️", fontSize = (size.value * 0.45f).sp)
     }
+}
+
+/**
+ * Chat ⋮ → Model: "Use global (default)" (Settings → Model priority with its fallback chain), one of the global models, or any
+ * model id (OpenRouter free/paid, kilo:…, prov:<provider>:…). A pinned chat uses only that model unless "Allow fallback".
+ */
+@Composable
+private fun ChatModelDialog(
+    pin: com.verdroid.app.data.settings.ModelPin?,
+    global: List<String>,
+    onPick: (com.verdroid.app.data.settings.ModelPin?) -> Unit,
+    onUpdate: (com.verdroid.app.data.settings.ModelPin?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    var fallback by remember { mutableStateOf(pin?.allowFallback ?: false) }
+    var custom by remember { mutableStateOf("") }
+    AlertDialog(onDismissRequest = onDismiss,
+        title = { Text("Model for this chat") },
+        text = {
+            Column(Modifier.heightIn(max = 480.dp).verticalScroll(androidx.compose.foundation.rememberScrollState())) {
+                @Composable fun row(label: String, selected: Boolean, onClick: () -> Unit) {
+                    Row(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(selected = selected, onClick = onClick)
+                        Text(label, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+                row("Use global (default)", pin == null) { onPick(null) }
+                Text("Pin one model (only it is used; a failure shows an error instead of switching):",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
+                (global + listOfNotNull(pin?.model)).distinct().forEach { m ->
+                    row(com.verdroid.app.data.network.ModelIds.label(m), pin?.model == m) { onPick(com.verdroid.app.data.settings.ModelPin(m, fallback)) }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
+                    OutlinedTextField(custom, { custom = it }, singleLine = true, label = { Text("Other model id (vendor/model, kilo:…, prov:…)") },
+                        modifier = Modifier.weight(1f))
+                    TextButton(onClick = { onPick(com.verdroid.app.data.settings.ModelPin(custom.trim(), fallback)) }, enabled = custom.isNotBlank()) { Text("Pin") }
+                }
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
+                    Column(Modifier.weight(1f)) {
+                        Text("Allow fallback", style = MaterialTheme.typography.bodyLarge)
+                        Text("If the pinned model fails, continue with the global list.", style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    Switch(checked = fallback, onCheckedChange = { fallback = it; pin?.let { p -> onUpdate(p.copy(allowFallback = it)) } })
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } })
 }
