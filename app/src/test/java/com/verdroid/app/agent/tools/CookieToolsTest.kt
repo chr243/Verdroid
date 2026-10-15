@@ -132,18 +132,14 @@ class XToolsTest {
         assertTrue(r.contains("cookie_login"))
     }
 
-    @Test fun formatsSavesNewFileAndBuildsUrls() = runTest {
+    @Test fun formatsWithoutFilesAndBuildsUrls() = runTest {
         val vault = CookieVault.InMemory(listOf(com.verdroid.app.data.cookies.BrowserCookie("auth_token", "SECRETTOKEN123", ".x.com")))
         val t = T("""{"ok":true,"posts":[{"name":"N","handle":"@h","text":"hi SECRETTOKEN123","rel":"2m","url":"https://x.com/h/status/5"}]}""")
         val r = Json.parseToJsonElement(XTimelineTool(t, folder, vault).execute(buildJsonObject { put("count", 5) })).jsonObject
         val posts = r["posts"]!!.jsonPrimitive.content
         assertTrue(posts.startsWith("Post 1: @h (N) - hi [redacted cookie] - 2m ago"))
-        val saved = folder.output.listFiles()!!.single()
-        assertTrue(saved.name.matches(Regex("x_timeline_\\d{8}_\\d{6}\\.txt")))
-        assertFalse(saved.readText().contains("SECRETTOKEN123"))
+        assertNull(r["saved"]); assertTrue(folder.output.listFiles().isNullOrEmpty())
         assertTrue(t.cmds.single().contains("'xposts' 'https://x.com/home'"))
-        XTimelineTool(t, folder, vault).execute(buildJsonObject {})
-        assertEquals(2, folder.output.listFiles()!!.size)
         XSearchTool(t, folder, vault).execute(buildJsonObject { put("query", "from:nasa moon") })
         assertTrue(t.cmds.last().contains("https://x.com/search?q=from%3Anasa+moon&src=typed_query&f=live"))
         XUserPostsTool(t, folder, vault).execute(buildJsonObject { put("handle", "@NASA") })

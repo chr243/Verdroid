@@ -26,8 +26,6 @@ class XPostsTest {
     @Test fun countsAndNames() {
         assertEquals("", XPosts.count("Reply"))
         assertEquals("1.2M", XPosts.count("1.2M Likes. Like"))
-        val taken = setOf("x_timeline_20261015_090000.txt", "x_timeline_20261015_090000_2.txt")
-        assertEquals("x_timeline_20261015_090000_3.txt", XPosts.outputName("x_timeline", "20261015_090000") { it in taken })
     }
 
     @Test fun forXRehomesTwitterCookies() {

@@ -52,11 +52,4 @@ object XPosts {
             if (p.url.isNotEmpty()) append(" - ").append(p.url)
         }
     }.joinToString("\n")
-
-    /** Output/<prefix>_YYYYMMDD_HHMMSS.txt, with _2, _3… if taken (never overwrite). */
-    fun outputName(prefix: String, stamp: String, exists: (String) -> Boolean): String {
-        var n = "${prefix}_$stamp.txt"; var i = 2
-        while (exists(n)) n = "${prefix}_${stamp}_${i++}.txt"
-        return n
-    }
 }
