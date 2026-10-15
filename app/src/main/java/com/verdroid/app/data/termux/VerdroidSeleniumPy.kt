@@ -34,11 +34,31 @@ def make_driver(width=1366, height=900, user_agent=None):
     if user_agent:
         opts.add_argument("--user-agent=" + user_agent)
     opts.add_experimental_option("prefs", {"intl.accept_languages": "en-US,en"})
+    opts.add_experimental_option("excludeSwitches", ["enable-automation"])
+    opts.add_experimental_option("useAutomationExtension", False)
     driver_path = shutil.which("chromedriver")
     service = Service(driver_path) if driver_path else Service()
     drv = webdriver.Chrome(service=service, options=opts)
     drv.set_page_load_timeout(60)
+    _unheadless(drv, user_agent)
     return drv
+
+
+def normal_user_agent(ua):
+    # "HeadlessChrome/129.0" -> "Chrome/129.0": sites like x.com answer 403 to the headless token.
+    return (ua or "").replace("HeadlessChrome", "Chrome")
+
+
+def _unheadless(drv, user_agent=None):
+    try:
+        ua = user_agent or normal_user_agent(drv.execute_script("return navigator.userAgent") or "")
+        if ua:
+            drv.execute_cdp_cmd("Network.setUserAgentOverride", {"userAgent": ua, "acceptLanguage": "en-US,en;q=0.9", "platform": "Linux"})
+        drv.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {"source":
+            "Object.defineProperty(navigator,'webdriver',{get:()=>undefined});"
+            "Object.defineProperty(navigator,'languages',{get:()=>['en-US','en']});"})
+    except Exception:
+        pass
 
 
 def load(drv, url, wait=0.0, wait_for=None):
@@ -66,20 +86,49 @@ def _read_cookies(path):
             pass
 
 
+def cdp_cookie(c):
+    # Selenium-style cookie -> CDP Network.setCookie params (domain kept, e.g. ".x.com").
+    d = {"name": c["name"], "value": c.get("value", ""), "domain": c["domain"], "path": c.get("path") or "/",
+         "secure": bool(c.get("secure")), "httpOnly": bool(c.get("httpOnly"))}
+    if c.get("expiry"):
+        d["expires"] = float(c["expiry"])
+    if c.get("sameSite") in ("Strict", "Lax", "None"):
+        d["sameSite"] = c["sameSite"]
+    return d
+
+
 def inject_cookies(drv, url, cookies):
-    # Open the site's origin, add_cookie for each, return counts only (no values).
-    from urllib.parse import urlsplit
-    u = urlsplit(url)
-    drv.get("%s://%s/" % (u.scheme, u.netloc))
+    # Prefer CDP (no navigation needed, any domain); fall back to add_cookie per host. Counts only, never values.
     added, failed = 0, []
+    try:
+        drv.execute_cdp_cmd("Network.enable", {})
+        drv.execute_cdp_cmd("Network.setCookies", {"cookies": [cdp_cookie(c) for c in cookies]})
+        return {"added": len(cookies), "method": "cdp", "failed": []}
+    except Exception as e:
+        failed.append({"name": "*", "error": "cdp:" + type(e).__name__})
+    from urllib.parse import urlsplit
+    scheme = urlsplit(url).scheme or "https"
+    by_host = {}
     for c in cookies:
-        c = {k: v for k, v in c.items() if k in ("name", "value", "domain", "path", "secure", "httpOnly", "expiry", "sameSite")}
+        by_host.setdefault(c["domain"].lstrip("."), []).append(c)
+    for host, group in by_host.items():
         try:
-            drv.add_cookie(c)
-            added += 1
-        except Exception as e:
-            failed.append({"name": c.get("name"), "error": type(e).__name__})
-    return {"added": added, "failed": failed[:20]}
+            drv.get("%s://%s/robots.txt" % (scheme, host))
+        except Exception:
+            pass
+        for c in group:
+            c = {k: v for k, v in c.items() if k in ("name", "value", "domain", "path", "secure", "httpOnly", "expiry", "sameSite")}
+            try:
+                drv.add_cookie(c)
+                added += 1
+            except Exception:
+                c.pop("domain", None)
+                try:
+                    drv.add_cookie(c)
+                    added += 1
+                except Exception as e2:
+                    failed.append({"name": c.get("name"), "error": type(e2).__name__})
+    return {"added": added, "method": "add_cookie", "failed": failed[:20]}
 
 
 def _save(path, data, binary=False):

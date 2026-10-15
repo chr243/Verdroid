@@ -97,7 +97,7 @@ class CookieOpenTool(termux: TermuxRunner, folder: SharedFolder, private val vau
  * [launch] starts the screen and completes the returned deferred with (saved, sites, count); values never come back.
  */
 class CookieLoginTool(
-    private val launch: (String) -> kotlinx.coroutines.CompletableDeferred<Triple<Boolean, List<String>, Int>>?,
+    private val launch: (String) -> kotlinx.coroutines.CompletableDeferred<com.verdroid.app.ui.cookies.CookieLoginResult>?,
     private val timeoutMs: Long = 10 * 60_000L,
 ) : AgentTool {
     override val name = "cookie_login"
@@ -112,9 +112,10 @@ class CookieLoginTool(
         val r = kotlinx.coroutines.withTimeoutOrNull(timeoutMs) { d.await() }
             ?: return errorJson("Login screen still open after ${timeoutMs / 60_000} min. Ask the user to tap Done when logged in, then call cookie_list.")
         return buildJsonObject {
-            put("ok", r.first)
-            put("sites", JsonArray(r.second.map(::JsonPrimitive))); put("cookies_saved", r.third)
-            if (!r.first) put("note", "Nothing saved (cancelled, or not logged in).")
+            put("ok", r.saved); put("logged_in", r.loggedIn)
+            put("sites", JsonArray(r.sites.map(::JsonPrimitive))); put("cookies_saved", r.count)
+            put("cookie_names", JsonArray(r.names.map(::JsonPrimitive)))
+            if (!r.saved) put("note", "Nothing saved (cancelled, or not logged in).")
         }.toString()
     }
 }

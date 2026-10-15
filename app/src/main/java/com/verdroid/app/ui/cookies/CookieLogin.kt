@@ -24,7 +24,13 @@ import com.verdroid.app.ui.theme.VerdroidTheme
 import kotlinx.coroutines.CompletableDeferred
 
 /** Outcome of a WebView login: sites saved and how many cookies (never values). */
-data class CookieLoginResult(val saved: Boolean, val sites: List<String>, val count: Int)
+data class CookieLoginResult(
+    val saved: Boolean, val sites: List<String>, val count: Int,
+    /** Cookie NAMES saved (names are not secret; values never leave the store). */
+    val names: List<String> = emptyList(),
+    /** The site's login marker was present (X: auth_token); false = probably guest cookies only. */
+    val loggedIn: Boolean = false,
+)
 
 /** Lets cookie_login wait for the login screen (one at a time). */
 object CookieLoginBridge {
@@ -40,14 +46,26 @@ object CookieLoginBridge {
     fun chromeUserAgent(ua: String): String =
         ua.replace("; wv)", ")").replace(Regex("\\s*Version/\\d+(\\.\\d+)*"), "").replace(Regex("\\s{2,}"), " ").trim()
 
-    /** Reads the WebView's cookies for the URL's site (+ siblings) and stores them in [vault]. */
+    /** URLs read from CookieManager for a site (cookies can be scoped to subdomains like api.x.com). */
+    fun urlsFor(site: String): List<String> =
+        listOf("https://$site/", "https://www.$site/", "https://api.$site/", "https://mobile.$site/")
+
+    /** Login marker cookie for known sites (null = no known marker). */
+    fun markerFor(site: String): String? = if (site == "x.com" || site == "twitter.com") "auth_token" else null
+
+    /** Reads the WebView's cookies for the URL's site (+ siblings, + subdomains) and stores them in [vault]. */
     fun capture(url: String, vault: CookieVault, read: (String) -> String?): CookieLoginResult {
         val host = runCatching { java.net.URI(url).host }.getOrNull() ?: return CookieLoginResult(false, emptyList(), 0)
         val sites = BrowserCookies.relatedSites(host)
-        val fresh = sites.flatMap { s -> BrowserCookies.fromCookieHeader(s, read("https://$s/") ?: read("https://www.$s/")) }
+        val fresh = sites.flatMap { s ->
+            BrowserCookies.fromCookieHeader(s, urlsFor(s).mapNotNull { runCatching { read(it) }.getOrNull() }.joinToString("; "))
+        }
         if (fresh.isEmpty()) return CookieLoginResult(false, sites, 0)
         vault.save(BrowserCookies.replaceSites(vault.all(), sites.filter { s -> fresh.any { BrowserCookies.siteOf(it.host) == s } }, fresh))
-        return CookieLoginResult(true, fresh.map { BrowserCookies.siteOf(it.host) }.distinct(), fresh.size)
+        val names = fresh.map { it.name }.distinct().sorted()
+        val marker = markerFor(BrowserCookies.siteOf(host))
+        return CookieLoginResult(true, fresh.map { BrowserCookies.siteOf(it.host) }.distinct(), fresh.size, names,
+            loggedIn = marker == null || marker in names)
     }
 }
 
@@ -81,7 +99,8 @@ class CookieLoginActivity : ComponentActivity() {
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
 
     private fun names(site: String): Set<String> =
-        BrowserCookies.parseCookieHeader(CookieManager.getInstance().getCookie("https://$site/")).map { it.first }.toSet()
+        CookieLoginBridge.urlsFor(site).flatMap { u -> BrowserCookies.parseCookieHeader(runCatching { CookieManager.getInstance().getCookie(u) }.getOrNull()) }
+            .map { it.first }.toSet()
 
     /** Auto-close: called on page start/finish/history change; saves and closes once the site shows a login cookie. */
     private fun autoCheck(loginUrl: String, current: String?) {
@@ -183,17 +202,33 @@ class CookieLoginActivity : ComponentActivity() {
         }
     }
 
-    private fun done(url: String, save: Boolean) {
+    private fun done(url: String, save: Boolean, attempt: Int = 0) {
         if (finished) return
-        finished = true
         handler.removeCallbacksAndMessages(null)
-        val result = if (save) {
-            CookieManager.getInstance().flush()
-            CookieLoginBridge.capture(url, CookieStore(applicationContext)) { CookieManager.getInstance().getCookie(it) }
-        } else CookieLoginResult(false, emptyList(), 0)
-        android.widget.Toast.makeText(this,
-            if (result.saved) "Saved ${result.count} cookies for ${result.sites.joinToString()}" else if (save) "No cookies found — are you logged in?" else "Cancelled",
-            android.widget.Toast.LENGTH_LONG).show()
+        if (!save) { finish(url, CookieLoginResult(false, emptyList(), 0), "Cancelled"); return }
+        val cm = CookieManager.getInstance()
+        cm.flush()
+        val site = runCatching { BrowserCookies.siteOf(java.net.URI(url).host) }.getOrDefault("")
+        val marker = CookieLoginBridge.markerFor(site)
+        val seen = names(site)
+        // Cookies can land a moment late (async CookieManager load / redirects): retry a few times before giving up.
+        if ((seen.isEmpty() || (marker != null && marker !in seen)) && attempt < 3) {
+            handler.postDelayed({ done(url, save, attempt + 1) }, 400); return
+        }
+        if (marker != null && marker !in seen) {
+            // Guest cookies only: don't save them as a "login"; keep the screen open so the user can finish logging in.
+            android.widget.Toast.makeText(this, "Not logged in yet (no $marker cookie). Finish logging in, then tap Done.", android.widget.Toast.LENGTH_LONG).show()
+            return
+        }
+        val result = CookieLoginBridge.capture(url, CookieStore(applicationContext)) { cm.getCookie(it) }
+        android.util.Log.i("CookieLogin", "saved cookie names for ${result.sites}: ${result.names}") // names only, never values
+        finish(url, result, if (result.saved) "Saved ${result.count} cookies for ${result.sites.joinToString()}" +
+            (if (marker != null) " (logged in)" else "") else "No cookies found — are you logged in?")
+    }
+
+    private fun finish(@Suppress("UNUSED_PARAMETER") url: String, result: CookieLoginResult, toast: String) {
+        finished = true
+        android.widget.Toast.makeText(this, toast, android.widget.Toast.LENGTH_LONG).show()
         CookieLoginBridge.pending?.complete(result)
         finish()
     }

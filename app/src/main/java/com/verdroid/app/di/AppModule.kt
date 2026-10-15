@@ -163,9 +163,7 @@ object AppModule {
                     com.verdroid.app.ui.cookies.CookieLoginBridge.pending?.cancel()
                     com.verdroid.app.ui.cookies.CookieLoginBridge.pending = d
                     val ok = runCatching { context.startActivity(com.verdroid.app.ui.cookies.CookieLoginBridge.intent(context, url)) }.isSuccess
-                    if (!ok) null else kotlinx.coroutines.CompletableDeferred<Triple<Boolean, List<String>, Int>>().also { out ->
-                        d.invokeOnCompletion { e -> if (e == null) d.getCompleted().let { out.complete(Triple(it.saved, it.sites, it.count)) } else out.cancel() }
-                    }
+                    if (!ok) null else d
                 }),
                 EbookTranslateTool(termux, sharedFolder),
                 // PDF read/edit in Termux Python (PyMuPDF, pypdf fallback; installed on first use after the user agrees)

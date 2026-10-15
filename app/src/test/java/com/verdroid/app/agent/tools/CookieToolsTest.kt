@@ -81,15 +81,37 @@ class CookieToolsTest {
 class CookieLoginToolTest {
     @Test fun returnsCountsWhenDone() = runTest {
         var opened: String? = null
-        val t = CookieLoginTool({ u -> opened = u; kotlinx.coroutines.CompletableDeferred(Triple(true, listOf("x.com"), 5)) })
+        val t = CookieLoginTool({ u -> opened = u; kotlinx.coroutines.CompletableDeferred(com.verdroid.app.ui.cookies.CookieLoginResult(true, listOf("x.com"), 5, listOf("auth_token", "ct0"), true)) })
         val r = t.execute(buildJsonObject {})
         assertEquals("https://x.com/i/flow/login", opened)
-        assertTrue(r.contains("\"cookies_saved\":5"))
+        assertTrue(r.contains("\"cookies_saved\":5")); assertTrue(r.contains("\"logged_in\":true")); assertTrue(r.contains("auth_token"))
     }
 
     @Test fun timesOutWithHint() = runTest {
         val t = CookieLoginTool({ kotlinx.coroutines.CompletableDeferred() }, timeoutMs = 10)
         assertTrue(t.execute(buildJsonObject { put("url", "https://example.org/login") }).contains("tap Done"))
         assertTrue(CookieLoginTool({ null }).execute(buildJsonObject {}).contains("error"))
+    }
+}
+
+class SeleniumHelperCookieTest {
+    private fun py(code: String): String? {
+        val dir = java.nio.file.Files.createTempDirectory("vsel").toFile()
+        return try {
+            File(dir, "verdroid_selenium.py").writeText(VerdroidSeleniumPy.SOURCE.replace("\$" + "MARKER", "M"))
+            val p = runCatching { ProcessBuilder("python3", "-c", code).directory(dir).redirectErrorStream(true).start() }.getOrNull() ?: return null
+            p.inputStream.bufferedReader().readText().trim().also { p.waitFor() }
+        } finally { dir.deleteRecursively() }
+    }
+
+    @Test fun cdpCookieAndUserAgent() {
+        val out = py("import verdroid_selenium as v, json; print(v.normal_user_agent('Mozilla/5.0 HeadlessChrome/129.0 Safari')); " +
+            "print(json.dumps(v.cdp_cookie({'name':'auth_token','value':'v','domain':'.x.com','httpOnly':True,'secure':True,'expiry':1900000000,'sameSite':'None'}), sort_keys=True))")
+        org.junit.Assume.assumeTrue(out != null && !out.contains("Traceback") && !out.contains("not found"))
+        val lines = out!!.lines()
+        assertEquals("Mozilla/5.0 Chrome/129.0 Safari", lines[0])
+        val o = Json.parseToJsonElement(lines[1]).jsonObject
+        assertEquals(".x.com", o["domain"]?.jsonPrimitive?.content); assertEquals(1.9E9, o["expires"]?.jsonPrimitive?.double!!, 0.1)
+        assertEquals("None", o["sameSite"]?.jsonPrimitive?.content); assertTrue(o["httpOnly"]?.jsonPrimitive?.boolean == true)
     }
 }
