@@ -80,6 +80,17 @@ object BrowserCookies {
         return cookies.filter { h == it.host || h.endsWith("." + it.host) }
     }
 
+    /**
+     * Cookies to use on x.com: x.com / .x.com ones, plus twitter.com ones re-homed to .x.com when x.com has no cookie of that
+     * name (logins sometimes leave some on twitter.com).
+     */
+    fun forX(cookies: List<BrowserCookie>): List<BrowserCookie> {
+        val x = cookies.filter { siteOf(it.host) == "x.com" }.map { it.copy(domain = ".x.com") }
+        val names = x.map { it.name }.toSet()
+        val tw = cookies.filter { siteOf(it.host) == "twitter.com" && it.name !in names }.map { it.copy(domain = ".x.com") }
+        return (x + tw).distinctBy { Pair(it.name, it.path) }
+    }
+
     /** Merges [incoming] into [existing]; same (domain, path, name) is replaced. */
     fun merge(existing: List<BrowserCookie>, incoming: List<BrowserCookie>): List<BrowserCookie> {
         fun key(c: BrowserCookie) = Triple(c.host, c.path, c.name)

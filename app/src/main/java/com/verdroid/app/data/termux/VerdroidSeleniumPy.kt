@@ -16,7 +16,8 @@ object VerdroidSeleniumPy {
 
     val SOURCE = """
 # Verdroid headless Chromium helper (written by the Verdroid app; changes are overwritten).
-import argparse, json, os, shutil, sys, time
+import argparse
+import re, json, os, shutil, sys, time
 
 
 def make_driver(width=1366, height=900, user_agent=None):
@@ -131,6 +132,75 @@ def inject_cookies(drv, url, cookies):
     return {"added": added, "method": "add_cookie", "failed": failed[:20]}
 
 
+X_JS = r'''
+return Array.from(document.querySelectorAll('article[data-testid="tweet"]')).map(function (a) {
+  function q(s) { return a.querySelector(s); }
+  function lab(id) { var e = q('[data-testid="' + id + '"]'); return e ? (e.getAttribute('aria-label') || '') : ''; }
+  var un = q('[data-testid="User-Name"]'), name = '', handle = '';
+  if (un) {
+    var parts = Array.from(un.querySelectorAll('span')).map(function (s) { return (s.innerText || '').trim(); }).filter(Boolean);
+    name = parts[0] || '';
+    handle = parts.filter(function (s) { return s.charAt(0) === '@'; })[0] || '';
+  }
+  var t = q('time'), link = '';
+  if (t && t.closest('a')) link = t.closest('a').href;
+  else { var l = q('a[href*="/status/"]'); if (l) link = l.href; }
+  var texts = Array.from(a.querySelectorAll('[data-testid="tweetText"]')).map(function (e) { return e.innerText || ''; });
+  var sc = q('[data-testid="socialContext"]');
+  return { name: name, handle: handle, text: texts[0] || '', quoted: texts.length > 1 ? texts[1] : '',
+    time: t ? (t.getAttribute('datetime') || '') : '', rel: t ? (t.innerText || '') : '', url: link,
+    social: sc ? (sc.innerText || '') : '', replies: lab('reply'), reposts: lab('retweet'), likes: lab('like') || lab('unlike'),
+    raw: (texts.length || un) ? '' : (a.innerText || '').slice(0, 1500) };
+});
+'''
+
+
+def _status_id(url):
+    m = re.search(r"/status/(\d+)", url or "")
+    return m.group(1) if m else None
+
+
+def scrape_x(drv, count, max_idle):
+    # Posts from an X page via stable data-testid attributes (no HTML regex); scrolls and dedupes by status id.
+    from selenium.webdriver.common.by import By
+    from selenium.webdriver.support import expected_conditions as EC
+    from selenium.webdriver.support.ui import WebDriverWait
+    try:
+        WebDriverWait(drv, 25).until(EC.presence_of_element_located((By.CSS_SELECTOR, 'article[data-testid="tweet"]')))
+    except Exception:
+        cur = drv.current_url or ""
+        if "/login" in cur or "/i/flow/" in cur:
+            return {"ok": False, "error": "X shows the login page: not logged in. Call cookie_login first.", "url": cur}
+        body = (drv.execute_script("return document.body ? document.body.innerText : '';") or "")[:1500]
+        return {"ok": False, "error": "No posts appeared on the page within 25 s.", "page_text": body}
+    seen, posts, idle = set(), [], 0
+    while len(posts) < count and idle < max_idle:
+        before = len(posts)
+        for p in drv.execute_script(X_JS) or []:
+            key = _status_id(p.get("url")) or (p.get("handle", "") + "|" + (p.get("text") or p.get("raw") or "")[:80])
+            if key in seen:
+                continue
+            seen.add(key)
+            p["id"] = _status_id(p.get("url")) or ""
+            posts.append(p)
+        if len(posts) >= count:
+            break
+        idle = idle + 1 if len(posts) == before else 0
+        n = len(drv.find_elements(By.CSS_SELECTOR, 'article[data-testid="tweet"]'))
+        drv.execute_script("window.scrollBy(0, Math.floor(window.innerHeight * 0.9));")
+        end = time.time() + 3
+        while time.time() < end:
+            time.sleep(0.3)
+            last = drv.execute_script(
+                "var a=document.querySelectorAll('article[data-testid=\"tweet\"]');"
+                "var l=a[a.length-1]; var t=l&&l.querySelector('time'); return t&&t.closest('a')?t.closest('a').href:'';")
+            if _status_id(last) and _status_id(last) not in seen:
+                break
+            if len(drv.find_elements(By.CSS_SELECTOR, 'article[data-testid="tweet"]')) != n:
+                break
+    return {"posts": posts[:count], "post_count": min(len(posts), count)}
+
+
 def _save(path, data, binary=False):
     d = os.path.dirname(path)
     if d:
@@ -142,7 +212,7 @@ def _save(path, data, binary=False):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="verdroid_selenium")
-    ap.add_argument("cmd", choices=["open", "source", "shot"])
+    ap.add_argument("cmd", choices=["open", "source", "shot", "xposts"])
     ap.add_argument("url")
     ap.add_argument("--wait", type=float, default=2.0)
     ap.add_argument("--wait-for", default=None)
@@ -153,6 +223,8 @@ def main(argv=None):
     ap.add_argument("--height", type=int, default=900)
     ap.add_argument("--full", action="store_true")
     ap.add_argument("--cookies", default=None)
+    ap.add_argument("--count", type=int, default=20)
+    ap.add_argument("--max-idle", type=int, default=4)
     a = ap.parse_args(argv)
     out = {"ok": True}
     drv = None
@@ -181,6 +253,8 @@ def main(argv=None):
             if a.save:
                 out["saved"] = a.save
                 out["bytes"] = _save(a.save, drv.page_source)
+        elif a.cmd == "xposts":
+            out.update(scrape_x(drv, max(1, min(a.count, 100)), a.max_idle))
         elif a.cmd == "source":
             html = drv.page_source or ""
             out["html_chars"] = len(html)

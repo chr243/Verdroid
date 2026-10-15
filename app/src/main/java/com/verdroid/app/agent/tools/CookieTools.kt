@@ -13,6 +13,15 @@ import java.util.Base64
  * Chromium to read logged-in pages. Values live only in [CookieVault] (encrypted, app-private); tool results show
  * names and redacted values only, and any value that shows up in helper output is scrubbed.
  */
+/** Shell that writes [cookies] to a private (0600) temp file in Termux for the helper's --cookies; returns (path, shell). */
+internal fun cookiePreamble(cookies: List<com.verdroid.app.data.cookies.BrowserCookie>): Pair<String, String> {
+    val dir = com.verdroid.app.data.termux.VerdroidSeleniumPy.DIR
+    val file = "$dir/ck-${System.nanoTime()}.json"
+    val b64 = Base64.getEncoder().encodeToString(BrowserCookies.toSeleniumJson(cookies).toByteArray())
+    return file to "rm -f $dir/ck-*.json; (umask 077; echo $b64 | base64 -d > ${TermuxRunTool.shellQuote(file)})\n"
+}
+
+internal const val COOKIE_NOTE_X = "Beta, for testing logged-in reads. Cookie values are secrets: never print, repeat or save them."
 private const val COOKIE_NOTE = "Beta, for testing logged-in reads. Cookie values are secrets: never print, repeat or save them."
 
 class CookieImportTool(private val folder: SharedFolder, private val vault: CookieVault) : AgentTool {
@@ -81,11 +90,9 @@ class CookieOpenTool(termux: TermuxRunner, folder: SharedFolder, private val vau
     override suspend fun execute(args: JsonObject): String {
         val url = url(args) ?: return errorJson("url (http/https) is required")
         val host = runCatching { URI(url).host }.getOrNull() ?: return errorJson("Bad url")
-        val cookies = BrowserCookies.forHost(vault.all(), host)
+        val cookies = if (BrowserCookies.siteOf(host) in setOf("x.com", "twitter.com")) BrowserCookies.forX(vault.all()) else BrowserCookies.forHost(vault.all(), host)
         if (cookies.isEmpty()) return errorJson("No stored cookies for $host. Ask the user to export them to a file in Documents/Verdroid/Input and run cookie_import.")
-        val file = "${com.verdroid.app.data.termux.VerdroidSeleniumPy.DIR}/ck-${System.nanoTime()}.json"
-        val b64 = Base64.getEncoder().encodeToString(BrowserCookies.toSeleniumJson(cookies).toByteArray())
-        val preamble = "rm -f ${com.verdroid.app.data.termux.VerdroidSeleniumPy.DIR}/ck-*.json; (umask 077; echo $b64 | base64 -d > ${TermuxRunTool.shellQuote(file)})\n"
+        val (file, preamble) = cookiePreamble(cookies)
         val cli = listOf("open", url) + commonArgs(args) +
             listOf("--max-chars", (args.int("max_chars") ?: 12_000).coerceIn(500, 60_000).toString(), "--cookies", file)
         return BrowserCookies.scrub(runHelper(cli, 120, null, preamble), cookies)

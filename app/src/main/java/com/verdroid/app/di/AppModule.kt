@@ -158,6 +158,8 @@ object AppModule {
                 // Beta (off by default): the user's own cookies injected into headless Chromium, stored encrypted
                 CookieImportTool(sharedFolder, cookieVault), CookieListTool(cookieVault), CookieClearTool(cookieVault),
                 CookieOpenTool(termux, sharedFolder, cookieVault),
+                XTimelineTool(termux, sharedFolder, cookieVault), XUserPostsTool(termux, sharedFolder, cookieVault),
+                XSearchTool(termux, sharedFolder, cookieVault),
                 CookieLoginTool({ url ->
                     val d = kotlinx.coroutines.CompletableDeferred<com.verdroid.app.ui.cookies.CookieLoginResult>()
                     com.verdroid.app.ui.cookies.CookieLoginBridge.pending?.cancel()

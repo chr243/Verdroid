@@ -434,7 +434,8 @@ class AgentLoop internal constructor(
             - Browser cookies (beta, only if enabled): cookie_login (opens an in-app login screen; the user logs in and taps
               Done — preferred), cookie_import (from a cookie export file the user put in
               Documents/Verdroid/Input), cookie_open (selenium_open with the user's stored cookies, for logged-in reads),
-              cookie_list, cookie_clear. Cookie values are secrets: never print, repeat or save them, never ask the user to
+              cookie_list, cookie_clear. For X/Twitter use x_timeline (home feed), x_user_posts (one account),
+              x_search (search) instead of cookie_open + parsing HTML; they return formatted posts and save a text file. Cookie values are secrets: never print, repeat or save them, never ask the user to
               paste cookies into the chat, and only read pages (never post, like, follow or change account settings).
             - Diagnostics: self_test runs safe on-device checks of every feature and returns a pass/fail/skip report
               (optional only="termux,pdf"). Use it when tools misbehave or the user asks what works on this phone.

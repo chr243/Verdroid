@@ -49,6 +49,7 @@ class SelfTestRunner @Inject constructor(
     private val updater: AppUpdater,
     private val customLlm: com.verdroid.app.data.network.CustomLlmClient,
     private val customStore: com.verdroid.app.data.network.CustomProviderStore,
+    private val cookieVault: com.verdroid.app.data.cookies.CookieVault,
 ) {
     private val http = OkHttpClient.Builder().connectTimeout(8, TimeUnit.SECONDS).readTimeout(10, TimeUnit.SECONDS).build()
     private fun tool(name: String): AgentTool = registry.tools.firstOrNull { it.name == name } ?: throw IllegalStateException("$name not registered")
@@ -226,6 +227,18 @@ class SelfTestRunner @Inject constructor(
             val out = termuxEcho("python -c 'import selenium; print(\"selenium-ok\")' 2>&1 || echo noselenium")
             if ("selenium-ok" !in out) throw SkipCheck("chromium-selenium add-on not installed")
             "parse/redaction ok, Selenium present"
+        },
+        "x_posts" to {
+            val sample = kotlinx.serialization.json.Json.parseToJsonElement(
+                "[{\"name\":\"N\",\"handle\":\"@h\",\"text\":\"hi\",\"rel\":\"1h\",\"url\":\"https://x.com/h/status/1\",\"likes\":\"3 Likes. Like\"}]")
+            val line = com.verdroid.app.data.cookies.XPosts.format(com.verdroid.app.data.cookies.XPosts.parse(sample as kotlinx.serialization.json.JsonArray))
+            check(line.startsWith("Post 1: @h (N) - hi - 1h ago")) { line }
+            check("xposts" in com.verdroid.app.data.termux.VerdroidSeleniumPy.SOURCE) { "helper lacks xposts" }
+            if (com.verdroid.app.data.cookies.BrowserCookies.forX(cookieVault.all()).none { it.name == "auth_token" }) throw SkipCheck("no X login saved (cookie_login)")
+            requireTermux()
+            val out = termuxEcho("python -c 'import selenium; print(\"selenium-ok\")' 2>&1 || echo noselenium")
+            if ("selenium-ok" !in out) throw SkipCheck("chromium-selenium add-on not installed")
+            "formatter ok, X login saved, Selenium present"
         },
         "cookie_webview" to {
             check(com.verdroid.app.data.cookies.BrowserCookies.fromCookieHeader("x.com", "a=1; b=2").size == 2) { "cookie header parse" }
