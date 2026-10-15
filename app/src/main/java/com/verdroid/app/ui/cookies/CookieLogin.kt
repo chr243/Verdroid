@@ -51,9 +51,56 @@ object CookieLoginBridge {
     }
 }
 
+/** Decides when a WebView login has finished (pure, unit-tested). Only cookie names/counts, never values. */
+object LoginDetector {
+    enum class Verdict { NOT_YET, WAIT, DONE }
+    private val loginPath = Regex("login|signin|sign-in|sign_in|/flow/|/auth|oauth|session", RegexOption.IGNORE_CASE)
+
+    fun isLoginUrl(url: String?): Boolean = url != null && loginPath.containsMatchIn(runCatching { java.net.URI(url).path.orEmpty() }.getOrDefault(url))
+
+    /**
+     * [names]: cookie names now set for the site; [baseline]: cookie count when the screen opened;
+     * [markerAgeMs]: how long the login marker has been seen (0 = just now).
+     */
+    fun check(site: String, url: String?, names: Set<String>, baseline: Int, markerAgeMs: Long): Verdict {
+        if (site == "x.com" || site == "twitter.com") {
+            if ("auth_token" !in names) return Verdict.NOT_YET
+            val settled = ("ct0" in names && "twid" in names) || (url != null && !url.contains("/i/flow/")) || markerAgeMs >= 1_500
+            return if (settled) Verdict.DONE else Verdict.WAIT
+        }
+        if (url == null || isLoginUrl(url) || names.size <= baseline) return Verdict.NOT_YET
+        return if (markerAgeMs >= 1_000) Verdict.DONE else Verdict.WAIT
+    }
+}
+
 /** Full-screen WebView: the user logs in normally, taps Done, the cookies go into the encrypted CookieStore. */
 class CookieLoginActivity : ComponentActivity() {
     private var finished = false
+    private var baseline = -1
+    private var markerSince = 0L
+    private val handler = android.os.Handler(android.os.Looper.getMainLooper())
+
+    private fun names(site: String): Set<String> =
+        BrowserCookies.parseCookieHeader(CookieManager.getInstance().getCookie("https://$site/")).map { it.first }.toSet()
+
+    /** Auto-close: called on page start/finish/history change; saves and closes once the site shows a login cookie. */
+    private fun autoCheck(loginUrl: String, current: String?) {
+        if (finished) return
+        val host = runCatching { java.net.URI(loginUrl).host }.getOrNull() ?: return
+        val site = BrowserCookies.siteOf(host)
+        val n = names(site)
+        if (baseline < 0) baseline = n.size
+        val now = android.os.SystemClock.elapsedRealtime()
+        val v = LoginDetector.check(site, current, n, baseline, if (markerSince == 0L) 0 else now - markerSince)
+        when (v) {
+            LoginDetector.Verdict.NOT_YET -> markerSince = 0L
+            LoginDetector.Verdict.WAIT -> {
+                if (markerSince == 0L) markerSince = now
+                handler.postDelayed({ autoCheck(loginUrl, current) }, 600)
+            }
+            LoginDetector.Verdict.DONE -> done(loginUrl, save = true)
+        }
+    }
 
     @OptIn(ExperimentalMaterial3Api::class)
     @SuppressLint("SetJavaScriptEnabled")
@@ -116,8 +163,9 @@ class CookieLoginActivity : ComponentActivity() {
                                     }
                                 }
                                 webViewClient = object : WebViewClient() {
-                                    override fun onPageStarted(view: WebView?, u: String?, favicon: android.graphics.Bitmap?) { error = null }
-                                    override fun onPageFinished(view: WebView?, u: String?) { title = u.orEmpty(); progress = 100 }
+                                    override fun onPageStarted(view: WebView?, u: String?, favicon: android.graphics.Bitmap?) { error = null; autoCheck(url, u) }
+                                    override fun onPageFinished(view: WebView?, u: String?) { title = u.orEmpty(); progress = 100; autoCheck(url, u) }
+                                    override fun doUpdateVisitedHistory(view: WebView?, u: String?, isReload: Boolean) { autoCheck(url, u) }
                                     override fun onReceivedError(view: WebView?, request: WebResourceRequest?, err: WebResourceError?) {
                                         if (request?.isForMainFrame == true) error = "Couldn't load page: ${err?.description ?: "error"}"
                                     }
@@ -138,6 +186,7 @@ class CookieLoginActivity : ComponentActivity() {
     private fun done(url: String, save: Boolean) {
         if (finished) return
         finished = true
+        handler.removeCallbacksAndMessages(null)
         val result = if (save) {
             CookieManager.getInstance().flush()
             CookieLoginBridge.capture(url, CookieStore(applicationContext)) { CookieManager.getInstance().getCookie(it) }
