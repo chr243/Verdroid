@@ -52,6 +52,36 @@ def load(drv, url, wait=0.0, wait_for=None):
         time.sleep(wait)
 
 
+def _read_cookies(path):
+    # Reads and immediately deletes the private cookie file Verdroid wrote (values are never printed).
+    if not path:
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    finally:
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+
+
+def inject_cookies(drv, url, cookies):
+    # Open the site's origin, add_cookie for each, return counts only (no values).
+    from urllib.parse import urlsplit
+    u = urlsplit(url)
+    drv.get("%s://%s/" % (u.scheme, u.netloc))
+    added, failed = 0, []
+    for c in cookies:
+        c = {k: v for k, v in c.items() if k in ("name", "value", "domain", "path", "secure", "httpOnly", "expiry", "sameSite")}
+        try:
+            drv.add_cookie(c)
+            added += 1
+        except Exception as e:
+            failed.append({"name": c.get("name"), "error": type(e).__name__})
+    return {"added": added, "failed": failed[:20]}
+
+
 def _save(path, data, binary=False):
     d = os.path.dirname(path)
     if d:
@@ -73,11 +103,15 @@ def main(argv=None):
     ap.add_argument("--width", type=int, default=1366)
     ap.add_argument("--height", type=int, default=900)
     ap.add_argument("--full", action="store_true")
+    ap.add_argument("--cookies", default=None)
     a = ap.parse_args(argv)
     out = {"ok": True}
     drv = None
     try:
+        cookies = _read_cookies(a.cookies)
         drv = make_driver(a.width, a.height)
+        if cookies is not None:
+            out["cookies"] = inject_cookies(drv, a.url, cookies)
         load(drv, a.url, a.wait, a.wait_for)
         out["url"] = drv.current_url
         out["title"] = drv.title

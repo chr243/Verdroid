@@ -117,6 +117,11 @@ object AppModule {
     fun provideAgentsMd(@ApplicationContext context: Context) =
         com.verdroid.app.data.instructions.AgentsMdStore(File(context.filesDir, "AGENTS.md"))
 
+    /** Beta browser cookies (cookie_* tools), EncryptedSharedPreferences. */
+    @Provides @Singleton
+    fun provideCookieVault(@ApplicationContext context: Context): com.verdroid.app.data.cookies.CookieVault =
+        com.verdroid.app.data.cookies.CookieStore(context)
+
     @Provides @Singleton
     fun provideToolRegistry(
         skills: com.verdroid.app.data.skills.SkillStore,
@@ -134,6 +139,7 @@ object AppModule {
         termux: com.verdroid.app.data.termux.TermuxManager,
         selfTest: javax.inject.Provider<com.verdroid.app.data.selftest.SelfTestRunner>,
         fileConsent: com.verdroid.app.data.consent.FileChangeConsent,
+        cookieVault: com.verdroid.app.data.cookies.CookieVault,
     ): ToolRegistry = ToolRegistry(
         listOf(
             ReadFileTool(sandbox), WriteFileTool(sandbox), ListDirTool(sandbox),
@@ -149,6 +155,9 @@ object AppModule {
                 // Headless Chromium + Selenium inside Termux, and the agent's own Python scrapers (scripts stay in filesDir/workspace)
                 SeleniumOpenTool(termux, sharedFolder), SeleniumPageSourceTool(termux, sharedFolder),
                 SeleniumScreenshotTool(termux, sharedFolder), TermuxPythonTool(termux, sandbox),
+                // Beta (off by default): the user's own cookies injected into headless Chromium, stored encrypted
+                CookieImportTool(sharedFolder, cookieVault), CookieListTool(cookieVault), CookieClearTool(cookieVault),
+                CookieOpenTool(termux, sharedFolder, cookieVault),
                 EbookTranslateTool(termux, sharedFolder),
                 // PDF read/edit in Termux Python (PyMuPDF, pypdf fallback; installed on first use after the user agrees)
                 PdfInfoTool(termux, sharedFolder), PdfExtractTextTool(termux, sharedFolder),

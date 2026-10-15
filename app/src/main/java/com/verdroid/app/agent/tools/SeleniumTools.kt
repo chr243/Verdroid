@@ -25,7 +25,7 @@ abstract class TermuxSeleniumBase(protected val termux: TermuxRunner, protected 
         return relPath to "${SharedFolder.DISPLAY_PATH}/$relPath"
     }
 
-    protected suspend fun runHelper(cliArgs: List<String>, timeoutS: Int, writesTo: String?): String {
+    protected suspend fun runHelper(cliArgs: List<String>, timeoutS: Int, writesTo: String?, preamble: String = ""): String {
         if (!termux.isInstalled()) return errorJson("Termux is not installed. $SETUP")
         if (!termux.hasRunCommandPermission()) return errorJson("Verdroid doesn't have the 'Run commands in Termux' permission. $SETUP")
         writesTo?.let { runCatching { folder.ensure() } }
@@ -34,7 +34,7 @@ abstract class TermuxSeleniumBase(protected val termux: TermuxRunner, protected 
             "mkdir -p ${TermuxRunTool.shellQuote(dir)} 2>/dev/null; if [ ! -w ${TermuxRunTool.shellQuote(dir)} ]; then " +
                 "echo '${VerdroidSeleniumPy.MARKER}{\"ok\":false,\"error\":\"Termux cannot write to Documents/Verdroid. Ask the user to run termux-setup-storage in Termux once and allow storage.\"}'; exit 3; fi\n"
         } ?: ""
-        val cmd = VerdroidSeleniumPy.installCommand() + "\n" + storageCheck +
+        val cmd = VerdroidSeleniumPy.installCommand() + "\n" + storageCheck + preamble +
             "cd ~/verdroid-work 2>/dev/null || { mkdir -p ~/verdroid-work && cd ~/verdroid-work; }\n" +
             TermuxRunTool.capped("python3 ${VerdroidSeleniumPy.FILE} " + cliArgs.joinToString(" ") { TermuxRunTool.shellQuote(it) }, timeoutS)
         val r = termux.runAndWait(cmd, "sel-${System.nanoTime()}", (timeoutS + 20) * 1_000L, label = "Verdroid: $name")

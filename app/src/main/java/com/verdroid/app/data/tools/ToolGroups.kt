@@ -9,6 +9,7 @@ object ToolGroups {
     val ORDER = listOf(
         Group("files", "Files", "Documents/Verdroid (workspace_*), private scratch files"),
         Group("web", "Web", "web_search, web_fetch, headless Chromium (selenium_*)"),
+        Group("cookies", "Browser cookies (beta)", "Beta for testing logged-in pages: your own cookies in headless Chromium (cookie_*), stored encrypted"),
         Group("termux", "Termux & Python", "termux_run, termux_python"),
         Group("pdf", "PDF & documents", "PDF read/edit (pdf_*), ebook translation"),
         Group("system", "Shizuku & phone screen", "Shizuku shell, rish, screen control (accessibility)"),
@@ -22,6 +23,7 @@ object ToolGroups {
     fun groupOf(name: String): String = when {
         name.startsWith("mcp__") -> "mcp"
         name in setOf("read_file", "write_file", "list_dir") || name.startsWith("workspace_") -> "files"
+        name.startsWith("cookie_") -> "cookies"
         name.startsWith("web_") || name.startsWith("selenium_") -> "web"
         name == "termux_run" || name == "termux_python" -> "termux"
         name.startsWith("pdf_") || name == "ebook_translate" -> "pdf"

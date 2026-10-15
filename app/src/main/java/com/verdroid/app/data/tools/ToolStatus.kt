@@ -28,6 +28,10 @@ data class ToolStatus(val ready: Boolean, val text: String) {
             name.startsWith("pdf_") ->
                 if (env.termuxReady) ToolStatus(true, "Ready (PDF library installs on first use, or via the pdf-tools add-on); needs termux-setup-storage + All files access")
                 else ToolStatus(false, "Needs Termux (Settings > Tools); the PDF library is installed on first use after you agree")
+            name == "cookie_open" ->
+                if (env.termuxReady) ToolStatus(true, "Beta: ready if chromium-selenium is installed and cookies were imported (cookie_import)")
+                else ToolStatus(false, "Needs Termux + the chromium-selenium add-on (Settings > Tools)")
+            name.startsWith("cookie_") -> ToolStatus(true, "Beta: cookies stored encrypted in the app; import from a file in Documents/Verdroid")
             name.startsWith("selenium_") || name == "termux_python" ->
                 if (env.termuxReady) ToolStatus(true, "Ready if chromium-selenium is installed (Available to install)" +
                     if (name == "termux_python") "" else "; saving files needs termux-setup-storage in Termux")

@@ -431,6 +431,10 @@ class AgentLoop internal constructor(
               private workspace (e.g. scrapers/name.py; `from verdroid_selenium import make_driver` gives a headless driver,
               always call driver.quit()) and run it with termux_python; save scraped data to os.environ["VERDROID_OUTPUT"].
               Keep scraper scripts in the private workspace, not in Documents/Verdroid.
+            - Browser cookies (beta, only if enabled): cookie_import (from a cookie export file the user put in
+              Documents/Verdroid/Input), cookie_open (selenium_open with the user's stored cookies, for logged-in reads),
+              cookie_list, cookie_clear. Cookie values are secrets: never print, repeat or save them, never ask the user to
+              paste cookies into the chat, and only read pages (never post, like, follow or change account settings).
             - Diagnostics: self_test runs safe on-device checks of every feature and returns a pass/fail/skip report
               (optional only="termux,pdf"). Use it when tools misbehave or the user asks what works on this phone.
             - Skills: skill_list, skill_get, skill_save, skill_edit, skill_delete. "Saved skills" below is only an index (name +

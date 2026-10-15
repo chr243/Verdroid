@@ -215,6 +215,18 @@ class SelfTestRunner @Inject constructor(
                 "JGit init + status ok"
             } finally { dir.deleteRecursively() }
         },
+        "cookies" to {
+            // Pure checks first (no stored cookies are read or changed), then: is the Selenium add-on there?
+            val sample = "#HttpOnly_.example.com\tTRUE\t/\tTRUE\t0\tsid\tsecretvalue123\n"
+            val parsed = com.verdroid.app.data.cookies.BrowserCookies.parse(sample)
+            check(parsed.size == 1 && parsed[0].httpOnly && parsed[0].host == "example.com") { "cookies.txt parse" }
+            check("secretvalue123" !in com.verdroid.app.data.cookies.BrowserCookies.summary(parsed).toString()) { "redaction" }
+            check("--cookies" in com.verdroid.app.data.termux.VerdroidSeleniumPy.SOURCE) { "helper lacks --cookies" }
+            requireTermux()
+            val out = termuxEcho("python -c 'import selenium; print(\"selenium-ok\")' 2>&1 || echo noselenium")
+            if ("selenium-ok" !in out) throw SkipCheck("chromium-selenium add-on not installed")
+            "parse/redaction ok, Selenium present"
+        },
         "share_target" to {
             val pm = context.packageManager
             fun handles(action: String, mime: String) = pm.queryIntentActivities(Intent(action).setType(mime), 0)

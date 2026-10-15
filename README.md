@@ -131,7 +131,7 @@ No analytics, no ads, no Verdroid backend. Termux packages and Python modules ar
 
 ## Status and limitations
 
-Personal project; release builds are signed with the project's own key. There is no in-app browser and no X/Facebook tools (removed). Pages that need JavaScript can be read with the optional headless Chromium + Selenium add-on in Termux; pages behind a login are not supported. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#known-limitations).
+Personal project; release builds are signed with the project's own key. There is no in-app browser and no X/Facebook tools (removed). Pages that need JavaScript can be read with the optional headless Chromium + Selenium add-on in Termux; pages behind a login are not supported, apart from an opt-in beta (Settings → Tools → Browser cookies, off by default) that loads cookies you export from your own browser. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md#known-limitations).
 
 ## License
 

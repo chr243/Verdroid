@@ -37,8 +37,8 @@ class ToolPrefs @Inject constructor(@ApplicationContext context: Context) : Tool
     companion object {
         private const val KEY_DISABLED = "disabled"
         private const val KEY_OPT_IN = "opt_in"
-        /** Tools that start switched off (live crypto trading). */
-        val DEFAULT_OFF: Set<String> = emptySet()
+        /** Tools that start switched off (betas: browser cookie injection). */
+        val DEFAULT_OFF: Set<String> = setOf("cookie_import", "cookie_list", "cookie_clear", "cookie_open")
         fun effective(disabled: Set<String>, optIn: Set<String>): Set<String> = (disabled - DEFAULT_OFF) + (DEFAULT_OFF - optIn)
     }
 }
