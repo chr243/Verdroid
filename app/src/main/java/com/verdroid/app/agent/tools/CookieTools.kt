@@ -91,3 +91,30 @@ class CookieOpenTool(termux: TermuxRunner, folder: SharedFolder, private val vau
         return BrowserCookies.scrub(runHelper(cli, 120, null, preamble), cookies)
     }
 }
+
+/**
+ * Opens the in-app WebView login screen (Settings → Tools → Logged-in sites) and waits until the user taps Done or Cancel.
+ * [launch] starts the screen and completes the returned deferred with (saved, sites, count); values never come back.
+ */
+class CookieLoginTool(
+    private val launch: (String) -> kotlinx.coroutines.CompletableDeferred<Triple<Boolean, List<String>, Int>>?,
+    private val timeoutMs: Long = 10 * 60_000L,
+) : AgentTool {
+    override val name = "cookie_login"
+    override val description = "$COOKIE_NOTE Open a full-screen in-app browser so the user logs in to a site themselves (default x.com), " +
+        "then taps Done; the session cookies are saved encrypted for cookie_open. Waits up to 10 min. Tell the user to log in and tap Done. " +
+        "Some sites (e.g. Google) block this kind of login."
+    override val parameters = schema(emptyList(), "url" to prop("string", "Login page URL (default https://x.com/login)"))
+
+    override suspend fun execute(args: JsonObject): String {
+        val url = args.str("url")?.trim()?.takeIf { it.startsWith("https://") || it.startsWith("http://") } ?: "https://x.com/login"
+        val d = launch(url) ?: return errorJson("Could not open the login screen. Ask the user to use Settings → Tools → Logged-in sites → Log in.")
+        val r = kotlinx.coroutines.withTimeoutOrNull(timeoutMs) { d.await() }
+            ?: return errorJson("Login screen still open after ${timeoutMs / 60_000} min. Ask the user to tap Done when logged in, then call cookie_list.")
+        return buildJsonObject {
+            put("ok", r.first)
+            put("sites", JsonArray(r.second.map(::JsonPrimitive))); put("cookies_saved", r.third)
+            if (!r.first) put("note", "Nothing saved (cancelled, or not logged in).")
+        }.toString()
+    }
+}

@@ -227,6 +227,13 @@ class SelfTestRunner @Inject constructor(
             if ("selenium-ok" !in out) throw SkipCheck("chromium-selenium add-on not installed")
             "parse/redaction ok, Selenium present"
         },
+        "cookie_webview" to {
+            check(com.verdroid.app.data.cookies.BrowserCookies.fromCookieHeader("x.com", "a=1; b=2").size == 2) { "cookie header parse" }
+            val pkg = runCatching { android.webkit.WebView.getCurrentWebViewPackage() }.getOrNull()
+                ?: throw IllegalStateException("No WebView provider installed/enabled")
+            runCatching { android.webkit.CookieManager.getInstance() }.getOrElse { throw IllegalStateException("CookieManager unavailable: ${it.javaClass.simpleName}") }
+            "WebView ${pkg.packageName} ${pkg.versionName}"
+        },
         "share_target" to {
             val pm = context.packageManager
             fun handles(action: String, mime: String) = pm.queryIntentActivities(Intent(action).setType(mime), 0)

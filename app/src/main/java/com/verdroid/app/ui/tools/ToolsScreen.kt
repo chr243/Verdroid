@@ -108,6 +108,8 @@ fun ToolsScreen(onBack: () -> Unit, vm: ToolsViewModel = hiltViewModel()) {
                     )
                 }
             }
+            if ("cookies" in expanded || ToolGroups.group(state.tools) { it.name }.any { (g, t) -> g.id == "cookies" && t.any { it.name !in disabled } })
+                item(key = "logged-in-sites") { com.verdroid.app.ui.cookies.LoggedInSitesSection() }
             item {
                 Text("Shared folder", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = 16.dp, top = 20.dp, end = 16.dp))
                 SharedFolderCard(state.storage,

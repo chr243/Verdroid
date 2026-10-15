@@ -9,7 +9,7 @@ object ToolGroups {
     val ORDER = listOf(
         Group("files", "Files", "Documents/Verdroid (workspace_*), private scratch files"),
         Group("web", "Web", "web_search, web_fetch, headless Chromium (selenium_*)"),
-        Group("cookies", "Browser cookies (beta)", "Beta for testing logged-in pages: your own cookies in headless Chromium (cookie_*), stored encrypted"),
+        Group("cookies", "Browser cookies (beta)", "Beta for testing logged-in pages: log in once in-app (or import a cookie file), then read pages in headless Chromium (cookie_*); stored encrypted"),
         Group("termux", "Termux & Python", "termux_run, termux_python"),
         Group("pdf", "PDF & documents", "PDF read/edit (pdf_*), ebook translation"),
         Group("system", "Shizuku & phone screen", "Shizuku shell, rish, screen control (accessibility)"),

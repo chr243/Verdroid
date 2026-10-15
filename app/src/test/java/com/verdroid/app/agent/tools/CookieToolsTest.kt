@@ -77,3 +77,19 @@ class CookieToolsTest {
         assertTrue(ToolGroups.ORDER.first { it.id == "cookies" }.description.contains("Beta for testing logged-in"))
     }
 }
+
+class CookieLoginToolTest {
+    @Test fun returnsCountsWhenDone() = runTest {
+        var opened: String? = null
+        val t = CookieLoginTool({ u -> opened = u; kotlinx.coroutines.CompletableDeferred(Triple(true, listOf("x.com"), 5)) })
+        val r = t.execute(buildJsonObject {})
+        assertEquals("https://x.com/login", opened)
+        assertTrue(r.contains("\"cookies_saved\":5"))
+    }
+
+    @Test fun timesOutWithHint() = runTest {
+        val t = CookieLoginTool({ kotlinx.coroutines.CompletableDeferred() }, timeoutMs = 10)
+        assertTrue(t.execute(buildJsonObject { put("url", "https://example.org/login") }).contains("tap Done"))
+        assertTrue(CookieLoginTool({ null }).execute(buildJsonObject {}).contains("error"))
+    }
+}

@@ -100,6 +100,40 @@ object BrowserCookies {
         cookies.map { it.value }.filter { it.length >= 4 }.distinct().sortedByDescending { it.length }
             .fold(text) { acc, v -> acc.replace(v, "[redacted cookie]") }
 
+    /** "a=b; c=d" (CookieManager.getCookie / a Cookie header) → name/value pairs; blank or nameless parts dropped. */
+    fun parseCookieHeader(header: String?): List<Pair<String, String>> =
+        header.orEmpty().split(';').mapNotNull { part ->
+            val p = part.trim()
+            if (p.isEmpty()) return@mapNotNull null
+            val i = p.indexOf('=')
+            val name = (if (i < 0) p else p.substring(0, i)).trim()
+            if (name.isEmpty()) null else name to (if (i < 0) "" else p.substring(i + 1).trim())
+        }
+
+    /** Registrable-ish site of a host: last two labels ("mobile.x.com" → "x.com"); good enough for the sites we target. */
+    fun siteOf(host: String): String = host.lowercase().trimStart('.').removePrefix("www.").split('.').takeLast(2).joinToString(".")
+
+    /** Sibling domains a login also needs (X still sets some cookies on twitter.com). */
+    fun relatedSites(host: String): List<String> = when (val s = siteOf(host)) {
+        "x.com", "twitter.com" -> listOf("x.com", "twitter.com")
+        else -> listOf(s)
+    }
+
+    /**
+     * Cookies captured from the WebView for [site]. CookieManager exposes neither httpOnly, expiry nor the real domain/path,
+     * so they are saved as session cookies on ".site", path "/", secure (https logins).
+     */
+    fun fromCookieHeader(site: String, header: String?): List<BrowserCookie> =
+        parseCookieHeader(header).distinctBy { it.first }.map { (n, v) -> BrowserCookie(n, v, ".$site", "/", secure = true) }
+
+    /** Saved sites with cookie counts, for the Logged-in sites list. */
+    fun sites(cookies: List<BrowserCookie>): List<Pair<String, Int>> =
+        cookies.groupBy { siteOf(it.host) }.map { it.key to it.value.size }.sortedBy { it.first }
+
+    /** Replaces all cookies of [sites] with [fresh] (a new login supersedes the old one). */
+    fun replaceSites(existing: List<BrowserCookie>, sites: Collection<String>, fresh: List<BrowserCookie>): List<BrowserCookie> =
+        existing.filter { siteOf(it.host) !in sites } + fresh
+
     /** Selenium add_cookie payload (JSON) for the Termux helper. */
     fun toSeleniumJson(cookies: List<BrowserCookie>): String = JsonArray(cookies.map { c ->
         buildJsonObject {

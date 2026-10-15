@@ -77,6 +77,14 @@
             </intent-filter>
         </activity>
 
+        <!-- Beta: in-app WebView login for Browser cookies (cookie_open). -->
+        <activity
+            android:name=".ui.cookies.CookieLoginActivity"
+            android:exported="false"
+            android:label="Log in"
+            android:theme="@style/Theme.Verdroid"
+            android:windowSoftInputMode="adjustResize" />
+
         <!-- Expanded content of an Android bubble (must be embeddable, resizeable, document-per-launch). -->
         <activity
             android:name=".chathead.BubbleActivity"

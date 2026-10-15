@@ -31,6 +31,7 @@ data class ToolStatus(val ready: Boolean, val text: String) {
             name == "cookie_open" ->
                 if (env.termuxReady) ToolStatus(true, "Beta: ready if chromium-selenium is installed and cookies were imported (cookie_import)")
                 else ToolStatus(false, "Needs Termux + the chromium-selenium add-on (Settings > Tools)")
+            name == "cookie_login" -> ToolStatus(true, "Beta: opens an in-app login screen; the user taps Done")
             name.startsWith("cookie_") -> ToolStatus(true, "Beta: cookies stored encrypted in the app; import from a file in Documents/Verdroid")
             name.startsWith("selenium_") || name == "termux_python" ->
                 if (env.termuxReady) ToolStatus(true, "Ready if chromium-selenium is installed (Available to install)" +

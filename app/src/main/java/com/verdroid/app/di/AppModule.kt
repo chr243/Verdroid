@@ -158,6 +158,15 @@ object AppModule {
                 // Beta (off by default): the user's own cookies injected into headless Chromium, stored encrypted
                 CookieImportTool(sharedFolder, cookieVault), CookieListTool(cookieVault), CookieClearTool(cookieVault),
                 CookieOpenTool(termux, sharedFolder, cookieVault),
+                CookieLoginTool({ url ->
+                    val d = kotlinx.coroutines.CompletableDeferred<com.verdroid.app.ui.cookies.CookieLoginResult>()
+                    com.verdroid.app.ui.cookies.CookieLoginBridge.pending?.cancel()
+                    com.verdroid.app.ui.cookies.CookieLoginBridge.pending = d
+                    val ok = runCatching { context.startActivity(com.verdroid.app.ui.cookies.CookieLoginBridge.intent(context, url)) }.isSuccess
+                    if (!ok) null else kotlinx.coroutines.CompletableDeferred<Triple<Boolean, List<String>, Int>>().also { out ->
+                        d.invokeOnCompletion { e -> if (e == null) d.getCompleted().let { out.complete(Triple(it.saved, it.sites, it.count)) } else out.cancel() }
+                    }
+                }),
                 EbookTranslateTool(termux, sharedFolder),
                 // PDF read/edit in Termux Python (PyMuPDF, pypdf fallback; installed on first use after the user agrees)
                 PdfInfoTool(termux, sharedFolder), PdfExtractTextTool(termux, sharedFolder),
