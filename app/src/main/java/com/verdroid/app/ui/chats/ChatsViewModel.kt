@@ -28,7 +28,7 @@ class ChatsViewModel @Inject constructor(
     private val customLlm: com.verdroid.app.data.network.CustomLlmClient,
     private val kiloUsage: com.verdroid.app.data.network.KiloUsage,
     private val client: com.verdroid.app.data.network.OpenRouterClient,
-    updater: com.verdroid.app.data.update.AppUpdater,
+    private val updater: com.verdroid.app.data.update.AppUpdater,
     private val archive: com.verdroid.app.domain.usecase.ChatArchiveUseCase,
 ) : ViewModel() {
     /** v1.0.12: "delete" on the home list = move to the archive; the screen shows a snackbar with Undo. */
@@ -45,6 +45,9 @@ class ChatsViewModel @Inject constructor(
 
     /** Dot on the gear: a newer Verdroid release exists. */
     val updateAvailable = updater.updateAvailable
+    val updateChecksEnabled = updater.enabled
+    val currentVersion: String get() = updater.currentVersion
+    fun latestCached(): String? = updater.latestCached()
     val query = MutableStateFlow("")
 
     val conversations: StateFlow<List<Conversation>> = observeConversations(query)

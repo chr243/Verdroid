@@ -65,6 +65,11 @@ fun ChatDetailScreen(onBack: () -> Unit, onChatMemory: (Long) -> Unit = {}, vm: 
     val toolCalls by vm.toolCalls.collectAsStateWithLifecycle()
     val generating by vm.isGenerating.collectAsStateWithLifecycle()
     val chatId by vm.currentTaskId.collectAsStateWithLifecycle()
+    val window by vm.window.collectAsStateWithLifecycle()
+    LaunchedEffect(chatId, messages.size, toolCalls.size) {
+        if (chatId != 0L) com.verdroid.app.data.crash.CrashBreadcrumbs.openChat(chatId, "chat screen", messages.size, toolCalls.size)
+    }
+    DisposableEffect(chatId) { onDispose { com.verdroid.app.data.crash.CrashBreadcrumbs.closeChat(chatId) } }
     // Tell MainActivity (auto chat head on Home) which chat is on screen. Keyed on the REAL id, which changes from 0
     // to the new task id on a fresh chat's first send (the nav argument would stay 0).
     DisposableEffect(chatId) {
@@ -243,6 +248,13 @@ fun ChatDetailScreen(onBack: () -> Unit, onChatMemory: (Long) -> Unit = {}, vm: 
                             modifier = Modifier.fillMaxWidth().padding(top = 48.dp))
                     }
                 }
+                if (com.verdroid.app.domain.model.ChatWindow.hasMore(messages.size, window)) item("load-earlier") {
+                    // Reaching the top loads the previous page; keys keep the scroll position anchored.
+                    LaunchedEffect(window, follow.value) { if (!follow.value) vm.loadEarlier() } // only after the user scrolled up
+                    Box(Modifier.fillMaxWidth().padding(8.dp), contentAlignment = Alignment.Center) {
+                        TextButton(onClick = vm::loadEarlier) { Text("Load earlier messages") }
+                    }
+                }
                 items(blocks, key = { it.key }) { block ->
                     if (block is ToolStacks.Steps) { StepsCard(block) { t, model -> AgentBubble(t, model) }; return@items }
                     val row = (block as ToolStacks.Single).row
@@ -406,7 +418,7 @@ internal fun UserBubble(text: String) {
         d.files.forEach { f -> AttachmentChip(f.name, f.bytes, f.path.takeIf { f.isImage }) } // one chip per file
         if (d.text.isNotBlank() || d.fileName == null) {
             Surface(color = b.user, shape = RoundedCornerShape(18.dp, 18.dp, 4.dp, 18.dp), modifier = Modifier.widthIn(max = 300.dp)) {
-                SelectionContainer { Text(d.text.trim(), color = b.onUser, modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp)) }
+                SelectionContainer { Text(remember(d.text) { com.verdroid.app.ui.components.Links.linked(d.text.trim()) }, color = b.onUser, modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp)) }
             }
         }
     }

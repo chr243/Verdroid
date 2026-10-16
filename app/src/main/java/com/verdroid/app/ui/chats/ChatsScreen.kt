@@ -63,7 +63,12 @@ fun ChatsScreen(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
             TopAppBar(
-                title = { Text("Verdroid", fontWeight = FontWeight.Bold, fontSize = 26.sp) },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Verdroid", fontWeight = FontWeight.Bold, fontSize = 26.sp)
+                        UpdateHint(vm, updateAvailable)
+                    }
+                },
                 actions = {
                     quotaDot?.let { QuotaDotButton(it, onDetails = onOpenModels) }
                     IconButton(onClick = onOpenSettings) {
@@ -119,6 +124,44 @@ fun ChatsScreen(
 }
 
 /** Small theme-aware status dot for the OpenRouter daily free quota; tap shows the numbers and a Details link. */
+/** Small "New version on GitHub" pill (v1.0.56). Non-blocking; tap opens the release page. Hidden when up to date/offline. */
+@Composable
+private fun UpdateHint(vm: ChatsViewModel, updateAvailable: Boolean) {
+    val enabled by vm.updateChecksEnabled.collectAsStateWithLifecycle()
+    val online = rememberOnline()
+    val latest = remember(updateAvailable, enabled) { vm.latestCached() }
+    if (!com.verdroid.app.data.update.UpdateLogic.showHint(enabled, latest, vm.currentVersion, online)) return
+    val uri = androidx.compose.ui.platform.LocalUriHandler.current
+    Spacer(Modifier.width(10.dp))
+    Surface(shape = RoundedCornerShape(50), color = MaterialTheme.colorScheme.primaryContainer,
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        modifier = Modifier.clip(RoundedCornerShape(50)).clickable { runCatching { uri.openUri(com.verdroid.app.data.update.UpdateLogic.RELEASES_PAGE) } }
+            .semantics { contentDescription = "New version v$latest on GitHub. Opens the release page." }) {
+        Text("New version on GitHub", style = MaterialTheme.typography.labelMedium, maxLines = 1,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp))
+    }
+}
+
+/** True while the device has a validated internet network (callback-based; no polling). */
+@Composable
+private fun rememberOnline(): Boolean {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val cm = remember { context.getSystemService(android.net.ConnectivityManager::class.java) }
+    fun now(): Boolean = runCatching {
+        cm?.getNetworkCapabilities(cm.activeNetwork)?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+    }.getOrDefault(false)
+    var online by remember { mutableStateOf(now()) }
+    DisposableEffect(cm) {
+        val cb = object : android.net.ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: android.net.Network) { online = true }
+            override fun onLost(network: android.net.Network) { online = now() }
+        }
+        val ok = runCatching { cm?.registerDefaultNetworkCallback(cb) }.isSuccess
+        onDispose { if (ok) runCatching { cm?.unregisterNetworkCallback(cb) } }
+    }
+    return online
+}
+
 @Composable
 private fun QuotaDotButton(dot: QuotaDot, onDetails: () -> Unit) {
     var open by remember { mutableStateOf(false) }

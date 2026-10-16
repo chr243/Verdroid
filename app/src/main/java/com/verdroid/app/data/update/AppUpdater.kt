@@ -81,6 +81,9 @@ class AppUpdater @Inject constructor(@ApplicationContext private val context: Co
     private val _available = MutableStateFlow(prefs.getBoolean(KEY_ENABLED, false) && prefs.getString(KEY_LATEST, null)?.let { UpdateLogic.isNewer(it, currentVersion) } == true)
     val updateAvailable: StateFlow<Boolean> = _available.asStateFlow()
 
+    /** Cached latest public version from the last successful check (null = never checked). */
+    fun latestCached(): String? = prefs.getString(KEY_LATEST, null)
+
     /** Silent check on app start, at most every 6 h; errors are ignored. */
     suspend fun autoCheck() {
         if (!UpdateLogic.autoCheckDue(prefs.getLong(KEY_LAST_CHECK, 0), System.currentTimeMillis())) return

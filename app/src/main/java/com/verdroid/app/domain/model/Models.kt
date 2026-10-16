@@ -54,6 +54,9 @@ enum class PauseReason(val autoResume: Boolean) {
 
     companion object {
         fun of(name: String?): PauseReason? = entries.firstOrNull { it.name == name }
+
+        /** Only explicitly auto-resuming reasons resume by themselves; unknown/missing = stay paused (deny by default). */
+        fun autoResumes(name: String?): Boolean = of(name)?.autoResume == true
     }
 }
 

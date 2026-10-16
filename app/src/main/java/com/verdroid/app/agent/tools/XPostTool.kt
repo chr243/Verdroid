@@ -44,13 +44,16 @@ object XText {
     }
 }
 
-class XPostTool(termux: TermuxRunner, folder: SharedFolder, private val vault: CookieVault, private val confirmer: XPostConfirmer) :
+class XPostTool(termux: TermuxRunner, folder: SharedFolder, private val vault: CookieVault,
+                private val policy: XPostPolicy = XPostPolicy.None, private val clock: () -> Long = System::currentTimeMillis,
+                private val confirmer: XPostConfirmer) :
     TermuxSeleniumBase(termux, folder) {
     override val name = "x_post"
     override val description = "Beta, READ-WRITE: publish ONE post (or a reply with reply_to_url) on X as the user. One post per call; never call it " +
         "repeatedly or in a loop unless the user explicitly asked for several. The user sees the exact text and must tap Post (unless they " +
         "allowed posting without asking). Max 280 characters (URLs count 23). Assume the X login is saved; only if the result says " +
-        "NOT_LOGGED_IN call cookie_login once and retry. If the result says posted=uncertain, do NOT retry: ask the user to check X."
+        "NOT_LOGGED_IN call cookie_login once and retry. If the result says posted=uncertain, do NOT retry: ask the user to check X. Posting is capped per hour/day; " +
+        "on RATE_LIMITED stop and tell the user."
     override val parameters = schema(listOf("text"),
         "text" to prop("string", "Exact post text"),
         "reply_to_url" to prop("string", "Optional x.com/<user>/status/<id> URL to reply to"))
@@ -70,15 +73,32 @@ class XPostTool(termux: TermuxRunner, folder: SharedFolder, private val vault: C
         val cookies = BrowserCookies.forX(vault.all())
         if (cookies.none { it.name == "auth_token" })
             return errorJson("NOT_LOGGED_IN: no X login saved (no auth_token). Call cookie_login once (the user logs in), then retry this same tool.")
+        fun audit(r: XPostAudit.Result, url: String? = null, note: String? = null) =
+            runCatching { policy.audit(XPostAudit.Entry(clock(), r, text, reply, url, note)) }
+        policy.blockReason(clock())?.let { why ->
+            audit(XPostAudit.Result.BLOCKED, note = "rate cap")
+            return buildJsonObject { put("error", why); put("rate_limited", true); put("posted", false) }.toString()
+        }
         when (confirmer.confirm(ctx.taskId, text, reply)) {
             true -> {}
-            false -> return buildJsonObject { put("error", "The user CANCELLED this post. Nothing was posted; do not retry unless they ask."); put("cancelled_by_user", true) }.toString()
-            null -> return errorJson("No answer to the Post / Cancel prompt within 5 min (open Verdroid to see it). Nothing was posted.")
+            false -> { audit(XPostAudit.Result.CANCELLED)
+                return buildJsonObject { put("error", "The user CANCELLED this post. Nothing was posted; do not retry unless they ask."); put("cancelled_by_user", true) }.toString() }
+            null -> { audit(XPostAudit.Result.NO_ANSWER)
+                return errorJson("No answer to the Post / Cancel prompt within 5 min (open Verdroid to see it). Nothing was posted.") }
         }
+        // Re-check: another post may have gone out while the dialog was open.
+        policy.blockReason(clock())?.let { why ->
+            audit(XPostAudit.Result.BLOCKED, note = "rate cap")
+            return buildJsonObject { put("error", why); put("rate_limited", true); put("posted", false) }.toString()
+        }
+        policy.recordAttempt(clock())
         val (file, preamble) = cookiePreamble(cookies)
         val cli = listOf("xpost", reply ?: "https://x.com/compose/post", "--wait", "0", "--cookies", file,
             "--text-b64", Base64.getEncoder().encodeToString(text.toByteArray()))
         val out = BrowserCookies.scrub(runHelper(cli, 120, null, preamble), cookies)
-        return XText.markUncertain(out)
+        val result = XText.markUncertain(out)
+        val (r, url) = XPostAudit.resultOf(result)
+        audit(r, url)
+        return result
     }
 }

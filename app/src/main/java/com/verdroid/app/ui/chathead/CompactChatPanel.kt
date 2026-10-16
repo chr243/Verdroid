@@ -75,6 +75,8 @@ fun CompactChatPanel(
     onCollapse: (() -> Unit)?,
     onSeen: () -> Unit,
     modifier: Modifier = Modifier,
+    canLoadEarlier: Boolean = false,
+    onLoadEarlier: () -> Unit = {},
 ) {
     var input by remember { mutableStateOf("") }
     val listState = rememberLazyListState()
@@ -125,6 +127,12 @@ fun CompactChatPanel(
                 contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
             ) {
+                if (canLoadEarlier) item("load-earlier") {
+                    LaunchedEffect(messages.size, follow.value) { if (!follow.value) onLoadEarlier() } // only after the user scrolled up
+                    Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                        TextButton(onClick = onLoadEarlier) { Text("Load earlier messages") }
+                    }
+                }
                 items(blocks, key = { it.key }) { block ->
                     if (block is ToolStacks.Steps) { StepsCard(block) { t, model -> AgentBubble(t, model) }; return@items }
                     val row = (block as ToolStacks.Single).row

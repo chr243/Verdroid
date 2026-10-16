@@ -36,6 +36,7 @@ class AgentRunner @Inject constructor(
         if (jobs[taskId]?.isActive == true) return
         scheduler.cancel(taskId)
         _running.update { it + taskId }
+        com.verdroid.app.data.crash.CrashBreadcrumbs.add("chat #$taskId run start")
         val job = scope.launch {
             try {
                 when (val result = loop.run(taskId)) {
@@ -56,6 +57,7 @@ class AgentRunner @Inject constructor(
         job.invokeOnCompletion {
             synchronized(this) { if (jobs[taskId] === job) jobs.remove(taskId) }
             _running.update { it - taskId }
+            com.verdroid.app.data.crash.CrashBreadcrumbs.add("chat #$taskId run end" + (it?.let { e -> " (${e.javaClass.simpleName})" } ?: ""))
         }
     }
 

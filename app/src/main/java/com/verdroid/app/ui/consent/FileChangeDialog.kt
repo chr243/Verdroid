@@ -18,7 +18,8 @@ import dagger.hilt.components.SingletonComponent
 
 @EntryPoint
 @InstallIn(SingletonComponent::class)
-interface FileChangeConsentEntryPoint { fun consent(): FileChangeConsent; fun xPost(): com.verdroid.app.data.consent.XPostConsent }
+interface FileChangeConsentEntryPoint { fun consent(): FileChangeConsent; fun xPost(): com.verdroid.app.data.consent.XPostConsent
+    fun install(): com.verdroid.app.data.consent.InstallPrompt; fun xPostGuard(): com.verdroid.app.data.consent.XPostGuard }
 
 /** Shows the oldest pending file-change question (Allow / Deny). Back/outside tap does nothing: the user must choose. */
 @Composable
@@ -48,6 +49,30 @@ fun FileChangeDialog() {
         },
         confirmButton = { TextButton(onClick = { consent.answer(p.req.id, true) }) { Text(if (p.req.overwriteOnly) "Yes" else "Allow") } },
         dismissButton = { Button(onClick = { consent.answer(p.req.id, false) }) { Text(if (p.req.overwriteOnly) "No" else "Deny") } },
+    )
+}
+
+/** Install / Don't install for agent-driven package installs (main app + bubble). Back/outside tap does nothing. */
+@Composable
+fun InstallDialog() {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val prompt = remember { EntryPointAccessors.fromApplication(context.applicationContext, FileChangeConsentEntryPoint::class.java).install() }
+    val pending by prompt.pending.collectAsState()
+    val p = pending.firstOrNull() ?: return
+    AlertDialog(
+        onDismissRequest = {},
+        title = { Text("Install packages?") },
+        text = {
+            Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("${p.tool} needs to install:", style = MaterialTheme.typography.titleSmall)
+                SelectionContainer { Text(com.verdroid.app.agent.tools.InstallConsent.describe(p.packages), fontFamily = FontFamily.Monospace, fontSize = 12.sp) }
+                Text("Why: ${p.reason}", style = MaterialTheme.typography.bodyMedium)
+                Text(p.estimate, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (pending.size > 1) Text("${pending.size - 1} more waiting", style = MaterialTheme.typography.labelSmall)
+            }
+        },
+        confirmButton = { TextButton(onClick = { prompt.answer(p.id, true) }) { Text("Install") } },
+        dismissButton = { Button(onClick = { prompt.answer(p.id, false) }) { Text("Don't install") } },
     )
 }
 
@@ -104,6 +129,47 @@ fun XPostSetting(modifier: Modifier = Modifier) {
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Switch(checked = on, onCheckedChange = { consent.setAlways(it) })
+    }
+}
+
+/** Settings → Tools → Twitter: x_post cap (per hour / per day, 0 = no cap) and the audit log viewer. */
+@Composable
+fun XPostLimitsSetting(modifier: Modifier = Modifier) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val guard = remember { EntryPointAccessors.fromApplication(context.applicationContext, FileChangeConsentEntryPoint::class.java).xPostGuard() }
+    val perHour by guard.perHour.collectAsState()
+    val perDay by guard.perDay.collectAsState()
+    var showLog by remember { mutableStateOf(false) }
+    val (h, d) = remember(perHour, perDay, showLog) { guard.usage() }
+    Column(modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("x_post limit", style = MaterialTheme.typography.bodyLarge)
+        Text("Applies even with \"Always allow\". 0 = no limit. Used: $h in the last hour, $d in the last 24 h.",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            Text("Per hour", Modifier.width(72.dp))
+            OutlinedButton(onClick = { guard.setPerHour(perHour - 1) }, enabled = perHour > 0) { Text("−") }
+            Text("$perHour", Modifier.width(32.dp))
+            OutlinedButton(onClick = { guard.setPerHour(perHour + 1) }) { Text("+") }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            Text("Per day", Modifier.width(72.dp))
+            OutlinedButton(onClick = { guard.setPerDay(perDay - 1) }, enabled = perDay > 0) { Text("−") }
+            Text("$perDay", Modifier.width(32.dp))
+            OutlinedButton(onClick = { guard.setPerDay(perDay + 1) }) { Text("+") }
+        }
+        TextButton(onClick = { showLog = true }) { Text("View post log") }
+    }
+    if (showLog) {
+        val text = remember { guard.tail().ifBlank { "No x_post attempts logged yet." } }
+        AlertDialog(onDismissRequest = { showLog = false },
+            title = { Text("x_post log") },
+            text = {
+                Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
+                    Text("Internal/${com.verdroid.app.agent.tools.XPostAudit.FILE}", style = MaterialTheme.typography.labelSmall)
+                    SelectionContainer { Text(text, fontFamily = FontFamily.Monospace, fontSize = 11.sp) }
+                }
+            },
+            confirmButton = { TextButton(onClick = { showLog = false }) { Text("Close") } })
     }
 }
 

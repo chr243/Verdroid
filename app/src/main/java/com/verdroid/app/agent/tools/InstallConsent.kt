@@ -16,6 +16,11 @@ data class PackageSpec(val manager: String, val name: String) {
     }
 }
 
+/** Blocking Install / Don't install prompt (like file changes). true = install, false = declined, null = no answer in time. */
+fun interface InstallConfirmer {
+    suspend fun confirm(tool: String, packages: List<PackageSpec>, reason: String, estimate: String): Boolean?
+}
+
 /**
  * Agent-driven package installs (pip / apt / pkg / npm / … inside Termux) need the user's yes first, like
  * ebook_translate's ETA step. A tool that would install returns a pending payload ([pending]) listing the packages,
@@ -47,6 +52,24 @@ object InstallConsent {
         args.bool(PARAM) == false -> Decision.Deny
         args.bool(PARAM) == true && args.str(ID_PARAM)?.trim() == installId(group, packages) -> Decision.Allow
         else -> Decision.Ask
+    }
+
+    /**
+     * Since v1.0.56 the user is asked directly: when [decide] says Ask and a [confirmer] is registered (the app's
+     * dialog), the call blocks on Install / Don't install. Only if nobody answers in time (or no UI is registered,
+     * e.g. JVM tests) does it fall back to the old model round-trip ([pending] + confirm_install/install_id).
+     */
+    @Volatile var confirmer: InstallConfirmer? = null
+
+    suspend fun resolve(args: JsonObject, group: String, packages: List<PackageSpec>, tool: String, reason: String,
+                        confirmer: InstallConfirmer? = this.confirmer): Decision {
+        val d = decide(args, group, packages)
+        if (d != Decision.Ask || confirmer == null) return d
+        return when (runCatching { confirmer.confirm(tool, packages, reason, estimate(packages)) }.getOrNull()) {
+            true -> Decision.Allow
+            false -> Decision.Deny
+            null -> Decision.Ask
+        }
     }
 
     /** Short stable id for this exact package set (order-insensitive), so a "yes" only covers what the user saw. */

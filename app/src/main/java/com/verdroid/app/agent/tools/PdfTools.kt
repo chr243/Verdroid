@@ -52,7 +52,7 @@ abstract class PdfToolBase(protected val termux: TermuxRunner, protected val fol
     protected suspend fun runHelper(args: JsonObject, cli: List<String>, timeoutS: Int, writesTo: String? = null): JsonObject {
         val first = runOnce(cli, timeoutS, writesTo, allowInstall = false)
         val missing = InstallConsent.missingFrom(first) ?: return first
-        return when (InstallConsent.decide(args, GROUP, missing)) {
+        return when (InstallConsent.resolve(args, GROUP, missing, name, INSTALL_REASON)) {
             InstallConsent.Decision.Allow -> runOnce(cli, timeoutS, writesTo, allowInstall = true)
             InstallConsent.Decision.Deny -> InstallConsent.denied(name, missing)
             InstallConsent.Decision.Ask -> InstallConsent.pending(name, GROUP, missing, INSTALL_REASON, InstallConsent.retryNote(args))

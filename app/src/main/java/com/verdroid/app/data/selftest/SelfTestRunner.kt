@@ -374,6 +374,70 @@ class SelfTestRunner @Inject constructor(
                 else -> st.toString()
             }
         },
+        "oom_hardening" to {
+            val f = File(context.cacheDir, "selftest-big.bin")
+            try {
+                f.outputStream().use { o -> val b = ByteArray(64 * 1024); repeat(32) { o.write(b) } } // 2 MB
+                check(com.verdroid.app.agent.tools.ReadFileTool.readHead(f, 1000).size == 1000) { "read_file must stop at max_bytes" }
+            } finally { f.delete() }
+            val W = com.verdroid.app.domain.model.ChatWindow
+            check(W.cut("x".repeat(W.CAP + 10))!!.length < W.CAP + 200 && W.cut("short") == "short") { "chat window cut" }
+            val ctx = com.verdroid.app.data.crash.CrashBreadcrumbs.section(com.verdroid.app.data.crash.CrashLog.memory(full = true))
+            check("Java heap" in ctx && "Last actions" in ctx && "Running tasks" in ctx) { "crash context incomplete" }
+            check(com.verdroid.app.data.crash.CrashBreadcrumbs.hasReserve()) { "crash memory reserve missing" }
+            "read_file bounded, chat window ${W.PAGE} msgs/${W.CAP} chars, crash context ok"
+        },
+        "install_prompt" to {
+            val pkgs = listOf(com.verdroid.app.agent.tools.PackageSpec("pip", "selftest-pkg"))
+            check(com.verdroid.app.agent.tools.InstallConsent.confirmer != null) { "no install dialog registered" }
+            val allow = com.verdroid.app.agent.tools.InstallConsent.resolve(args(), "t", pkgs, "t", "r") { _, _, _, _ -> true }
+            val deny = com.verdroid.app.agent.tools.InstallConsent.resolve(args(), "t", pkgs, "t", "r") { _, _, _, _ -> false }
+            val late = com.verdroid.app.agent.tools.InstallConsent.resolve(args(), "t", pkgs, "t", "r") { _, _, _, _ -> null }
+            check(allow == com.verdroid.app.agent.tools.InstallConsent.Decision.Allow && deny == com.verdroid.app.agent.tools.InstallConsent.Decision.Deny &&
+                late == com.verdroid.app.agent.tools.InstallConsent.Decision.Ask) { "install gate decisions" }
+            "Install / Don't install dialog registered; no answer falls back to ask-in-chat (nothing installed)"
+        },
+        "x_post_limits" to {
+            val L = com.verdroid.app.agent.tools.XPostLimits
+            val now = System.currentTimeMillis()
+            check(L.blockReason(List(5) { now - it * 60_000L }, now, 5, 20)?.startsWith("RATE_LIMITED") == true) { "hourly cap" }
+            check(L.blockReason(listOf(now - 2 * L.HOUR), now, 5, 20) == null) { "old posts must not count per hour" }
+            val line = com.verdroid.app.agent.tools.XPostAudit.line(com.verdroid.app.agent.tools.XPostAudit.Entry(now,
+                com.verdroid.app.agent.tools.XPostAudit.Result.CANCELLED, "a\nb", null, null))
+            check("cancelled" in line && "a\\nb" in line && line.count { it == '\n' } == 1) { "audit line" }
+            val vault = com.verdroid.app.data.cookies.CookieVault.InMemory(listOf(com.verdroid.app.data.cookies.BrowserCookie("auth_token", "selftest", ".x.com")))
+            var asked = false
+            val blocked = object : com.verdroid.app.agent.tools.XPostPolicy {
+                override fun blockReason(now: Long) = "RATE_LIMITED: selftest"
+                override fun recordAttempt(now: Long) {}
+                override fun audit(entry: com.verdroid.app.agent.tools.XPostAudit.Entry) {}
+            }
+            val noTermux = object : com.verdroid.app.data.termux.TermuxRunner {
+                override fun isInstalled() = true
+                override fun hasRunCommandPermission() = true
+                override suspend fun runAndWait(command: String, tag: String, timeoutMs: Long, label: String): com.verdroid.app.data.termux.TermuxResult? = throw IllegalStateException("must not run")
+            }
+            val r = com.verdroid.app.agent.tools.XPostTool(noTermux, shared, vault, blocked) { _, _, _ -> asked = true; true }.execute(args("text" to "self-test"))
+            check("RATE_LIMITED" in r && !asked) { "cap must block before the dialog and the browser" }
+            "cap blocks before posting; audit log at Internal/${com.verdroid.app.agent.tools.XPostAudit.FILE}"
+        },
+        "ebook_resume" to {
+            val src = com.verdroid.app.data.ebook.EbookTranslatePy.SOURCE
+            check("def append_part" in src && "def resume_parts" in src && "LANG_RETRY_FAILED" in src) { "ebook sidecar/retry fixes missing" }
+            "append-only parts file + language-check retry bundled"
+        },
+        "update_hint" to {
+            val U = com.verdroid.app.data.update.UpdateLogic
+            check(U.showHint(true, "99.0.0", "1.0.0", true) && !U.showHint(false, "99.0.0", "1.0.0", true) &&
+                !U.showHint(true, "99.0.0", "1.0.0", false) && !U.showHint(true, "1.0.0", "1.0.0", true)) { "hint visibility" }
+            "hint " + (if (U.showHint(updater.enabled.value, updater.latestCached(), updater.currentVersion, true)) "shown (newer release cached)" else "hidden")
+        },
+        "chat_links" to {
+            val f = com.verdroid.app.ui.components.Links.find("see https://x.com/a_b/status/1). and (https://en.wikipedia.org/wiki/Foo_(bar)), ok")
+            check(f.map { it.url } == listOf("https://x.com/a_b/status/1", "https://en.wikipedia.org/wiki/Foo_(bar)")) { "url detection: ${f.map { it.url }}" }
+            check(com.verdroid.app.ui.components.Links.MARKDOWN.find("[docs](https://example.com/a)")?.groupValues?.get(2) == "https://example.com/a") { "markdown link" }
+            "bare URLs (punctuation trimmed) and [label](url) detected"
+        },
         "notifications" to {
             val ok = ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
             if (ok) "granted" else throw SkipCheck("notification permission not granted")

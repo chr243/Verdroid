@@ -28,6 +28,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.ComposeView
 import androidx.core.app.NotificationCompat
 import android.app.Service
@@ -687,8 +688,14 @@ class ChatHeadService : Service(), LifecycleOwner, SavedStateRegistryOwner, View
     private fun PanelContent() {
         val id = taskIdState.longValue
         val task by remember(id) { tasks.observeTask(id) }.collectAsState(initial = null)
-        val messages by remember(id) { tasks.observeMessages(id) }.collectAsState(initial = emptyList<ChatMessage>())
-        val toolCalls by remember(id) { tasks.observeToolCalls(id) }.collectAsState(initial = emptyList<ToolCallRecord>())
+        // v1.0.56: windowed (newest messages only, big tool outputs cut) — this panel can stay open for hours.
+        var window by remember(id) { androidx.compose.runtime.mutableIntStateOf(com.verdroid.app.domain.model.ChatWindow.PAGE) }
+        val messages by remember(id, window) { tasks.observeMessageWindow(id, window) }.collectAsState(initial = emptyList<ChatMessage>())
+        val toolCalls by remember(id, window) { tasks.observeToolCallWindow(id, window) }.collectAsState(initial = emptyList<ToolCallRecord>())
+        androidx.compose.runtime.LaunchedEffect(id, messages.size, toolCalls.size) {
+            com.verdroid.app.data.crash.CrashBreadcrumbs.openChat(id, "chat head", messages.size, toolCalls.size)
+        }
+        androidx.compose.runtime.DisposableEffect(id) { onDispose { com.verdroid.app.data.crash.CrashBreadcrumbs.closeChat(id) } }
         val running by agent.runningTaskIds.collectAsState()
         val closing by closingState
         val pivot by pivotState
@@ -717,6 +724,8 @@ class ChatHeadService : Service(), LifecycleOwner, SavedStateRegistryOwner, View
                 },
                 onCollapse = { collapse() },
                 onSeen = { lifecycleScope.launch { tasks.markOpened(id) } },
+                canLoadEarlier = com.verdroid.app.domain.model.ChatWindow.hasMore(messages.size, window),
+                onLoadEarlier = { if (com.verdroid.app.domain.model.ChatWindow.hasMore(messages.size, window)) window += com.verdroid.app.domain.model.ChatWindow.PAGE },
             )
         }
     }

@@ -24,10 +24,11 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.text.withLink
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-/** Minimal Markdown: fenced code blocks, GFM tables, #/##/### headings, bullets, **bold**, *italic*, `code`. */
+/** Minimal Markdown: fenced code blocks, GFM tables, #/##/### headings, bullets, **bold**, *italic*, `code`, links ([label](url) and bare URLs, clickable). */
 @Composable
 fun MarkdownText(text: String, color: Color, modifier: Modifier = Modifier) {
     val blocks = splitBlocks(text)
@@ -83,20 +84,22 @@ private fun splitBlocks(text: String): List<Block> {
     return out
 }
 
-private val inlineRegex = Regex("\\*\\*(.+?)\\*\\*|`([^`]+)`|(?<![*\\w])\\*(?!\\s)(.+?)(?<!\\s)\\*(?![*\\w])")
+// Group 4/5: Markdown link [label](url) (v1.0.56). Bare URLs in plain runs become links via Links.appendLinked.
+private val inlineRegex = Regex(Links.MARKDOWN.pattern + "|\\*\\*(.+?)\\*\\*|`([^`]+)`|(?<![*\\w])\\*(?!\\s)(?!https?://)(.+?)(?<!\\s)\\*(?![*\\w])", RegexOption.IGNORE_CASE)
 
 fun inline(text: String, codeBg: Color = Color(0x14000000)): AnnotatedString = buildAnnotatedString {
     var last = 0
     for (m in inlineRegex.findAll(text)) {
-        append(text.substring(last, m.range.first))
+        with(Links) { appendLinked(text.substring(last, m.range.first)) }
         when {
-            m.groups[1] != null -> withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { append(m.groupValues[1]) }
-            m.groups[2] != null -> withStyle(SpanStyle(fontFamily = FontFamily.Monospace, background = codeBg)) { append(m.groupValues[2]) }
-            m.groups[3] != null -> withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { append(m.groupValues[3]) }
+            m.groups[1] != null -> withLink(androidx.compose.ui.text.LinkAnnotation.Url(m.groupValues[2], Links.style())) { append(m.groupValues[1]) }
+            m.groups[3] != null -> withStyle(SpanStyle(fontWeight = FontWeight.Bold)) { with(Links) { appendLinked(m.groupValues[3]) } }
+            m.groups[4] != null -> withStyle(SpanStyle(fontFamily = FontFamily.Monospace, background = codeBg)) { append(m.groupValues[4]) }
+            m.groups[5] != null -> withStyle(SpanStyle(fontStyle = FontStyle.Italic)) { with(Links) { appendLinked(m.groupValues[5]) } }
         }
         last = m.range.last + 1
     }
-    if (last < text.length) append(text.substring(last))
+    if (last < text.length) with(Links) { appendLinked(text.substring(last)) }
 }
 
 /**

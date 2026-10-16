@@ -3,12 +3,24 @@ package com.verdroid.app.domain.repository
 import com.verdroid.app.domain.model.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.map
 
 interface TaskRepository {
     fun observeConversations(): Flow<List<Conversation>>
     fun observeTask(taskId: Long): Flow<Task?>
     fun observeMessages(taskId: Long): Flow<List<ChatMessage>>
     fun observeToolCalls(taskId: Long): Flow<List<ToolCallRecord>>
+
+    /**
+     * UI window (v1.0.56, OOM hardening): only the newest [limit] messages, and tool calls of those messages; big tool
+     * outputs/arguments are cut to [ChatWindow.CAP] chars (charts stay whole; the agent always reads the full rows).
+     * Defaults derive from the full flows (test fakes); Room overrides with SQL.
+     */
+    fun observeMessageWindow(taskId: Long, limit: Int): Flow<List<ChatMessage>> =
+        observeMessages(taskId).map { ChatWindow.messages(it, limit) }
+    fun observeToolCallWindow(taskId: Long, limit: Int): Flow<List<ToolCallRecord>> =
+        combine(observeMessages(taskId), observeToolCalls(taskId)) { m, t -> ChatWindow.toolCalls(m, t, limit) }
     suspend fun getTask(taskId: Long): Task?
     suspend fun getMessages(taskId: Long): List<ChatMessage>
     suspend fun createTask(title: String, prompt: String, type: TaskType): Long

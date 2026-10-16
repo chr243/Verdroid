@@ -29,11 +29,13 @@ class BubbleActivity : ComponentActivity() {
             VerdroidTheme {
                 com.verdroid.app.ui.consent.FileChangeDialog()
                 com.verdroid.app.ui.consent.XPostDialog()
+                com.verdroid.app.ui.consent.InstallDialog()
                 val vm: ChatViewModel = hiltViewModel()
                 val task by vm.task.collectAsStateWithLifecycle()
                 val messages by vm.messages.collectAsStateWithLifecycle()
                 val toolCalls by vm.toolCalls.collectAsStateWithLifecycle()
                 val generating by vm.isGenerating.collectAsStateWithLifecycle()
+                val window by vm.window.collectAsStateWithLifecycle()
                 CompactChatPanel(
                     task = task,
                     messages = messages,
@@ -45,6 +47,8 @@ class BubbleActivity : ComponentActivity() {
                     onOpenFull = { startActivity(MainActivity.openTaskIntent(this, taskId)) },
                     onCollapse = null,
                     onSeen = vm::markOpened,
+                    canLoadEarlier = com.verdroid.app.domain.model.ChatWindow.hasMore(messages.size, window),
+                    onLoadEarlier = vm::loadEarlier,
                 )
             }
         }

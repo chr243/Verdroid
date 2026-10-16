@@ -10,6 +10,15 @@ data class ApkAsset(val name: String, val url: String, val size: Long)
 /** Pure update logic (unit-tested): version comparison, asset choice, release parsing, auto-check throttle. */
 object UpdateLogic {
     const val LATEST_URL = "https://api.github.com/repos/chr243/Verdroid/releases/latest"
+    /** Public release page the chats-screen hint opens. */
+    const val RELEASES_PAGE = "https://github.com/chr243/Verdroid/releases/latest"
+
+    /**
+     * "New version on GitHub" pill next to the title (v1.0.56): only with update checks ON (the user's setting; default
+     * unchanged), a cached newer public release, and a network. No extra requests: it reads the cached check result.
+     */
+    fun showHint(checksEnabled: Boolean, latestCached: String?, current: String, online: Boolean): Boolean =
+        checksEnabled && online && latestCached != null && isNewer(latestCached, current)
     const val AUTO_CHECK_EVERY_MS = 6 * 60 * 60 * 1000L
 
     private data class V(val nums: List<Int>, val pre: String?)

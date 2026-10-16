@@ -73,6 +73,13 @@ interface MessageDao {
     @Query("SELECT * FROM messages WHERE taskId = :taskId ORDER BY id ASC")
     fun observe(taskId: Long): Flow<List<MessageEntity>>
 
+    /** UI window: newest [limit] rows, tool outputs cut to [cap] chars + [marker] (see ChatWindow). */
+    @Query("""SELECT id, taskId, role,
+        CASE WHEN role = 'tool' AND length(content) > :cap THEN substr(content, 1, :cap) || :marker ELSE content END AS content,
+        kind, toolCallsJson, toolCallId, toolName, model, summarized, resumeAt, createdAt, reasoning
+        FROM (SELECT * FROM messages WHERE taskId = :taskId ORDER BY id DESC LIMIT :limit) ORDER BY id ASC""")
+    fun observeWindow(taskId: Long, limit: Int, cap: Int, marker: String): Flow<List<MessageEntity>>
+
     @Query("SELECT * FROM messages WHERE taskId = :taskId ORDER BY id ASC")
     suspend fun getAll(taskId: Long): List<MessageEntity>
 
@@ -87,6 +94,16 @@ interface MessageDao {
 interface ToolCallDao {
     @Query("SELECT * FROM tool_calls WHERE taskId = :taskId ORDER BY id ASC")
     fun observe(taskId: Long): Flow<List<ToolCallEntity>>
+
+    /** UI window: tool calls of the newest [limit] messages; arguments/results cut to [cap] (charts kept whole). */
+    @Query("""SELECT id, taskId, messageId, callId, name,
+        CASE WHEN name != :chart AND length(argumentsJson) > :cap THEN substr(argumentsJson, 1, :cap) || :marker ELSE argumentsJson END AS argumentsJson,
+        CASE WHEN name != :chart AND length(resultJson) > :cap THEN substr(resultJson, 1, :cap) || :marker ELSE resultJson END AS resultJson,
+        status, source, startedAt, finishedAt
+        FROM tool_calls WHERE taskId = :taskId AND messageId >=
+            (SELECT IFNULL(MIN(id), 0) FROM (SELECT id FROM messages WHERE taskId = :taskId ORDER BY id DESC LIMIT :limit))
+        ORDER BY id ASC""")
+    fun observeWindow(taskId: Long, limit: Int, cap: Int, marker: String, chart: String): Flow<List<ToolCallEntity>>
 
     @Insert
     suspend fun insert(entity: ToolCallEntity): Long

@@ -37,6 +37,10 @@ class TaskRepositoryImpl @Inject constructor(
     override fun observeTask(taskId: Long) = taskDao.observe(taskId).map { it?.toDomain() }
     override fun observeMessages(taskId: Long) = messageDao.observe(taskId).map { l -> l.map { it.toDomain() } }
     override fun observeToolCalls(taskId: Long) = toolCallDao.observe(taskId).map { l -> l.map { it.toDomain() } }
+    override fun observeMessageWindow(taskId: Long, limit: Int) =
+        messageDao.observeWindow(taskId, limit, ChatWindow.CAP, ChatWindow.MARKER).map { l -> l.map { it.toDomain() } }
+    override fun observeToolCallWindow(taskId: Long, limit: Int) =
+        toolCallDao.observeWindow(taskId, limit, ChatWindow.CAP, ChatWindow.MARKER, ChatWindow.CHART).map { l -> l.map { it.toDomain() } }
     override suspend fun getTask(taskId: Long) = taskDao.get(taskId)?.toDomain()
     override suspend fun getMessages(taskId: Long) = messageDao.getAll(taskId).map { it.toDomain() }
 

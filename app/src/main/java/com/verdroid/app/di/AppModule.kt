@@ -141,6 +141,7 @@ object AppModule {
         fileConsent: com.verdroid.app.data.consent.FileChangeConsent,
         cookieVault: com.verdroid.app.data.cookies.CookieVault,
         xPostConsent: com.verdroid.app.data.consent.XPostConsent,
+        xPostGuard: com.verdroid.app.data.consent.XPostGuard,
     ): ToolRegistry = ToolRegistry(
         listOf(
             ReadFileTool(sandbox), WriteFileTool(sandbox), ListDirTool(sandbox),
@@ -160,7 +161,7 @@ object AppModule {
                 CookieImportTool(sharedFolder, cookieVault), CookieListTool(cookieVault), CookieClearTool(cookieVault),
                 CookieOpenTool(termux, sharedFolder, cookieVault),
                 XTimelineTool(termux, sharedFolder, cookieVault), XUserPostsTool(termux, sharedFolder, cookieVault),
-                XSearchTool(termux, sharedFolder, cookieVault), XPostTool(termux, sharedFolder, cookieVault, xPostConsent),
+                XSearchTool(termux, sharedFolder, cookieVault), XPostTool(termux, sharedFolder, cookieVault, xPostGuard, confirmer = xPostConsent),
                 CookieLoginTool({ url ->
                     val d = kotlinx.coroutines.CompletableDeferred<com.verdroid.app.ui.cookies.CookieLoginResult>()
                     com.verdroid.app.ui.cookies.CookieLoginBridge.pending?.cancel()

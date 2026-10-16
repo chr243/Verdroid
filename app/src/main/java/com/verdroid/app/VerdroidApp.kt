@@ -20,6 +20,7 @@ class VerdroidApp : Application(), Configuration.Provider {
     @Inject lateinit var keepAlive: KeepAliveController
     @Inject lateinit var agent: com.verdroid.app.domain.repository.AgentController
     @Inject lateinit var sharedFolder: com.verdroid.app.data.storage.SharedFolder
+    @Inject lateinit var installPrompt: com.verdroid.app.data.consent.InstallPrompt
     @Inject lateinit var providerMigration: com.verdroid.app.data.network.ProviderModelMigration
 
     override val workManagerConfiguration: Configuration
@@ -41,6 +42,9 @@ class VerdroidApp : Application(), Configuration.Provider {
             dirs = { com.verdroid.app.data.crash.CrashLog.dirs(sharedFolder.internal.takeIf { runCatching { sharedFolder.hasAccess() }.getOrDefault(false) }, filesDir) },
             version = "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
             device = "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}, Android ${android.os.Build.VERSION.RELEASE} (SDK ${android.os.Build.VERSION.SDK_INT})")
+        com.verdroid.app.data.crash.CrashBreadcrumbs.runningTasks = { agent.runningTaskIds.value }
+        // v1.0.56: package installs ask with a blocking dialog (falls back to ask-in-chat when nobody answers).
+        com.verdroid.app.agent.tools.InstallConsent.confirmer = installPrompt
         // Phase 3: re-queue interrupted tasks and make sure paused ones keep their WorkManager resume job.
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch { scheduler.recover() }
         QuotaPollWorker.schedule(this)

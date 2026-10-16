@@ -8,17 +8,31 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * Crash log: an UncaughtExceptionHandler writes the stack trace + version + time to
+ * Crash log: an UncaughtExceptionHandler writes the stack trace + version + time + context ([CrashBreadcrumbs]: memory,
+ * open chat with loaded counts, running tasks, last agent actions) to
  * Documents/Verdroid/Internal/crash/crash_YYYYMMDD_HHMMSS.txt (app-private files/crash/ without storage access), then
  * chains to the previous handler (so Android still shows/handles the crash). Settings → App → Crash log shows the latest.
  */
 object CrashLog {
     fun fileName(now: Date): String = "crash_" + SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(now) + ".txt"
 
-    fun format(t: Throwable, version: String, thread: String, now: Date, device: String): String {
+    fun format(t: Throwable, version: String, thread: String, now: Date, device: String, context: String? = null): String {
         val sw = StringWriter(); t.printStackTrace(PrintWriter(sw))
         return "Verdroid $version crash\nTime: ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss Z", Locale.US).format(now)}\n" +
-            "Thread: $thread\nDevice: $device\n\n$sw"
+            "Thread: $thread\nDevice: $device\n" + (context?.let { "\n$it" } ?: "") + "\n$sw"
+    }
+
+    /** Runtime + (Android) native heap / Debug.MemoryInfo; each part best-effort. */
+    fun memory(full: Boolean): String = buildString {
+        append(CrashBreadcrumbs.runtimeMemory())
+        runCatching { append("  Native heap: allocated ${android.os.Debug.getNativeHeapAllocatedSize() / (1024 * 1024)} MB\n") }
+        if (full) runCatching {
+            val mi = android.os.Debug.MemoryInfo(); android.os.Debug.getMemoryInfo(mi)
+            append("  PSS total ${mi.totalPss / 1024} MB (dalvik ${mi.dalvikPss / 1024}, native ${mi.nativePss / 1024}, other ${mi.otherPss / 1024})\n")
+            listOf("summary.java-heap", "summary.native-heap", "summary.graphics", "summary.code").forEach { k ->
+                mi.getMemoryStat(k)?.let { v -> append("  $k: ${(v.toLongOrNull() ?: 0) / 1024} MB\n") }
+            }
+        }
     }
 
     /** Newest crash file across [dirs] (by name, which sorts by time; then mtime). */
@@ -45,7 +59,12 @@ object CrashLog {
     fun install(dirs: () -> List<File>, version: String, device: String) {
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, e ->
-            runCatching { val now = Date(); write(dirs(), fileName(now), format(e, version, thread.name, now, device)) }
+            CrashBreadcrumbs.releaseReserve() // frees ~256 KB so the report can be built after an OOM
+            runCatching {
+                val now = Date()
+                val ctx = runCatching { CrashBreadcrumbs.section(memory(full = true)) }.getOrNull()
+                write(dirs(), fileName(now), format(e, version, thread.name, now, device, ctx))
+            }.onFailure { runCatching { val now = Date(); write(dirs(), fileName(now), format(e, version, thread.name, now, device)) } }
             if (previous != null) previous.uncaughtException(thread, e) else { android.os.Process.killProcess(android.os.Process.myPid()); kotlin.system.exitProcess(10) }
         }
     }

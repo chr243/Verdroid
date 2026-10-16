@@ -55,9 +55,8 @@ class AgentScheduler @Inject constructor(
             schedule(t.id, now, replace = true)
         }
         tasks.tasksWithStatus(listOf(TaskStatus.RATE_LIMITED, TaskStatus.PAUSED)).forEach { t ->
-            val reason = PauseReason.of(t.pauseReason)
             val at = t.resumeAt
-            if (reason?.autoResume == true && at != null) schedule(t.id, at, replace = false)
+            if (PauseReason.autoResumes(t.pauseReason) && at != null) schedule(t.id, at, replace = false)
         }
         return midRun.size
     }

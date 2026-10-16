@@ -87,7 +87,7 @@ class EbookTranslateTool(
             ?.let { runCatching { Json.parseToJsonElement(it.removePrefix(EbookTranslatePy.MARKER)).jsonObject }.getOrNull() }
             ?.let { InstallConsent.missingFrom(it) }
         if (missing != null) {
-            when (InstallConsent.decide(args, name, missing)) {
+            when (InstallConsent.resolve(args, name, missing, name, INSTALL_REASON)) {
                 InstallConsent.Decision.Allow -> { val again = run(allowInstall = true); r = again.first; wait = again.second }
                 InstallConsent.Decision.Deny -> return InstallConsent.denied(name, missing).toString()
                 InstallConsent.Decision.Ask -> return InstallConsent.pending(name, name, missing, INSTALL_REASON + (if (confirmed) "" else

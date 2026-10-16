@@ -106,6 +106,7 @@ class MainActivity : ComponentActivity() {
                 VerdroidRoot(openTaskId = openTaskId.value, onOpenTaskConsumed = { openTaskId.value = null })
                 com.verdroid.app.ui.consent.FileChangeDialog()
                 com.verdroid.app.ui.consent.XPostDialog()
+                com.verdroid.app.ui.consent.InstallDialog()
             }
         }
     }

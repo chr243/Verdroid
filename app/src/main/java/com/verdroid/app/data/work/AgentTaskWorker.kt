@@ -33,7 +33,7 @@ class AgentTaskWorker @AssistedInject constructor(
         val task = tasks.getTask(taskId) ?: return Result.success()
         val resumable = when (task.status) {
             TaskStatus.QUEUED, TaskStatus.RUNNING -> true
-            TaskStatus.RATE_LIMITED, TaskStatus.PAUSED -> PauseReason.of(task.pauseReason)?.autoResume ?: true
+            TaskStatus.RATE_LIMITED, TaskStatus.PAUSED -> PauseReason.autoResumes(task.pauseReason)
             else -> false
         }
         if (!resumable) return Result.success()

@@ -42,8 +42,8 @@ class TermuxRunTool(private val termux: TermuxRunner) : AgentTool {
         const val MAX_TIMEOUT_S = 600
 
         /** Consent gate for agent-written commands/scripts: null = run it; otherwise the pending/denied JSON. */
-        internal fun gate(tool: String, reason: String, packages: List<PackageSpec>, args: JsonObject): String? =
-            when (InstallConsent.decide(args, tool, packages)) {
+        internal suspend fun gate(tool: String, reason: String, packages: List<PackageSpec>, args: JsonObject): String? =
+            when (InstallConsent.resolve(args, tool, packages, tool, reason)) {
                 InstallConsent.Decision.Allow -> null
                 InstallConsent.Decision.Deny -> InstallConsent.denied(tool, packages).toString()
                 InstallConsent.Decision.Ask -> InstallConsent.pending(tool, tool, packages, reason, InstallConsent.retryNote(args)).toString()

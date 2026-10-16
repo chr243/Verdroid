@@ -54,10 +54,15 @@ class ChatViewModel @Inject constructor(
 
     val task: StateFlow<Task?> = taskId.flatMapLatest { if (it == 0L) flowOf(null) else tasks.observeTask(it) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
-    val messages: StateFlow<List<ChatMessage>> = taskId.flatMapLatest { if (it == 0L) flowOf(emptyList()) else tasks.observeMessages(it) }
+    /** How many newest messages the UI holds (v1.0.56: windowed; scrolling to the top loads [ChatWindow.PAGE] more). */
+    val window = MutableStateFlow(com.verdroid.app.domain.model.ChatWindow.PAGE)
+    private val idAndWindow = combine(taskId, window) { id, w -> id to w }
+    val messages: StateFlow<List<ChatMessage>> = idAndWindow.flatMapLatest { (id, w) -> if (id == 0L) flowOf(emptyList()) else tasks.observeMessageWindow(id, w) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-    val toolCalls: StateFlow<List<ToolCallRecord>> = taskId.flatMapLatest { if (it == 0L) flowOf(emptyList()) else tasks.observeToolCalls(it) }
+    val toolCalls: StateFlow<List<ToolCallRecord>> = idAndWindow.flatMapLatest { (id, w) -> if (id == 0L) flowOf(emptyList()) else tasks.observeToolCallWindow(id, w) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun loadEarlier() { if (com.verdroid.app.domain.model.ChatWindow.hasMore(messages.value.size, window.value)) window.value += com.verdroid.app.domain.model.ChatWindow.PAGE }
     val isGenerating: StateFlow<Boolean> = combine(taskId, agent.runningTaskIds) { id, running -> id in running }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
 

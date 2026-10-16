@@ -71,7 +71,7 @@ class AgentLoop internal constructor(
         presets: com.verdroid.app.data.tools.ChatToolPresets,
     ) : this(
         tasks, settings, registry, notifications,
-        model = { m, t, id, st -> client.complete(m, t, id, st) },
+        model = { m, t, id, st -> com.verdroid.app.data.crash.CrashBreadcrumbs.add("chat #$id model $m"); client.complete(m, t, id, st) },
         summarize = { id, sp, st -> context.maybeSummarize(id, sp, st) },
         notifyOnFinish = { prefs.notifyOnFinish.value },
         systemNotify = { id, title, body -> alerts.notify(FINISH_NOTIFICATION_BASE + (id % 10_000).toInt(), title, body, id) },
@@ -301,6 +301,7 @@ class AgentLoop internal constructor(
 
     private suspend fun executeTool(taskId: Long, msgId: Long, call: ParsedToolCall, source: String): com.verdroid.app.agent.tools.ToolResult {
         tasks.updateSubtitle(taskId, "Running ${call.name}…")
+        com.verdroid.app.data.crash.CrashBreadcrumbs.add("chat #$taskId tool ${call.name} (${call.argumentsJson.length} chars args)")
         val recId = tasks.addToolCall(ToolCallRecord(0, taskId, msgId, call.id, call.name, call.argumentsJson, null,
             ToolCallStatus.PENDING, source, System.currentTimeMillis(), null))
         // Any Throwable from a tool becomes an error tool result; the loop always continues (only cancellation propagates).

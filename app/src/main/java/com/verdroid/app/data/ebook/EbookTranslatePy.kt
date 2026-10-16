@@ -409,10 +409,68 @@ def load_state(path):
 
 
 def save_state(path, state):
+    # Counters only (v1.0.56): the translated text lives in the append-only parts file, so this stays tiny.
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = Path(str(path) + ".tmp")
-    tmp.write_text(json.dumps(state, ensure_ascii=False), encoding="utf-8")
+    tmp.write_text(json.dumps({k: v for k, v in state.items() if k != "parts"}, ensure_ascii=False), encoding="utf-8")
     os.replace(tmp, path)
+
+
+def parts_path(state_path):
+    return Path(str(state_path) + ".parts")
+
+
+def append_part(pp, ci, text):
+    # One JSON line per translated chunk; flushed + fsynced so a kill loses at most the line being written.
+    pp.parent.mkdir(parents=True, exist_ok=True)
+    with open(pp, "a", encoding="utf-8") as f:
+        f.write(json.dumps([ci, text], ensure_ascii=False) + "\n")
+        f.flush()
+        try:
+            os.fsync(f.fileno())
+        except Exception:
+            pass
+
+
+def load_parts(pp):
+    # Valid [chapter, text] lines in order; stops at the first broken line (a truncated tail from a kill).
+    res = []
+    if not pp.is_file():
+        return res
+    with open(pp, encoding="utf-8") as f:
+        for line in f:
+            if not line.endswith("\n"):
+                break
+            try:
+                ci, t = json.loads(line)
+                res.append([int(ci), t])
+            except Exception:
+                break
+    return res
+
+
+def write_parts(pp, parts):
+    tmp = Path(str(pp) + ".tmp")
+    with open(tmp, "w", encoding="utf-8") as f:
+        for ci, t in parts:
+            f.write(json.dumps([ci, t], ensure_ascii=False) + "\n")
+    os.replace(tmp, pp)
+
+
+def resume_parts(state, pp):
+    # Old sidecars (<= v1.0.55) carried "parts" in the JSON: move them to the parts file once.
+    # The parts file is the source of truth; done = its valid lines (a crash after the append but before the
+    # state save keeps that chunk; a broken tail line is dropped and rewritten).
+    old = state.pop("parts", None)
+    if isinstance(old, list) and old and not pp.is_file():
+        write_parts(pp, old)
+    parts = load_parts(pp)
+    n = min(len(parts), int(state.get("total", len(parts))))
+    parts = parts[:n]
+    if pp.is_file():
+        write_parts(pp, parts)
+    state["done"] = n
+    return parts
 
 
 def write_output(path, text, fmt):
@@ -462,10 +520,20 @@ def main(argv=None):
     if not chunks:
         return out({"ok": False, "error": "No text extracted from %s (%s)" % (inp.name, fmt)})
     state = load_state(state_path) if resume else None
+    pp = parts_path(state_path)
     if not state or state.get("input") != str(inp) or state.get("dest") != a.dest or state.get("total") != len(chunks) \
             or state.get("chunk") != CHUNK:
         state = {"input": str(inp), "src": a.src, "dest": a.dest, "format": fmt, "chunk": CHUNK,
-                 "total": len(chunks), "chapters": len(chapters), "done": 0, "parts": [], "engines": {}}
+                 "total": len(chunks), "chapters": len(chapters), "done": 0, "engines": {}}
+        if not a.estimate:
+            try:
+                pp.unlink()
+            except Exception:
+                pass
+        parts_done = []
+    else:
+        parts_done = resume_parts(state, pp) if not a.estimate else (load_parts(pp) or state.get("parts") or [])
+        state["done"] = len(parts_done) if a.estimate else state["done"]
     start = int(state.get("done", 0))
     start_chapter = chunks[start][0] if start < len(chunks) else len(chapters)
     lo, mid, hi, pauses = estimate(len(chunks) - start, len(chapters), start_chapter)
@@ -486,11 +554,24 @@ def main(argv=None):
             translated, used = eng.translate(text, a.src, a.dest)
             ok, lang = verify_lang(translated, a.dest)
             if not ok:
+                # A language-check mismatch is often a false alarm (names, short quotes): retry, but never let the
+                # retry abort a healthy run. Fallback failed -> Google once more -> keep the first translation.
+                first = (translated, used)
                 time.sleep(random.uniform(*DELAY))
-                translated, used = eng.translate(text, a.src, a.dest, prefer_fallback=(used == "google"))
+                try:
+                    translated, used = eng.translate(text, a.src, a.dest, prefer_fallback=(used == "google"))
+                except Exception as e2:
+                    print("LANG_RETRY_FAILED %s; retrying Google once" % type(e2).__name__, flush=True)
+                    try:
+                        translated, used = eng._google(text, a.src, a.dest), "google"
+                    except Exception:
+                        translated, used = first
                 ok, lang = verify_lang(translated, a.dest)
+                if not ok:
+                    lang = "unverified:" + str(lang)
             engines[used] = engines.get(used, 0) + 1
-            state["parts"].append([ci, translated])
+            append_part(pp, ci, translated)
+            parts_done.append([ci, translated])
             state["done"] = i + 1
             state["engines"] = engines
             state["last_lang"] = lang
@@ -508,7 +589,7 @@ def main(argv=None):
         eng.close()
         # Chunks of one chapter join with a blank line; chapters with a wider gap.
         by_ch = {}
-        for ci, t in state["parts"]:
+        for ci, t in load_parts(pp):
             by_ch.setdefault(ci, []).append(t)
         final = "\n\n\n".join("\n\n".join(by_ch[k]) for k in sorted(by_ch))
         dst = final_path(out_path)
@@ -517,10 +598,11 @@ def main(argv=None):
         except Exception:
             dst = dst.with_suffix(".txt")   # plain-text fallback when python-docx is missing/broken
             write_output(dst, final, "txt")
-        try:
-            state_path.unlink()
-        except Exception:
-            pass
+        for f in (state_path, pp):
+            try:
+                f.unlink()
+            except Exception:
+                pass
         return out({"ok": True, "input": str(inp), "output": str(dst), "format": fmt, "chapters": len(chapters),
                     "fallback": FALLBACK_USED[0] if FALLBACK_USED else None, "chunks": len(chunks), "src": a.src, "dest": a.dest, "engines": engines,
                     "chars_out": len(final)})

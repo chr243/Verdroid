@@ -127,6 +127,7 @@ fun ToolsScreen(onBack: () -> Unit, vm: ToolsViewModel = hiltViewModel()) {
                     Column {
                         Text("Twitter", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = 16.dp, top = 20.dp, end = 16.dp))
                         com.verdroid.app.ui.consent.XPostSetting()
+                        com.verdroid.app.ui.consent.XPostLimitsSetting()
                     }
                 }
             item {

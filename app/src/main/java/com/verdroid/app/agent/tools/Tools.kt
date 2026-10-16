@@ -46,13 +46,28 @@ class ReadFileTool(private val sandbox: WorkspaceSandbox) : AgentTool {
         if (!f.exists()) return errorJson("File not found: ${sandbox.relativePath(f)}")
         if (f.isDirectory) return errorJson("Is a directory: ${sandbox.relativePath(f)}")
         val max = (args.int("max_bytes") ?: 65_536).coerceIn(1, 1_000_000)
-        val bytes = f.readBytes()
+        val size = f.length()
+        val head = readHead(f, max)
         return buildJsonObject {
             put("path", sandbox.relativePath(f))
-            put("size", bytes.size)
-            put("truncated", bytes.size > max)
-            put("content", String(bytes, 0, minOf(bytes.size, max), Charsets.UTF_8))
+            put("size", size)
+            put("truncated", size > head.size)
+            put("content", String(head, Charsets.UTF_8))
         }.toString()
+    }
+
+    companion object {
+        /** At most [max] bytes from the start of [f], streamed (never loads a whole big file: OOM on large logs). */
+        fun readHead(f: java.io.File, max: Int): ByteArray = f.inputStream().use { input ->
+            val out = java.io.ByteArrayOutputStream(minOf(max.toLong(), f.length().coerceAtLeast(1L)).toInt())
+            val chunk = ByteArray(8192)
+            while (out.size() < max) {
+                val r = input.read(chunk, 0, minOf(chunk.size, max - out.size()))
+                if (r < 0) break
+                out.write(chunk, 0, r)
+            }
+            out.toByteArray()
+        }
     }
 }
 
