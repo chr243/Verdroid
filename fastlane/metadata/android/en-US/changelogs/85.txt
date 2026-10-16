@@ -1,0 +1,5 @@
+- Crash log records memory/app state on out-of-memory; chat history loads in windows of 120
+- read_file is bounded; install consent is a blocking dialog
+- Ebook translation: safer resume progress, language-check retry never aborts
+- x_post: cap of 5/hour and 20/day, audit log in Internal/x_post_log.txt
+- Update pill next to "Verdroid" opens GitHub; links in chat are clickable
