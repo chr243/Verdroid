@@ -1,0 +1,2 @@
+- Scheduled tasks now run in the chat where you asked for them (say "in a new chat" for a separate one; a new chat is used if the original was deleted)
+- Scheduled runs never interrupt your own work in that chat
