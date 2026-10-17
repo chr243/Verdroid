@@ -207,7 +207,7 @@ class ScheduleManager @Inject constructor(
             record(id, now, "skipped: the previous run is paused (${t.subtitle.take(60)})"); return
         }
         tasks.addMessage(ChatMessage(0, chat, MessageRole.USER, ScheduledPrompt.build(e.name, e.message, e.onlyIfChanged,
-            ScheduleMath.formatLocal(now, zone)), MessageKind.NORMAL, null, null, null, null, false, null, now))
+            ScheduleMath.formatLocal(now, zone)), MessageKind.SCHEDULED_PROMPT, null, null, null, null, false, null, now))
         agent.start(chat)
         val finished = withTimeoutOrNull(MAX_WAIT_MS) { agent.runningTaskIds.first { chat !in it } } != null
         val after = tasks.getTask(chat)

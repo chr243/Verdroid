@@ -118,7 +118,8 @@ class BubbleNotifier @Inject constructor(
         val task = tasks.getTask(taskId) ?: return false
         val unread = tasks.observeConversations().first().firstOrNull { it.task.id == taskId }?.unreadCount ?: 0
         val recent = tasks.getMessages(taskId)
-            .filter { it.kind == MessageKind.NORMAL && (it.role == MessageRole.USER || it.role == MessageRole.ASSISTANT) && !it.content.isNullOrBlank() }
+            .filter { it.kind == MessageKind.NORMAL && (it.role == MessageRole.USER || it.role == MessageRole.ASSISTANT) && !it.content.isNullOrBlank() &&
+                !com.verdroid.app.domain.schedule.ScheduledLabel.isScheduledPrompt(it) }
             .takeLast(6)
 
         val icon = IconCompat.createWithResource(context, R.mipmap.ic_launcher)

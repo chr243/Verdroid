@@ -76,3 +76,20 @@ object ScheduleSafety {
 class HeadlessRun(val taskId: Long, val scheduleName: String = "") : AbstractCoroutineContextElement(Key) {
     companion object Key : CoroutineContext.Key<HeadlessRun>
 }
+
+/** The small divider shown instead of a scheduled run's prompt (pure, unit-tested). */
+object ScheduledLabel {
+    /** True for the scheduler's prompt: the dedicated kind, or an older run's USER message that starts with the marker. */
+    fun isScheduledPrompt(m: com.verdroid.app.domain.model.ChatMessage): Boolean =
+        m.kind == com.verdroid.app.domain.model.MessageKind.SCHEDULED_PROMPT ||
+            (m.role == com.verdroid.app.domain.model.MessageRole.USER && m.kind == com.verdroid.app.domain.model.MessageKind.NORMAL &&
+                ScheduleSafety.isScheduledMessage(m.content))
+
+    /** "⏰ Scheduled: CNN summary · 10:00" (local time of the run), or null when [m] isn't a scheduled prompt. No prompt text. */
+    fun of(m: com.verdroid.app.domain.model.ChatMessage, zone: java.time.ZoneId = java.time.ZoneId.systemDefault()): String? {
+        if (!isScheduledPrompt(m)) return null
+        val name = ScheduleSafety.scheduleName(m.content).orEmpty().ifBlank { "task" }.take(60)
+        val t = java.time.Instant.ofEpochMilli(m.createdAt).atZone(zone)
+        return "⏰ Scheduled: $name · %02d:%02d".format(t.hour, t.minute)
+    }
+}

@@ -85,6 +85,12 @@ enum class MessageKind {
     STATUS,
     /** Rolling summary of older turns (sent to the model as a system message). */
     SUMMARY,
+    /**
+     * v1.0.58: the scheduler's prompt for an unattended run (role USER). Sent to the model like a user turn (it carries the
+     * unattended marker), but the chat shows only a small "⏰ Scheduled: <name> · HH:MM" divider, never a user bubble.
+     * Stored by name like the others (TEXT column), so no schema migration; older builds read it as NORMAL.
+     */
+    SCHEDULED_PROMPT,
 }
 
 data class ChatMessage(

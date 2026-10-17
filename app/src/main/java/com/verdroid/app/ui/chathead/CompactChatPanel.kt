@@ -140,6 +140,7 @@ fun CompactChatPanel(
                     when {
                         m.kind == MessageKind.STATUS -> StatusLine(m)
                         m.kind == MessageKind.SUMMARY -> SummaryCard(m)
+                        com.verdroid.app.domain.schedule.ScheduledLabel.isScheduledPrompt(m) -> com.verdroid.app.ui.chat.ScheduledDivider(m)
                         m.role == MessageRole.USER -> UserBubble(m.content.orEmpty())
                         m.role == MessageRole.ASSISTANT -> AssistantRowContent(row) { t, model -> AgentBubble(t, model) }
                     }

@@ -251,6 +251,16 @@ class AgentLoopTest {
         assertEquals(1, h.systemNotified)
     }
 
+    @Test fun `scheduled prompts reach the model as user turns`() = runTest {
+        val tasks = FakeTasks()
+        val prompt = com.verdroid.app.data.schedule.ScheduledPrompt.build("CNN", "Summarise cnn.com", false, "Sat 10:00")
+        tasks.addMessage(ChatMessage(0, 1, MessageRole.USER, prompt, MessageKind.SCHEDULED_PROMPT, null, null, null, null, false, null, 0))
+        val loop = AgentLoop(tasks, FakeSettings(5), ToolRegistry(emptyList()), FakeNotifications(),
+            model = { _: List<ApiMessage>, _: JsonArray?, _: Long, _: suspend (String) -> Unit -> reply("ok") },
+            summarize = { _, _, _ -> }, notifyOnFinish = { false }, systemNotify = { _, _, _ -> })
+        assertEquals(listOf(prompt), loop.buildApiMessages(1).filter { it.role == "user" }.map { it.content })
+    }
+
     @Test fun `attached images go to the model as image parts (latest two only)`() = runTest {
         val tasks = FakeTasks()
         fun user(text: String) = ChatMessage(0, 1, MessageRole.USER, text, MessageKind.NORMAL, null, null, null, null, false, null, 0)

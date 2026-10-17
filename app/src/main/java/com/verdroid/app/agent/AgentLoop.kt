@@ -341,7 +341,8 @@ class AgentLoop internal constructor(
         live.filter { it.kind == MessageKind.SUMMARY }.forEach {
             out += ApiMessage("system", "Summary of the earlier conversation:\n${it.content}")
         }
-        val normal = live.filter { it.kind == MessageKind.NORMAL }
+        // Scheduled prompts are user turns for the model (hidden as bubbles in the chat UI).
+        val normal = live.filter { it.kind == MessageKind.NORMAL || it.kind == MessageKind.SCHEDULED_PROMPT }
         // Vision: attached images go out as image parts, only for the latest MAX_IMAGE_TURNS image messages (tokens).
         val imageIds = normal.filter { it.role == MessageRole.USER && AttachmentText.forDisplay(it.content.orEmpty()).isImage }
             .takeLast(MAX_IMAGE_TURNS).map { it.id }.toSet()

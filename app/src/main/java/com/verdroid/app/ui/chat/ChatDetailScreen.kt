@@ -262,6 +262,7 @@ fun ChatDetailScreen(onBack: () -> Unit, onChatMemory: (Long) -> Unit = {}, vm: 
                     when {
                         m.kind == MessageKind.STATUS -> StatusLine(m)
                         m.kind == MessageKind.SUMMARY -> SummaryCard(m)
+                        com.verdroid.app.domain.schedule.ScheduledLabel.isScheduledPrompt(m) -> com.verdroid.app.ui.chat.ScheduledDivider(m)
                         m.role == MessageRole.USER -> UserBubble(m.content.orEmpty())
                         m.role == MessageRole.ASSISTANT -> AssistantRowContent(row) { t, model -> AgentBubble(t, model) }
                     }
@@ -465,6 +466,14 @@ internal fun StatusLine(m: ChatMessage) {
     }
     Text(text, textAlign = TextAlign.Center, style = MaterialTheme.typography.labelMedium,
         color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp, horizontal = 24.dp))
+}
+
+/** Instead of a scheduled run's prompt bubble: a tiny centered, muted "⏰ Scheduled: <name> · 10:00". */
+@Composable
+internal fun ScheduledDivider(m: ChatMessage) {
+    val label = remember(m.id) { com.verdroid.app.domain.schedule.ScheduledLabel.of(m) } ?: return
+    Text(label, textAlign = TextAlign.Center, style = MaterialTheme.typography.labelSmall, maxLines = 1,
+        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f), modifier = Modifier.fillMaxWidth().padding(top = 10.dp, bottom = 2.dp, start = 24.dp, end = 24.dp))
 }
 
 @Composable

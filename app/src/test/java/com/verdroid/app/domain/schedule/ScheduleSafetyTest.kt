@@ -85,4 +85,21 @@ class ScheduleSafetyTest {
         }
         assertEquals(InstallConsent.Decision.Deny, d); assertFalse(asked)
     }
+
+    @Test fun `scheduled prompt shows as a small label, not a bubble`() {
+        val paris = java.time.ZoneId.of("Europe/Paris")
+        val at = java.time.ZonedDateTime.parse("2026-10-17T10:00+02:00[Europe/Paris]").toInstant().toEpochMilli()
+        fun msg(kind: com.verdroid.app.domain.model.MessageKind, text: String, role: com.verdroid.app.domain.model.MessageRole = com.verdroid.app.domain.model.MessageRole.USER) =
+            com.verdroid.app.domain.model.ChatMessage(1, 1, role, text, kind, null, null, null, null, false, null, at)
+        val p = ScheduledPrompt.build("CNN summary", "Summarise cnn.com with lots of detail", false, "Sat 10:00")
+        val m = msg(com.verdroid.app.domain.model.MessageKind.SCHEDULED_PROMPT, p)
+        assertEquals("⏰ Scheduled: CNN summary · 10:00", ScheduledLabel.of(m, paris))
+        assertFalse(ScheduledLabel.of(m, paris)!!.contains("cnn.com"))
+        // Older runs stored the prompt as a NORMAL user message: hidden too.
+        assertTrue(ScheduledLabel.isScheduledPrompt(msg(com.verdroid.app.domain.model.MessageKind.NORMAL, p)))
+        assertFalse(ScheduledLabel.isScheduledPrompt(msg(com.verdroid.app.domain.model.MessageKind.NORMAL, "hello")))
+        assertFalse(ScheduledLabel.isScheduledPrompt(msg(com.verdroid.app.domain.model.MessageKind.STATUS, p, com.verdroid.app.domain.model.MessageRole.SYSTEM)))
+        // Unknown kinds stored by a newer build fall back to NORMAL; the content check still hides it.
+        assertEquals(com.verdroid.app.domain.model.MessageKind.SCHEDULED_PROMPT, com.verdroid.app.domain.model.MessageKind.valueOf("SCHEDULED_PROMPT"))
+    }
 }
