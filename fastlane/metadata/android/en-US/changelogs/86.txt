@@ -1,0 +1,3 @@
+- Verdroid can be your digital assistant: pick it under Settings > Apps > Default apps > Digital assistant app
+- Long-press Home/power or the assistant gesture opens a small Ask Verdroid card over the current app
+- The reply shows as a chat head (needs Display over other apps, otherwise it opens in Verdroid)
