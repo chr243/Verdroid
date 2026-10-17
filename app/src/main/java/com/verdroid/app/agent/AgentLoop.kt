@@ -115,6 +115,17 @@ class AgentLoop internal constructor(
 
     private suspend fun runInner(task: Task): RunResult {
         val taskId = task.id
+        // v1.0.59: a chat with no user turn at all (e.g. a scheduled chat whose run was skipped, then restarted by
+        // Continue / restart recovery) must not call the model: with only the system prompt + memory it invented a task.
+        // The chat's own prompt (Task.prompt) is the one to answer then; with no prompt at all, stop without a model call.
+        if (!hasUserTurn(tasks.getMessages(taskId))) {
+            if (task.prompt.isBlank()) {
+                tasks.updateStatus(taskId, TaskStatus.IDLE, "Nothing to answer yet")
+                return RunResult.Completed
+            }
+            tasks.addMessage(ChatMessage(0, taskId, MessageRole.USER, task.prompt, MessageKind.NORMAL, null, null, null, null,
+                false, null, System.currentTimeMillis()))
+        }
         if (task.startedAt == null) tasks.markStarted(taskId)
         tasks.updateStatus(taskId, TaskStatus.RUNNING, "Thinking...")
         val maxSteps = settings.currentLimits().maxSteps
@@ -333,6 +344,8 @@ class AgentLoop internal constructor(
             false, resumeAt, System.currentTimeMillis()))
     }
 
+    private fun hasUserTurn(all: List<ChatMessage>): Boolean = Companion.hasUserTurn(all)
+
     /** System prompt + summaries + live turns, converted to the OpenAI-compatible wire format. */
     suspend fun buildApiMessages(taskId: Long): List<ApiMessage> {
         val live = ContextManager.live(tasks.getMessages(taskId))
@@ -375,6 +388,10 @@ class AgentLoop internal constructor(
     }
 
     companion object {
+        /** Something for the model to answer: a user message, a scheduled prompt, or an earlier conversation summary. */
+        fun hasUserTurn(all: List<ChatMessage>): Boolean = all.filter { !it.summarized && !it.content.isNullOrBlank() }.any {
+            (it.role == MessageRole.USER && (it.kind == MessageKind.NORMAL || it.kind == MessageKind.SCHEDULED_PROMPT)) || it.kind == MessageKind.SUMMARY
+        }
         private const val MAX_LENGTH_CONTINUATIONS = 3
         /** Only the latest image attachments are re-sent each step (vision tokens are expensive on free tiers). */
         const val MAX_IMAGE_TURNS = 2

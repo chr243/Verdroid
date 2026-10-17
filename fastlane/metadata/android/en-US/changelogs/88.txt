@@ -1,0 +1,4 @@
+Scheduling hotfix:
+- Scheduled tasks no longer stay "Queued" until you tap Continue: they start on their own when the alarm fires
+- A stuck or never-started earlier run no longer blocks later runs (it is replaced)
+- Scheduled runs could reach the AI without the task text, so it made up a task: fixed, the AI is never called without a prompt

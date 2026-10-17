@@ -477,6 +477,13 @@ class SelfTestRunner @Inject constructor(
             val sm = com.verdroid.app.domain.model.ChatMessage(0, 1, com.verdroid.app.domain.model.MessageRole.USER, prompt,
                 com.verdroid.app.domain.model.MessageKind.SCHEDULED_PROMPT, null, null, null, null, false, null, System.currentTimeMillis())
             check(com.verdroid.app.domain.schedule.ScheduledLabel.of(sm)?.startsWith("⏰ Scheduled: t · ") == true) { "scheduled prompt divider" }
+            run {
+                val G = com.verdroid.app.domain.schedule.ScheduleRunGate
+                val n = System.currentTimeMillis()
+                check(G.decide(false, com.verdroid.app.domain.model.TaskStatus.QUEUED, null, null, n) is com.verdroid.app.domain.schedule.ScheduleRunGate.Start) { "a queued, never-started chat must not block scheduled runs" }
+                check(G.decide(true, com.verdroid.app.domain.model.TaskStatus.RUNNING, null, null, n) is com.verdroid.app.domain.schedule.ScheduleRunGate.Skip) { "a running run must not be doubled" }
+                check(!com.verdroid.app.agent.AgentLoop.hasUserTurn(emptyList())) { "a chat without a user turn must not call the model" }
+            }
             check(com.verdroid.app.agent.context.ContextManager.live(listOf(sm)).size == 1) { "scheduled prompt must stay in the model context" }
             val pm = context.packageManager
             check(pm.queryBroadcastReceivers(Intent(context, com.verdroid.app.data.schedule.ScheduleAlarmReceiver::class.java), 0).isNotEmpty()) { "alarm receiver not registered" }

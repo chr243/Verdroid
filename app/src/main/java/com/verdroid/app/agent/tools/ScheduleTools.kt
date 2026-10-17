@@ -91,7 +91,9 @@ class ScheduleTaskTool(private val backend: ScheduleBackend) : AgentTool {
     override val description = "Schedule an unattended agent run of a prompt: once (at / in_minutes), every day at daily_at (local HH:MM), or every " +
         "every_minutes (minimum 15). Each run happens in its own chat \"Scheduled: <name>\" (or this chat with chat=\"this\") and posts a " +
         "notification with the summary. Set only_if_changed=true for \"only tell me if something is new\". Runs have no user present: " +
-        "tools that need confirmation (posting, deleting, installing, phone control) are blocked in them. Only create a schedule the user asked for."
+        "tools that need confirmation (posting, deleting, installing, phone control) are blocked in them. Only create a schedule the user asked for. " +
+        "Before re-creating a schedule that seems stuck, call schedule_list: a run that is queued, paused or stopped no longer blocks the next one " +
+        "(it is replaced), so don't create duplicates."
     override val parameters = schema(listOf("prompt"),
         "prompt" to prop("string", "What the run should do, self-contained, e.g. \"Check cnn.com and summarise the top stories\""),
         "name" to prop("string", "Short name, e.g. \"CNN summary\""),
@@ -116,7 +118,8 @@ class ScheduleTaskTool(private val backend: ScheduleBackend) : AgentTool {
 
 class ScheduleListTool(private val backend: ScheduleBackend) : AgentTool {
     override val name = "schedule_list"
-    override val description = "List reminders and scheduled tasks with id, schedule, next run (local time), last run and status."
+    override val description = "List reminders and scheduled tasks with id, schedule, next run (local time), last run and last_status " +
+        "(\"running…\", \"waiting for network\" = queued until online, \"ok\", \"no change\", \"skipped: …\" with the reason, \"paused: …\", \"failed: …\")."
     override val parameters = schema(emptyList())
     override suspend fun execute(args: JsonObject): String {
         val all = backend.list()

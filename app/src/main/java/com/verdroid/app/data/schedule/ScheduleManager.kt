@@ -24,6 +24,8 @@ import com.verdroid.app.domain.repository.TaskRepository
 import com.verdroid.app.domain.schedule.ScheduleKind
 import com.verdroid.app.domain.schedule.ScheduleMath
 import com.verdroid.app.domain.schedule.ScheduleSafety
+import com.verdroid.app.domain.schedule.ScheduleRunGate
+import kotlinx.coroutines.launch
 import com.verdroid.app.domain.schedule.ScheduleSpec
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.Flow
@@ -50,7 +52,7 @@ data class ScheduleHealth(val exactAlarms: Boolean, val batteryExempt: Boolean, 
 /**
  * Reminders and scheduled agent runs (Settings → Schedules, agent tools schedule_*). Each enabled schedule has one
  * AlarmManager alarm at its next run (exact when the user allows exact alarms, else an inexact Doze-allowed alarm);
- * reminders just post a notification, tasks enqueue [ScheduledRunWorker] (network required) which runs the agent
+ * reminders just post a notification, tasks start the agent at once (or via [ScheduledRunWorker] when offline), which runs
  * unattended in the schedule's own chat ("Scheduled: <name>"). Alarms are re-armed on boot, app update, time/zone change
  * and app start; a run missed while the phone was off fires once (no burst of catch-ups).
  */
@@ -179,33 +181,58 @@ class ScheduleManager @Inject constructor(
                 record(e.id, now, if (late) "ok (late)" else "ok")
             }
             else -> {
-                val req = OneTimeWorkRequestBuilder<ScheduledRunWorker>()
-                    .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
-                    .setInputData(workDataOf(ScheduledRunWorker.KEY_SCHEDULE_ID to e.id))
-                    .addTag(WORK_TAG).build()
-                // KEEP: a run still queued (no network yet) or running is not duplicated.
-                WorkManager.getInstance(context).enqueueUniqueWork(workName(e.id), ExistingWorkPolicy.KEEP, req)
+                // v1.0.59: start right away while the alarm's background allowance lasts (the keep-alive foreground
+                // service may only be started now); WorkManager is the fallback when offline (runs once connected).
+                if (online() && inFlight.add(e.id)) {
+                    record(e.id, now, "running…")
+                    appScope.launch { try { runTask(e.id, claimed = true) } finally { inFlight.remove(e.id) } }
+                } else if (e.id !in inFlight) {
+                    record(e.id, now, "waiting for network")
+                    val req = OneTimeWorkRequestBuilder<ScheduledRunWorker>()
+                        .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+                        .setInputData(workDataOf(ScheduledRunWorker.KEY_SCHEDULE_ID to e.id))
+                        .addTag(WORK_TAG).build()
+                    // REPLACE: a pending fallback from an earlier firing is superseded, never kept as a stale request.
+                    WorkManager.getInstance(context).enqueueUniqueWork(workName(e.id), ExistingWorkPolicy.REPLACE, req)
+                }
             }
         }
     }
+
+    /** Schedule ids whose run is executing in this process (direct start or worker), so a run never doubles. */
+    private val inFlight: MutableSet<Long> = java.util.concurrent.ConcurrentHashMap.newKeySet()
+    private val appScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
+
+    private fun online(): Boolean = runCatching {
+        val cm = context.getSystemService(android.net.ConnectivityManager::class.java)
+        cm.getNetworkCapabilities(cm.activeNetwork)?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
+    }.getOrDefault(true)
 
     private suspend fun record(id: Long, at: Long, status: String) {
         dao.get(id)?.let { dao.update(it.copy(lastRunAt = at, lastStatus = status.take(200))) }
     }
 
-    /** Body of [ScheduledRunWorker]: one unattended agent run; never retried (skip + log). */
-    suspend fun runTask(id: Long) {
+    /** Body of [ScheduledRunWorker] (and of a direct start from the alarm): one unattended agent run; never retried (skip + log). */
+    suspend fun runTask(id: Long, claimed: Boolean = false) {
+        if (!claimed) { if (!inFlight.add(id)) return; try { runTask(id, claimed = true) } finally { inFlight.remove(id) }; return }
         val e = dao.get(id) ?: return
         val now = System.currentTimeMillis()
         val chat: Long = e.chatTaskId?.takeIf { tasks.getTask(it) != null }
             ?: tasks.createTask("Scheduled: ${e.name}".take(80), e.message, TaskType.infer(e.message)).also { c ->
+                // A new chat starts out QUEUED ("Queued"): that is not a stuck run (v1.0.58 skipped on it forever).
+                tasks.updateStatus(c, TaskStatus.IDLE, "Scheduled")
                 dao.get(id)?.let { dao.update(it.copy(chatTaskId = c)) }
             }
-        if (chat in agent.runningTaskIds.value) { record(id, now, "skipped: the previous run is still going"); return }
         val t = tasks.getTask(chat)
-        if (t != null && (t.status == TaskStatus.RATE_LIMITED || t.status == TaskStatus.PAUSED || t.status == TaskStatus.QUEUED)) {
-            record(id, now, "skipped: the previous run is paused (${t.subtitle.take(60)})"); return
+        when (val d = ScheduleRunGate.decide(chat in agent.runningTaskIds.value, t?.status, t?.pauseReason, t?.resumeAt, now)) {
+            is ScheduleRunGate.Skip -> { record(id, now, d.reason); return }
+            is ScheduleRunGate.Start -> if (d.superseded) {
+                // agent.start below cancels the stuck run's pending retry job.
+                tasks.addMessage(ChatMessage(0, chat, MessageRole.SYSTEM, "⏭️ An earlier run here never finished (${t?.subtitle?.take(60) ?: "stuck"}); " +
+                    "this scheduled run replaces it.", MessageKind.STATUS, null, null, null, null, false, null, now))
+            }
         }
+        record(id, now, "running…")
         tasks.addMessage(ChatMessage(0, chat, MessageRole.USER, ScheduledPrompt.build(e.name, e.message, e.onlyIfChanged,
             ScheduleMath.formatLocal(now, zone)), MessageKind.SCHEDULED_PROMPT, null, null, null, null, false, null, now))
         agent.start(chat)
