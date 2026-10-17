@@ -43,4 +43,16 @@ val MIGRATION_5_6 = object : Migration(5, 6) {
     }
 }
 
-val ALL_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+/** v7 (v1.0.58): schedules (reminders + scheduled agent runs). */
+val MIGRATION_6_7 = object : Migration(6, 7) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("CREATE TABLE IF NOT EXISTS `schedules` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `kind` TEXT NOT NULL, " +
+            "`name` TEXT NOT NULL, `message` TEXT NOT NULL, `specType` TEXT NOT NULL, `specValue` INTEGER NOT NULL, " +
+            "`enabled` INTEGER NOT NULL, `onlyIfChanged` INTEGER NOT NULL DEFAULT 0, `chatTaskId` INTEGER, `sourceTaskId` INTEGER, " +
+            "`nextRunAt` INTEGER, `lastRunAt` INTEGER, `lastStatus` TEXT, `createdAt` INTEGER NOT NULL)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_schedules_enabled` ON `schedules` (`enabled`)")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_schedules_nextRunAt` ON `schedules` (`nextRunAt`)")
+    }
+}
+
+val ALL_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)

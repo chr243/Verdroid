@@ -28,7 +28,20 @@ class AlertNotifier @Inject constructor(@ApplicationContext private val context:
         }
     }
 
-    fun notify(id: Int, title: String, body: String, taskId: Long?) {
+    /** Reminders (Settings → Schedules): own high-importance channel so they pop up like an alarm clock note. */
+    fun notifyReminder(id: Int, title: String, body: String, taskId: Long?) {
+        val nm = context.getSystemService(NotificationManager::class.java)
+        if (nm != null && nm.getNotificationChannel(CHANNEL_REMINDERS) == null) {
+            nm.createNotificationChannel(NotificationChannel(CHANNEL_REMINDERS, "Reminders", NotificationManager.IMPORTANCE_HIGH).apply {
+                description = "Reminders you scheduled with Verdroid"
+            })
+        }
+        notify(id, title, body, taskId, CHANNEL_REMINDERS)
+    }
+
+    fun notify(id: Int, title: String, body: String, taskId: Long?) = notify(id, title, body, taskId, CHANNEL_ALERTS)
+
+    private fun notify(id: Int, title: String, body: String, taskId: Long?, channel: String) {
         if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
         ensureChannel()
         val intent = if (taskId != null && taskId != 0L) MainActivity.openTaskIntent(context, taskId)
@@ -36,7 +49,7 @@ class AlertNotifier @Inject constructor(@ApplicationContext private val context:
         val pi = intent?.let {
             PendingIntent.getActivity(context, id, it, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         }
-        val n = NotificationCompat.Builder(context, CHANNEL_ALERTS)
+        val n = NotificationCompat.Builder(context, channel)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
             .setContentText(body)
@@ -47,5 +60,5 @@ class AlertNotifier @Inject constructor(@ApplicationContext private val context:
         try { NotificationManagerCompat.from(context).notify(id, n) } catch (_: SecurityException) {}
     }
 
-    companion object { const val CHANNEL_ALERTS = "alerts" }
+    companion object { const val CHANNEL_ALERTS = "alerts"; const val CHANNEL_REMINDERS = "reminders" }
 }

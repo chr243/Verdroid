@@ -15,6 +15,7 @@ object ToolGroups {
         Group("system", "Shizuku & phone screen", "Shizuku shell, rish, screen control (accessibility)"),
         Group("git", "Git", "git_* (JGit)"),
         Group("crypto", "Crypto backtesting", "Backtesting: history download, backtests, scripts"),
+        Group("scheduling", "Scheduling", "Reminders and scheduled agent runs (schedule_*): once, daily or every N minutes; manage in Settings → Schedules"),
         Group("memory", "Memory & skills", "memory_*, skill_*"),
         Group("other", "Charts & other", "chart, self_test"),
         Group("mcp", "MCP servers", "Tools from your MCP servers (mcp__*)"),
@@ -30,6 +31,7 @@ object ToolGroups {
         name == "run_shell" || name == "rish_run" || name.startsWith("screen_") -> "system"
         name.startsWith("git_") -> "git"
         name.startsWith("crypto_") -> "crypto"
+        name.startsWith("schedule_") -> "scheduling"
         name.startsWith("memory_") || name.startsWith("skill_") -> "memory"
         else -> "other"
     }

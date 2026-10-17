@@ -64,6 +64,8 @@ object InstallConsent {
     suspend fun resolve(args: JsonObject, group: String, packages: List<PackageSpec>, tool: String, reason: String,
                         confirmer: InstallConfirmer? = this.confirmer): Decision {
         val d = decide(args, group, packages)
+        // Scheduled runs have nobody to ask: never install there.
+        if (packages.isNotEmpty() && kotlin.coroutines.coroutineContext[com.verdroid.app.domain.schedule.HeadlessRun] != null) return Decision.Deny
         if (d != Decision.Ask || confirmer == null) return d
         return when (runCatching { confirmer.confirm(tool, packages, reason, estimate(packages)) }.getOrNull()) {
             true -> Decision.Allow

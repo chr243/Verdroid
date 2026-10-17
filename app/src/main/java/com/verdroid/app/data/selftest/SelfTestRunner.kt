@@ -50,6 +50,7 @@ class SelfTestRunner @Inject constructor(
     private val customLlm: com.verdroid.app.data.network.CustomLlmClient,
     private val customStore: com.verdroid.app.data.network.CustomProviderStore,
     private val cookieVault: com.verdroid.app.data.cookies.CookieVault,
+    private val schedules: javax.inject.Provider<com.verdroid.app.data.schedule.ScheduleManager>,
 ) {
     private val http = OkHttpClient.Builder().connectTimeout(8, TimeUnit.SECONDS).readTimeout(10, TimeUnit.SECONDS).build()
     private fun tool(name: String): AgentTool = registry.tools.firstOrNull { it.name == name } ?: throw IllegalStateException("$name not registered")
@@ -451,6 +452,34 @@ class SelfTestRunner @Inject constructor(
             val rm = context.getSystemService(android.app.role.RoleManager::class.java)
             val held = runCatching { rm.isRoleHeld(android.app.role.RoleManager.ROLE_ASSISTANT) }.getOrDefault(false)
             "ASSIST + VOICE_COMMAND registered; default assistant: ${if (held) "Verdroid" else "not set"}; overlay ${if (android.provider.Settings.canDrawOverlays(context)) "→ chat head" else "missing → main app"}"
+        },
+        "scheduling" to {
+            val paris = java.time.ZoneId.of("Europe/Paris")
+            fun at(t: String) = java.time.ZonedDateTime.parse(t).toInstant().toEpochMilli()
+            val m = com.verdroid.app.domain.schedule.ScheduleMath
+            check(m.nextRun(com.verdroid.app.domain.schedule.ScheduleSpec.Daily(10, 0), at("2026-10-17T09:00+02:00[Europe/Paris]"), paris) == at("2026-10-17T10:00+02:00[Europe/Paris]")) { "daily: today 10:00" }
+            check(m.nextRun(com.verdroid.app.domain.schedule.ScheduleSpec.Daily(2, 30), at("2026-03-29T00:00+01:00[Europe/Paris]"), paris) == at("2026-03-29T03:30+02:00[Europe/Paris]")) { "DST gap" }
+            check(m.nextRun(com.verdroid.app.domain.schedule.ScheduleSpec.Interval(15), 1_000_000L, paris, last = 0L) == 1_800_000L) { "interval cadence" }
+            check(m.parseTimeOfDay("10am") == (10 to 0) && m.parseTimeOfDay("7:30 pm") == (19 to 30)) { "time parsing" }
+            val safety = com.verdroid.app.domain.schedule.ScheduleSafety
+            val prompt = com.verdroid.app.data.schedule.ScheduledPrompt.build("t", "check", true, "now")
+            check(safety.isScheduledMessage(prompt) && safety.blockReason("x_post", buildJsonObject {}) != null &&
+                safety.blockReason("web_fetch", buildJsonObject {}) == null) { "safety rules" }
+            // The real enforcement path: a headless chat can't call a blocked tool.
+            val probe = object : AgentTool { override val name = "x_post"; override val description = ""; override val parameters = buildJsonObject {}
+                override suspend fun execute(args: JsonObject) = "{\"ok\":true}" }
+            val r = ToolRegistry(listOf(probe), headless = { true }).execute("x_post", "{}", 1L)
+            check(r.isError && "BLOCKED_IN_SCHEDULED_RUN" in r.json) { "x_post must be blocked in scheduled runs" }
+            val pm = context.packageManager
+            check(pm.queryBroadcastReceivers(Intent(context, com.verdroid.app.data.schedule.ScheduleAlarmReceiver::class.java), 0).isNotEmpty()) { "alarm receiver not registered" }
+            val mgr = schedules.get()
+            val e = mgr.create(com.verdroid.app.domain.schedule.ScheduleKind.REMINDER, "self-test", "self-test probe",
+                com.verdroid.app.domain.schedule.ScheduleSpec.Once(System.currentTimeMillis() + 365L * 24 * 3600_000))
+            try { check(mgr.isArmed(e.id)) { "alarm not armed" } } finally { mgr.delete(e.id) }
+            check(!mgr.isArmed(e.id)) { "alarm not cancelled on delete" }
+            val h = mgr.health()
+            "next-run/DST/parsing ok, scheduled-run blocking ok, alarm arm/cancel ok; exact alarms ${if (h.exactAlarms) "allowed" else "NOT allowed (may be late)"}, " +
+                "battery optimisation ${if (h.batteryExempt) "off" else "ON (runs may be delayed)"}, notifications ${if (h.notifications) "on" else "OFF"}"
         },
         "notifications" to {
             val ok = ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED

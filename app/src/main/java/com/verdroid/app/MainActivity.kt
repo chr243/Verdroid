@@ -84,14 +84,16 @@ class MainActivity : ComponentActivity() {
 
     /** Task to open from a shortcut / bubble / chat-head "Open" action. */
     private val openTaskId = mutableStateOf<Long?>(null)
+    /** Screen to open from an in-app link (e.g. the schedule health dialog → Background & battery). */
+    private val openRoute = mutableStateOf<String?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Silent update check (at most every 6 h; the gear and Settings > App update show a dot when one exists).
         if (savedInstanceState == null) lifecycleScope.launch { if (updater.enabled.value) runCatching { updater.check(silent = true) } } // quiet offline; feeds the start-up panel
         enableEdgeToEdge()
-        if (savedInstanceState == null) openTaskId.value = taskIdFrom(intent)
-        addOnNewIntentListener { newIntent -> taskIdFrom(newIntent)?.let { openTaskId.value = it } }
+        if (savedInstanceState == null) { openTaskId.value = taskIdFrom(intent); openRoute.value = routeFrom(intent) }
+        addOnNewIntentListener { newIntent -> taskIdFrom(newIntent)?.let { openTaskId.value = it }; routeFrom(newIntent)?.let { openRoute.value = it } }
         // Poll GET /key on start and every 5 minutes while in the foreground.
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -103,7 +105,9 @@ class MainActivity : ComponentActivity() {
         }
         setContent {
             VerdroidTheme {
-                VerdroidRoot(openTaskId = openTaskId.value, onOpenTaskConsumed = { openTaskId.value = null })
+                VerdroidRoot(openTaskId = openTaskId.value, onOpenTaskConsumed = { openTaskId.value = null },
+                    openRoute = openRoute.value, onOpenRouteConsumed = { openRoute.value = null })
+                com.verdroid.app.ui.schedule.ScheduleHealthDialog()
                 com.verdroid.app.ui.consent.FileChangeDialog()
                 com.verdroid.app.ui.consent.XPostDialog()
                 com.verdroid.app.ui.consent.InstallDialog()
@@ -116,6 +120,15 @@ class MainActivity : ComponentActivity() {
         private const val OWN_LAUNCH_GRACE_MS = 1_500L
         private const val LEAVE_HINT_WINDOW_MS = 3_000L
         const val EXTRA_TASK_ID = "taskId"
+
+        const val EXTRA_ROUTE = "route"
+        /** Only these screens can be opened by an intent (MainActivity is exported). */
+        private val LINKABLE_ROUTES = setOf(com.verdroid.app.ui.Routes.KEEP_ALIVE, com.verdroid.app.ui.Routes.SCHEDULES)
+        internal fun routeFrom(intent: Intent?): String? = intent?.getStringExtra(EXTRA_ROUTE)?.takeIf { it in LINKABLE_ROUTES }
+
+        fun openRouteIntent(context: Context, route: String): Intent =
+            Intent(context, MainActivity::class.java).putExtra(EXTRA_ROUTE, route)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
 
         private fun taskIdFrom(intent: Intent?): Long? =
             intent?.getLongExtra(EXTRA_TASK_ID, 0L)?.takeIf { it != 0L }

@@ -11,7 +11,7 @@ object SelfTestCoverage {
         "tool_registry", "json", "room", "settings", "agents_md", "memory", "skills", "sandbox", "shared_folder",
         "network", "providers", "web_fetch", "web_search", "termux", "python", "pdf", "shizuku", "rish", "accessibility",
         "overlay", "git", "updater", "notifications", "font_scale", "feedback", "internal_folder", "crypto_history", "backtest_python", "file_guard", "share_target", "chat_ui", "cookies", "cookie_webview", "x_posts", "overwrite_policy", "x_post_guard", "crash_log", "twitter_tos", "model_pins",
-        "oom_hardening", "install_prompt", "x_post_limits", "ebook_resume", "update_hint", "chat_links", "assistant",
+        "oom_hardening", "install_prompt", "x_post_limits", "ebook_resume", "update_hint", "chat_links", "assistant", "scheduling",
     )
 
     val TOOL_CHECKS: Map<String, String> = mapOf(
@@ -32,6 +32,8 @@ object SelfTestCoverage {
         "skill_list" to "skills", "skill_get" to "skills", "skill_save" to "skills", "skill_edit" to "skills", "skill_delete" to "skills",
         "chart" to "tool_registry",
         "crypto_backtest" to "crypto_history",
+        "schedule_reminder" to "scheduling", "schedule_task" to "scheduling", "schedule_list" to "scheduling",
+        "schedule_cancel" to "scheduling", "schedule_pause" to "scheduling", "schedule_resume" to "scheduling",
         "crypto_history_download" to "crypto_history", "crypto_backtest_script" to "backtest_python", "crypto_history_list" to "crypto_history",
     )
 

@@ -114,3 +114,29 @@ data class MemoryEntity(
     /** v4: null = long-term (global); a chat/task id = that chat's short-term scratchpad (deleted with the chat). */
     val chatId: Long? = null,
 )
+
+/** v7 (v1.0.58): reminders and scheduled agent runs (see domain/schedule). Times are epoch ms. */
+@Entity(tableName = "schedules", indices = [Index("enabled"), Index("nextRunAt")])
+data class ScheduleEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    /** REMINDER (notification only) or TASK (headless agent run). */
+    val kind: String,
+    val name: String,
+    /** Reminder text, or the agent prompt. */
+    val message: String,
+    /** ONCE / DAILY / INTERVAL + [specValue] (epoch ms / minute of day / minutes). */
+    val specType: String,
+    val specValue: Long,
+    val enabled: Boolean = true,
+    /** TASK: only notify when the run says something changed. */
+    @ColumnInfo(defaultValue = "0") val onlyIfChanged: Boolean = false,
+    /** TASK: chat the runs post into (created on the first run when null). */
+    val chatTaskId: Long? = null,
+    /** Chat the schedule was created from (for the confirmation message), if any. */
+    val sourceTaskId: Long? = null,
+    val nextRunAt: Long? = null,
+    val lastRunAt: Long? = null,
+    /** "ok", "no change", "skipped: …", "failed: …", "paused: …". */
+    val lastStatus: String? = null,
+    val createdAt: Long,
+)

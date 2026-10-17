@@ -14,6 +14,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <!-- Phase 8: keep-alive + resume after reboot -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <!-- Schedules: on-time reminders / daily runs when the user allows exact alarms (inexact fallback otherwise). Not USE_EXACT_ALARM. -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- termux_run + Settings > Tools package installer: run commands in Termux (user grants it + enables allow-external-apps). -->
     <uses-permission android:name="com.termux.permission.RUN_COMMAND" />
@@ -174,8 +176,16 @@
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="android.app.action.SCHEDULE_EXACT_ALARM_PERMISSION_STATE_CHANGED" />
             </intent-filter>
         </receiver>
+
+        <!-- Schedules: one alarm per enabled schedule (reminder notification or a scheduled agent run). -->
+        <receiver
+            android:name=".data.schedule.ScheduleAlarmReceiver"
+            android:exported="false" />
 
         <!-- In-app updater: the downloaded APK (cacheDir/updates) for the system installer. -->
         <provider

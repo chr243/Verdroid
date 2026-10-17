@@ -162,6 +162,13 @@ class FileChangeGuard(
         return if (reasons.isEmpty()) null else reasons to shown
     }
 
+    /** Scheduled (unattended) run: null = no confirmation would be needed (or overwrites are always allowed); else why it's refused. */
+    fun headlessReason(taskId: Long, tool: String, args: JsonObject): String? {
+        val (reasons, _) = inspect(tool, args) ?: return null
+        if (DestructiveDetector.overwriteOnly(reasons) && overwritePolicy.allowsOverwrite(taskId)) return null
+        return "this file change needs the user's Yes (${reasons.joinToString("; ").take(200)})"
+    }
+
     /** null = go ahead; else the error JSON to return instead of running the tool. */
     suspend fun check(taskId: Long, tool: String, args: JsonObject): String? {
         val (reasons, shown) = inspect(tool, args) ?: return null

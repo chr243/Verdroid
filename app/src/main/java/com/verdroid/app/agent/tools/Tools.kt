@@ -137,7 +137,9 @@ class ToolRegistry(val tools: List<AgentTool>, private val switches: com.verdroi
     /** Per-chat tool presets (chat ⋮ → Tool presets); all on unless the user turned a preset off for that chat. */
     private val chatFilter: com.verdroid.app.data.tools.ChatToolFilter = com.verdroid.app.data.tools.ChatToolFilter.ALL,
     /** Yes/No before deleting/moving/renaming or overwriting files (null = no gate, e.g. unit tests). */
-    private val fileGuard: FileChangeGuard? = null) {
+    private val fileGuard: FileChangeGuard? = null,
+    /** True while [taskId] is an unattended scheduled run (its last user message is the scheduler's): risky tools are refused. */
+    private val headless: suspend (taskId: Long) -> Boolean = { false }) {
     private val staticByName = tools.associateBy { it.name }
     private val allTools: List<AgentTool> get() = tools + dynamic().filter { it.name !in staticByName }
     val enabledTools: List<AgentTool> get() = allTools.filter { switches.isEnabled(it.name) }
@@ -169,12 +171,18 @@ class ToolRegistry(val tools: List<AgentTool>, private val switches: com.verdroi
         }
         val args = runCatching { Json.parseToJsonElement(argumentsJson.ifBlank { "{}" }) as? JsonObject }.getOrNull()
             ?: return ToolResult(errorJson("Arguments must be a JSON object"), true)
+        val unattended = taskId != 0L && try { headless(taskId) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Exception) { false }
+        if (unattended) {
+            (com.verdroid.app.domain.schedule.ScheduleSafety.blockReason(name, args) ?: fileGuard?.headlessReason(taskId, name, args))
+                ?.let { return ToolResult(com.verdroid.app.domain.schedule.ScheduleSafety.blockedJson(name, it), true) }
+        }
         fileGuard?.let { g ->
             try { g.check(taskId, name, args) } catch (e: kotlinx.coroutines.CancellationException) { throw e }
                 catch (e: Exception) { FileChangeGuard.denied(name, listOf("confirmation failed: ${e.message}")) }
         }?.let { return ToolResult(it, true) }
         return try {
-            val out = tool.execute(args, ToolContext(taskId))
+            val out = if (unattended) kotlinx.coroutines.withContext(com.verdroid.app.domain.schedule.HeadlessRun(taskId)) { tool.execute(args, ToolContext(taskId)) }
+                else tool.execute(args, ToolContext(taskId))
             ToolResult(out, out.trimStart().startsWith("{\"error\""))
         } catch (e: SecurityException) {
             ToolResult(errorJson(e.message ?: "Access denied"), true)

@@ -21,6 +21,7 @@ class VerdroidApp : Application(), Configuration.Provider {
     @Inject lateinit var agent: com.verdroid.app.domain.repository.AgentController
     @Inject lateinit var sharedFolder: com.verdroid.app.data.storage.SharedFolder
     @Inject lateinit var installPrompt: com.verdroid.app.data.consent.InstallPrompt
+    @Inject lateinit var schedules: com.verdroid.app.data.schedule.ScheduleManager
     @Inject lateinit var providerMigration: com.verdroid.app.data.network.ProviderModelMigration
 
     override val workManagerConfiguration: Configuration
@@ -47,6 +48,8 @@ class VerdroidApp : Application(), Configuration.Provider {
         com.verdroid.app.agent.tools.InstallConsent.confirmer = installPrompt
         // Phase 3: re-queue interrupted tasks and make sure paused ones keep their WorkManager resume job.
         CoroutineScope(SupervisorJob() + Dispatchers.IO).launch { scheduler.recover() }
+        // Schedules: make sure every enabled one has its alarm (cheap; also covers a missed boot broadcast).
+        CoroutineScope(SupervisorJob() + Dispatchers.IO).launch { runCatching { schedules.rearmAll() } }
         QuotaPollWorker.schedule(this)
         removeLegacyAdb()
         // v1.0.49: old Coinbase Exchange tools removed → drop their encrypted key store (no-op when absent).

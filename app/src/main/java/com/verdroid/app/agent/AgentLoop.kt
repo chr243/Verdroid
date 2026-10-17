@@ -90,7 +90,9 @@ class AgentLoop internal constructor(
         presetNote(taskId).let { if (it.isBlank()) "" else "\n\n" + it } +
         userInstructions().let { if (it.isBlank()) "" else "\n\n" + it } +
         skillsPrompt().let { if (it.isBlank()) "" else "\n\n" + it } +
-        memoryPrompt(taskId).let { if (it.isBlank()) "" else "\n\n" + com.verdroid.app.data.network.MemoryRedaction.wrap(it) }
+        memoryPrompt(taskId).let { if (it.isBlank()) "" else "\n\n" + com.verdroid.app.data.network.MemoryRedaction.wrap(it) } +
+        // Last, so the rest of the prompt stays a stable prefix: resolves "in 10 minutes" / "at 10am" for the schedule_* tools.
+        "\n\n" + com.verdroid.app.domain.schedule.ScheduleMath.nowLine(System.currentTimeMillis(), java.time.ZoneId.systemDefault())
 
     private val json = Json { ignoreUnknownKeys = true; explicitNulls = false }
 
@@ -443,6 +445,14 @@ class AgentLoop internal constructor(
               says NOT_LOGGED_IN / not logged in, call cookie_login once, then retry the same X tool. x_post publishes ONE
               post/reply as the user (they confirm Post / Cancel): only when the user asked for that post, never in a loop;
               if it returns posted=uncertain, do not retry.
+            - Scheduling: schedule_reminder (one-off notification, no AI run: "remind me in 10 minutes about the soup" →
+              message + in_minutes=10), schedule_task (unattended agent run of a prompt: once, daily_at "10:00", or
+              every_minutes >= 15; only_if_changed=true for "only tell me if there's something new"), schedule_list,
+              schedule_cancel, schedule_pause, schedule_resume. Resolve times with the current local date/time at the end of
+              this prompt. Only schedule what the user asked for, with a self-contained prompt (the run has no chat context
+              unless chat="this"). After creating, confirm briefly what and when in local time, and pass on any warnings
+              (battery optimisation, exact alarms). Scheduled runs have no user present: tools that need confirmation are
+              blocked there (BLOCKED_IN_SCHEDULED_RUN) — never work around that; say what you'd like to do instead.
             - Diagnostics: self_test runs safe on-device checks of every feature and returns a pass/fail/skip report
               (optional only="termux,pdf"). Use it when tools misbehave or the user asks what works on this phone.
             - Skills: skill_list, skill_get, skill_save, skill_edit, skill_delete. "Saved skills" below is only an index (name +

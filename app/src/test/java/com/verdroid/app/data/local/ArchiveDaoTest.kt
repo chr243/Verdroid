@@ -127,7 +127,27 @@ class ArchiveDaoTest {
             assertEquals(listOf(7L), migrated.taskDao().observeConversations().first().map { it.task.id })
             migrated.openHelper.readableDatabase.query("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'index_tasks_archivedAt'")
                 .use { assertTrue(it.moveToFirst()) }
-            assertEquals(6, migrated.openHelper.readableDatabase.version)
+            assertEquals(7, migrated.openHelper.readableDatabase.version)
+        } finally { migrated.close() }
+    }
+
+    @Test fun `migration 6 to 7 adds schedules and keeps chats`() = runBlocking {
+        createFromSchema(DB, 6)
+        SQLiteDatabase.openDatabase(ApplicationProvider.getApplicationContext<Application>().getDatabasePath(DB).path, null, SQLiteDatabase.OPEN_READWRITE).use {
+            it.execSQL("INSERT INTO tasks (id, title, prompt, type, status, subtitle, currentStep, createdAt, updatedAt, lastOpenedAt, attempt) " +
+                "VALUES (9, 'Chat', 'p', 'CHAT', 'COMPLETED', 's', 0, 1, 2, 0, 0)")
+        }
+        val migrated = openMigrated(DB)
+        try {
+            assertEquals(7, migrated.openHelper.writableDatabase.version)
+            assertEquals("Chat", migrated.taskDao().get(9)!!.title)
+            val d = migrated.scheduleDao()
+            assertTrue(d.all().isEmpty())
+            val id = d.insert(ScheduleEntity(kind = "TASK", name = "CNN", message = "summarise", specType = "DAILY", specValue = 600, chatTaskId = 9, nextRunAt = 10, createdAt = 1))
+            val s = d.get(id)!!
+            assertTrue(s.enabled); assertFalse(s.onlyIfChanged); assertEquals(s, d.forChat(9))
+            d.update(s.copy(enabled = false)); assertTrue(d.enabled().isEmpty())
+            assertEquals(1, d.delete(id))
         } finally { migrated.close() }
     }
 
@@ -135,7 +155,7 @@ class ArchiveDaoTest {
         createFromSchema(DB, 1)
         val migrated = openMigrated(DB)
         try {
-            assertEquals(6, migrated.openHelper.writableDatabase.version) // Room throws here if a migration left a schema mismatch
+            assertEquals(7, migrated.openHelper.writableDatabase.version) // Room throws here if a migration left a schema mismatch
             assertTrue(migrated.taskDao().archivedIds().isEmpty())
         } finally { migrated.close() }
     }

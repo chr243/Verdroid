@@ -48,6 +48,7 @@ object AppModule {
     @Provides fun rateLimitEventDao(db: VerdroidDatabase) = db.rateLimitEventDao()
     @Provides fun notificationDao(db: VerdroidDatabase) = db.notificationDao()
     @Provides fun memoryDao(db: VerdroidDatabase) = db.memoryDao()
+    @Provides fun scheduleDao(db: VerdroidDatabase) = db.scheduleDao()
 
     @Provides @Singleton
     fun provideDataStore(@ApplicationContext context: Context): DataStore<Preferences> = context.settingsDataStore
@@ -142,6 +143,8 @@ object AppModule {
         cookieVault: com.verdroid.app.data.cookies.CookieVault,
         xPostConsent: com.verdroid.app.data.consent.XPostConsent,
         xPostGuard: com.verdroid.app.data.consent.XPostGuard,
+        schedules: javax.inject.Provider<com.verdroid.app.data.schedule.ScheduleManager>,
+        messageDao: com.verdroid.app.data.local.MessageDao,
     ): ToolRegistry = ToolRegistry(
         listOf(
             ReadFileTool(sandbox), WriteFileTool(sandbox), ListDirTool(sandbox),
@@ -184,6 +187,12 @@ object AppModule {
                 // On-device self-test (same checks as Settings → Self-test); runner resolved lazily (it needs this registry)
                 com.verdroid.app.agent.tools.SelfTestTool { selfTest.get() },
             ) +
+            // v1.0.58: reminders + scheduled (unattended) agent runs; manager resolved lazily (it depends on the agent → this registry)
+            com.verdroid.app.agent.tools.LazyScheduleBackend { schedules.get().toolBackend }.let { b ->
+                listOf(com.verdroid.app.agent.tools.ScheduleReminderTool(b), com.verdroid.app.agent.tools.ScheduleTaskTool(b),
+                    com.verdroid.app.agent.tools.ScheduleListTool(b), com.verdroid.app.agent.tools.ScheduleCancelTool(b),
+                    com.verdroid.app.agent.tools.SchedulePauseTool(b), com.verdroid.app.agent.tools.ScheduleResumeTool(b))
+            } +
             // Keyless history cache (Documents/Verdroid/Internal/market-data) + offline backtests
             com.verdroid.app.agent.tools.CryptoHistoryTools(
                 downloader = {
@@ -211,6 +220,8 @@ object AppModule {
                 }
             }.getOrNull()
         },
+        // Scheduled runs (the chat's newest user message is the scheduler's) can't use tools that need the user.
+        headless = { id -> com.verdroid.app.domain.schedule.ScheduleSafety.isScheduledMessage(messageDao.lastUserContent(id)) },
     )
 }
 

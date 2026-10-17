@@ -30,6 +30,7 @@ class BubbleActivity : ComponentActivity() {
                 com.verdroid.app.ui.consent.FileChangeDialog()
                 com.verdroid.app.ui.consent.XPostDialog()
                 com.verdroid.app.ui.consent.InstallDialog()
+                com.verdroid.app.ui.schedule.ScheduleHealthDialog()
                 val vm: ChatViewModel = hiltViewModel()
                 val task by vm.task.collectAsStateWithLifecycle()
                 val messages by vm.messages.collectAsStateWithLifecycle()

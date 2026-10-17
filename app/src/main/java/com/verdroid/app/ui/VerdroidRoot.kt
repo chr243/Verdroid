@@ -57,6 +57,7 @@ object Routes {
     const val SHIZUKU = "shizuku"
     const val CHAT_HEADS = "settings/chatheads"
     const val KEEP_ALIVE = "settings/keepalive"
+    const val SCHEDULES = "settings/schedules"
     const val TOOLS = "settings/tools"
     const val SKILLS = "settings/skills"
     const val AGENTS_MD = "settings/agents-md"
@@ -115,6 +116,8 @@ object OpenChatNav {
 fun VerdroidRoot(
     openTaskId: Long? = null,
     onOpenTaskConsumed: () -> Unit = {},
+    openRoute: String? = null,
+    onOpenRouteConsumed: () -> Unit = {},
     vm: RootViewModel = hiltViewModel(),
 ) {
     val nav = rememberNavController()
@@ -131,6 +134,10 @@ fun VerdroidRoot(
             }
             onOpenTaskConsumed()
         }
+    }
+
+    LaunchedEffect(openRoute) {
+        if (openRoute != null) { nav.navigate(openRoute) { launchSingleTop = true }; onOpenRouteConsumed() }
     }
 
     // No bottom bar (v0.9.18): the chat list is home; Settings opens from its gear.
@@ -185,6 +192,10 @@ fun VerdroidRoot(
             composable(Routes.LIMITS) { RateLimitSettingsScreen(onBack = { nav.popBackStack() }) }
             composable(Routes.SHIZUKU) { DeviceControlScreen(onBack = { nav.popBackStack() }) }
             composable(Routes.KEEP_ALIVE) { KeepAliveScreen(onBack = { nav.popBackStack() }) }
+            composable(Routes.SCHEDULES) {
+                com.verdroid.app.ui.schedule.SchedulesScreen(onBack = { nav.popBackStack() }, onOpenChat = { nav.navigate(Routes.chat(it)) },
+                    onOpenKeepAlive = { nav.navigate(Routes.KEEP_ALIVE) })
+            }
             composable(Routes.MCP) { com.verdroid.app.ui.tools.McpServersScreen(onBack = { nav.popBackStack() }) }
             composable(Routes.TOOLS) { com.verdroid.app.ui.tools.ToolsScreen(onBack = { nav.popBackStack() }) }
             composable(Routes.PERMISSIONS) {

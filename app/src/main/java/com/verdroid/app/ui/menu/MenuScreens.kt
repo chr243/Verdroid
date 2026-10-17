@@ -58,6 +58,7 @@ fun SettingsScreen(onNavigate: (String) -> Unit, onBack: () -> Unit, unreadNotif
                 item("Notifications",
                     if (unreadNotifications > 0) "$unreadNotifications unread · rate limits, quota warnings, completions"
                     else "Rate-limit alerts, quota warnings and completions", Routes.NOTIFICATIONS),
+                item("Schedules", "Reminders and scheduled agent runs: next run, last result, on/off, run now", Routes.SCHEDULES),
                 item("Memory", "Short-term (per chat) and long-term memory: list, search, edit, automatic saving", Routes.memory()),
                 item("Archive", "Chats deleted from the home list: open, restore or delete permanently", Routes.ARCHIVE),
             ))

@@ -86,6 +86,10 @@ interface MessageDao {
     @Insert
     suspend fun insert(message: MessageEntity): Long
 
+    /** Newest user message of a chat (scheduled-run detection: the scheduler's messages start with a marker). */
+    @Query("SELECT content FROM messages WHERE taskId = :taskId AND role = 'user' ORDER BY id DESC LIMIT 1")
+    suspend fun lastUserContent(taskId: Long): String?
+
     @Query("UPDATE messages SET summarized = 1 WHERE id IN (:ids)")
     suspend fun markSummarized(ids: List<Long>)
 }
@@ -177,9 +181,33 @@ interface MemoryDao {
     suspend fun setChat(id: Long, chatId: Long?, now: Long): Int
 }
 
+@Dao
+interface ScheduleDao {
+    @Query("SELECT * FROM schedules ORDER BY enabled DESC, nextRunAt IS NULL, nextRunAt, id")
+    fun observeAll(): kotlinx.coroutines.flow.Flow<List<ScheduleEntity>>
+
+    @Query("SELECT * FROM schedules ORDER BY id")
+    suspend fun all(): List<ScheduleEntity>
+
+    @Query("SELECT * FROM schedules WHERE enabled = 1")
+    suspend fun enabled(): List<ScheduleEntity>
+
+    @Query("SELECT * FROM schedules WHERE id = :id")
+    suspend fun get(id: Long): ScheduleEntity?
+
+    @Query("SELECT * FROM schedules WHERE chatTaskId = :taskId LIMIT 1")
+    suspend fun forChat(taskId: Long): ScheduleEntity?
+
+    @Insert suspend fun insert(s: ScheduleEntity): Long
+    @Update suspend fun update(s: ScheduleEntity)
+
+    @Query("DELETE FROM schedules WHERE id = :id")
+    suspend fun delete(id: Long): Int
+}
+
 @Database(
-    entities = [TaskEntity::class, MessageEntity::class, ToolCallEntity::class, RateLimitEventEntity::class, NotificationEntity::class, MemoryEntity::class],
-    version = 6,
+    entities = [TaskEntity::class, MessageEntity::class, ToolCallEntity::class, RateLimitEventEntity::class, NotificationEntity::class, MemoryEntity::class, ScheduleEntity::class],
+    version = 7,
     exportSchema = true,
 )
 abstract class VerdroidDatabase : RoomDatabase() {
@@ -189,4 +217,5 @@ abstract class VerdroidDatabase : RoomDatabase() {
     abstract fun rateLimitEventDao(): RateLimitEventDao
     abstract fun notificationDao(): NotificationDao
     abstract fun memoryDao(): MemoryDao
+    abstract fun scheduleDao(): ScheduleDao
 }
