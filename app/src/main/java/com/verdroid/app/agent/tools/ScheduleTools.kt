@@ -89,8 +89,9 @@ class ScheduleReminderTool(private val backend: ScheduleBackend) : AgentTool {
 class ScheduleTaskTool(private val backend: ScheduleBackend) : AgentTool {
     override val name = "schedule_task"
     override val description = "Schedule an unattended agent run of a prompt: once (at / in_minutes), every day at daily_at (local HH:MM), or every " +
-        "every_minutes (minimum 15). Each run happens in its own chat \"Scheduled: <name>\" (or this chat with chat=\"this\") and posts a " +
-        "notification with the summary. Set only_if_changed=true for \"only tell me if something is new\". Runs have no user present: " +
+        "every_minutes (minimum 15). By default each run happens in THIS chat (it sees the conversation so far; each run adds a small " +
+        "\"Scheduled\" label and the answer); use chat=\"new\" only when the user asks for a separate/new chat (a dedicated chat " +
+        "\"Scheduled: <name>\"). Each run posts a notification with the summary. Set only_if_changed=true for \"only tell me if something is new\". Runs have no user present: " +
         "tools that need confirmation (posting, deleting, installing, phone control) are blocked in them. Only create a schedule the user asked for. " +
         "Before re-creating a schedule that seems stuck, call schedule_list: a run that is queued, paused or stopped no longer blocks the next one " +
         "(it is replaced), so don't create duplicates."
@@ -102,7 +103,7 @@ class ScheduleTaskTool(private val backend: ScheduleBackend) : AgentTool {
         "at" to prop("string", "Once at this local time (\"HH:MM\" or ISO \"YYYY-MM-DDTHH:MM\")"),
         "in_minutes" to prop("number", "Once, N minutes from now"),
         "only_if_changed" to prop("boolean", "Only notify when something changed since the last run (the run decides)"),
-        "chat" to prop("string", "\"new\" (default: a dedicated Scheduled chat) or \"this\" (post runs into the current chat)"),
+        "chat" to prop("string", "\"this\" (default: runs go into the current chat) or \"new\" (a dedicated \"Scheduled: <name>\" chat, only when the user asks for a separate chat)"),
     )
     override suspend fun execute(args: JsonObject): String = execute(args, ToolContext(0))
     override suspend fun execute(args: JsonObject, ctx: ToolContext): String {
@@ -111,7 +112,7 @@ class ScheduleTaskTool(private val backend: ScheduleBackend) : AgentTool {
         val spec = ScheduleToolsParse.spec(args, backend.now(), backend.zone()) ?: return errorJson(
             "Give exactly one of daily_at (HH:MM), every_minutes (>= ${ScheduleSpec.MIN_INTERVAL_MINUTES}), at or in_minutes")
         val name = args.str("name")?.trim()?.takeIf { it.isNotEmpty() } ?: prompt.take(40)
-        val chat = if (args.str("chat")?.trim()?.lowercase() == "this" && ctx.taskId != 0L) ctx.taskId else null
+        val chat = ScheduleToolsParse.chatTarget(args.str("chat"), ctx.taskId)
         return backend.created(ScheduleKind.TASK, name, prompt, spec, args.flag("only_if_changed"), ctx, chat)
     }
 }
@@ -168,6 +169,13 @@ abstract class ScheduleToggleTool(private val backend: ScheduleBackend, private 
 
 /** Argument parsing shared by the tools (pure). */
 object ScheduleToolsParse {
+    /** Chat for a scheduled task's runs: the creating chat by default; null = a dedicated chat ("new"/"separate", or no chat). */
+    fun chatTarget(arg: String?, taskId: Long): Long? {
+        val a = arg?.trim()?.lowercase().orEmpty()
+        val separate = a in setOf("new", "separate", "dedicated", "own")
+        return if (separate || taskId == 0L) null else taskId
+    }
+
     private fun JsonObject.num(k: String): Long? = (this[k] as? JsonPrimitive)?.let { it.longOrNull ?: it.doubleOrNull?.toLong() ?: it.contentOrNull?.trim()?.toLongOrNull() }
 
     fun at(args: JsonObject, now: Long, zone: ZoneId): Long? {

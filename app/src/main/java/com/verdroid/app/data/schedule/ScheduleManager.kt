@@ -218,18 +218,20 @@ class ScheduleManager @Inject constructor(
         val e = dao.get(id) ?: return
         val now = System.currentTimeMillis()
         val chat: Long = e.chatTaskId?.takeIf { tasks.getTask(it) != null }
-            ?: tasks.createTask("Scheduled: ${e.name}".take(80), e.message, TaskType.infer(e.message)).also { c ->
+            ?: tasks.createTask("$DEDICATED_PREFIX${e.name}".take(80), e.message, TaskType.infer(e.message)).also { c ->
                 // A new chat starts out QUEUED ("Queued"): that is not a stuck run (v1.0.58 skipped on it forever).
                 tasks.updateStatus(c, TaskStatus.IDLE, "Scheduled")
                 dao.get(id)?.let { dao.update(it.copy(chatTaskId = c)) }
             }
         val t = tasks.getTask(chat)
-        when (val d = ScheduleRunGate.decide(chat in agent.runningTaskIds.value, t?.status, t?.pauseReason, t?.resumeAt, now)) {
+        // The creating chat (default) vs a dedicated "Scheduled: …" chat (chat="new", Schedules screen, or origin deleted).
+        val shared = t != null && !isDedicated(t.title)
+        when (val d = ScheduleRunGate.decide(chat in agent.runningTaskIds.value, t?.status, t?.pauseReason, t?.resumeAt, now, shared)) {
             is ScheduleRunGate.Skip -> { record(id, now, d.reason); return }
             is ScheduleRunGate.Start -> if (d.superseded) {
                 // agent.start below cancels the stuck run's pending retry job.
                 tasks.addMessage(ChatMessage(0, chat, MessageRole.SYSTEM, "⏭️ An earlier run here never finished (${t?.subtitle?.take(60) ?: "stuck"}); " +
-                    "this scheduled run replaces it.", MessageKind.STATUS, null, null, null, null, false, null, now))
+                    "this scheduled run continues from here.", MessageKind.STATUS, null, null, null, null, false, null, now))
             }
         }
         record(id, now, "running…")
@@ -297,6 +299,8 @@ class ScheduleManager @Inject constructor(
         const val MAX_ENABLED = 50
         const val WORK_TAG = "scheduled-run"
         fun workName(id: Long) = "scheduled-run-$id"
+        const val DEDICATED_PREFIX = "Scheduled: "
+        fun isDedicated(chatTitle: String) = chatTitle.startsWith(DEDICATED_PREFIX)
         fun specOf(e: ScheduleEntity): ScheduleSpec? = ScheduleSpec.decode(e.specType, e.specValue)
         private const val MAX_WAIT_MS = 9 * 60_000L
         private const val LATE_GRACE_MS = 2 * 60_000L
@@ -317,8 +321,9 @@ object ScheduledPrompt {
         append("don't attempt workarounds; mention in your answer what you'd like to do. Crypto is backtesting only. ")
         append("X tools: assume the saved X login works and call x_timeline / x_user_posts / x_search directly; if one says NOT_LOGGED_IN, don't try to log in — say so in the summary. ")
         append("x_post works here only if the user turned on Always allow for X posts (otherwise it returns BLOCKED_IN_SCHEDULED_RUN), and the user's post limit (if on) still applies; post only what this task explicitly asks for. ")
-        append("End with a short summary (a few sentences) — it is shown as the notification.")
-        if (onlyIfChanged) append(" Compare with your previous answers in this chat: if there is nothing new or changed since the last run, reply with exactly ${ScheduleSafety.NO_CHANGE} and nothing else (no notification is shown then).")
+append("Earlier messages in this chat are only context: do just this scheduled task now, don't continue or redo earlier requests. ")
+                append("End with a short summary (a few sentences) — it is shown as the notification.")
+        if (onlyIfChanged) append(" Compare with your previous answers to this scheduled task in this chat: if there is nothing new or changed since the last run, reply with exactly ${ScheduleSafety.NO_CHANGE} and nothing else (no notification is shown then).")
         append("]")
     }
 

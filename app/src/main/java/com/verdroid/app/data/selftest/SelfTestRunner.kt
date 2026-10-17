@@ -483,6 +483,10 @@ class SelfTestRunner @Inject constructor(
                 check(G.decide(false, com.verdroid.app.domain.model.TaskStatus.QUEUED, null, null, n) is com.verdroid.app.domain.schedule.ScheduleRunGate.Start) { "a queued, never-started chat must not block scheduled runs" }
                 check(G.decide(true, com.verdroid.app.domain.model.TaskStatus.RUNNING, null, null, n) is com.verdroid.app.domain.schedule.ScheduleRunGate.Skip) { "a running run must not be doubled" }
                 check(!com.verdroid.app.agent.AgentLoop.hasUserTurn(emptyList())) { "a chat without a user turn must not call the model" }
+                check(com.verdroid.app.agent.tools.ScheduleToolsParse.chatTarget(null, 42L) == 42L &&
+                    com.verdroid.app.agent.tools.ScheduleToolsParse.chatTarget("new", 42L) == null) { "schedule_task runs in the creating chat unless chat=new" }
+                check(G.decide(false, com.verdroid.app.domain.model.TaskStatus.RATE_LIMITED, com.verdroid.app.domain.model.PauseReason.values().first { it.autoResume }.name,
+                    n + 5 * 3_600_000L, n, shared = true) is com.verdroid.app.domain.schedule.ScheduleRunGate.Skip) { "a scheduled run must not replace the user's own paused run" }
             }
             check(com.verdroid.app.agent.context.ContextManager.live(listOf(sm)).size == 1) { "scheduled prompt must stay in the model context" }
             val pm = context.packageManager

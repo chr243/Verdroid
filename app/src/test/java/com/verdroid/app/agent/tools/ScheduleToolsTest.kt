@@ -49,7 +49,10 @@ class ScheduleToolsTest {
     @Test fun `daily and interval tasks`() = runBlocking {
         val b = Fake()
         obj(ScheduleTaskTool(b).execute(buildJsonObject { put("prompt", "Check cnn.com and summarise"); put("daily_at", "10am") }, ToolContext(5)))
-        assertEquals(ScheduleSpec.Daily(10, 0), b.lastSpec); assertNull(b.lastChat)
+        assertEquals(ScheduleSpec.Daily(10, 0), b.lastSpec); assertEquals(5L, b.lastChat) // default: the creating chat
+        obj(ScheduleTaskTool(b).execute(buildJsonObject { put("prompt", "Check cnn.com"); put("daily_at", "11:00"); put("chat", "new") }, ToolContext(5)))
+        assertNull(b.lastChat) // dedicated chat on request
+        b.items.removeAt(b.items.lastIndex)
         obj(ScheduleTaskTool(b).execute(buildJsonObject { put("prompt", "Check the blog"); put("every_minutes", 15); put("only_if_changed", true); put("chat", "this") }, ToolContext(5)))
         assertEquals(ScheduleSpec.Interval(15), b.lastSpec); assertTrue(b.lastOnly); assertEquals(5L, b.lastChat)
         assertTrue(ScheduleTaskTool(b).execute(buildJsonObject { put("prompt", "x"); put("every_minutes", 5) }, ToolContext(5)).contains("error"))
@@ -59,6 +62,14 @@ class ScheduleToolsTest {
         assertEquals(2, list["count"]!!.jsonPrimitive.int)
         assertTrue(obj(ScheduleCancelTool(b).execute(buildJsonObject { put("id", 1) }, ToolContext(5)))["ok"]!!.jsonPrimitive.boolean)
         assertEquals(1, b.items.size)
+    }
+
+    @Test fun `chat target defaults to the creating chat`() {
+        assertEquals(7L, ScheduleToolsParse.chatTarget(null, 7)); assertEquals(7L, ScheduleToolsParse.chatTarget("this", 7))
+        listOf("new", "separate", " New ").forEach { assertNull(it, ScheduleToolsParse.chatTarget(it, 7)) }
+        assertNull(ScheduleToolsParse.chatTarget(null, 0)) // no originating chat (UI) → dedicated
+        val p = ScheduledPrompt.build("n", "do it", false, "10:00")
+        assertTrue(p.contains("only context"))
     }
 
     @Test fun `run texts`() {

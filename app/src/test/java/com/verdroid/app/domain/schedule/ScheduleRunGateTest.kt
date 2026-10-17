@@ -9,6 +9,7 @@ import com.verdroid.app.domain.model.TaskStatus
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
+import com.verdroid.app.data.schedule.ScheduledPrompt
 import org.junit.Test
 
 /** Regression for v1.0.58: scheduled runs stuck as "Queued" and a stale/invented prompt in the scheduled chat. */
@@ -53,5 +54,25 @@ class ScheduleRunGateTest {
         assertTrue(AgentLoop.hasUserTurn(listOf(msg(MessageRole.USER, MessageKind.NORMAL))))
         // an empty user prompt is no prompt
         assertFalse(AgentLoop.hasUserTurn(listOf(msg(MessageRole.USER, MessageKind.SCHEDULED_PROMPT).copy(content = "  "))))
+    }
+
+    @Test fun sharedChatNeverReplacesTheUsersOwnWork() {
+        val q = PauseReason.values().first { it.autoResume }.name
+        val shared = { running: Boolean, st: TaskStatus?, r: String? -> ScheduleRunGate.decide(running, st, r, now + 5 * 3_600_000L, now, shared = true) }
+        assertTrue(shared(true, TaskStatus.RUNNING, null) is ScheduleRunGate.Skip)
+        assertTrue(shared(false, TaskStatus.RATE_LIMITED, q) is ScheduleRunGate.Skip) // the user's run resumes on its own
+        assertEquals(ScheduleRunGate.Start(false), shared(false, TaskStatus.COMPLETED, null)) // normal history: just append
+        assertEquals(ScheduleRunGate.Start(true), shared(false, TaskStatus.QUEUED, null))
+    }
+
+    @Test fun scheduledPromptAfterNormalHistoryIsTheLatestUserTurn() {
+        val hist = listOf(msg(MessageRole.USER, MessageKind.NORMAL).copy(id = 1, content = "hi"), msg(MessageRole.ASSISTANT, MessageKind.NORMAL).copy(id = 2),
+            msg(MessageRole.USER, MessageKind.SCHEDULED_PROMPT).copy(id = 3, content = ScheduledPrompt.build("CNN", "check cnn", false, "10:00")))
+        assertTrue(AgentLoop.hasUserTurn(hist))
+        val last = hist.last { it.role == MessageRole.USER }
+        assertEquals("CNN", ScheduleSafety.scheduleName(last.content)) // unattended while this is the latest user turn
+        // the user typing afterwards ends unattended mode
+        val after = hist + msg(MessageRole.USER, MessageKind.NORMAL).copy(id = 4, content = "thanks")
+        assertEquals(null, ScheduleSafety.scheduleName(after.last { it.role == MessageRole.USER }.content))
     }
 }

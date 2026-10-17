@@ -467,8 +467,8 @@ class AgentLoop internal constructor(
               message + in_minutes=10), schedule_task (unattended agent run of a prompt: once, daily_at "10:00", or
               every_minutes >= 15; only_if_changed=true for "only tell me if there's something new"), schedule_list,
               schedule_cancel, schedule_pause, schedule_resume. Resolve times with the current local date/time at the end of
-              this prompt. Only schedule what the user asked for, with a self-contained prompt (the run has no chat context
-              unless chat="this"). After creating, confirm briefly what and when in local time, and pass on any warnings
+              this prompt. Only schedule what the user asked for, with a self-contained prompt. Runs go into the
+              current chat by default (they see its history); pass chat="new" only when the user asks for a separate chat. After creating, confirm briefly what and when in local time, and pass on any warnings
               (battery optimisation, exact alarms). Scheduled runs have no user present: tools that need confirmation are
               blocked there (BLOCKED_IN_SCHEDULED_RUN) — never work around that; say what you'd like to do instead. x_post
               works in scheduled runs only when the user enabled Always allow for X posts (the post limit, if on, and the log still apply).

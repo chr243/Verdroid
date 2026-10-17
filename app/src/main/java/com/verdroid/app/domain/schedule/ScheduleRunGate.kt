@@ -21,8 +21,14 @@ object ScheduleRunGate {
     /** A quota pause resuming within this window keeps the next run waiting (it would only hit the same limit). */
     const val WAIT_FOR_RESUME_MS = 60 * 60_000L
 
-    fun decide(running: Boolean, status: TaskStatus?, pauseReason: String?, resumeAt: Long?, now: Long): Decision = when {
-        running -> Skip("skipped: the previous run is still going")
+    /**
+     * [shared] = the schedule posts into a normal chat (the one it was created in, v1.0.60 default): there a run that
+     * is going or an auto-resuming pause may be the user's own work, so it is never replaced, only waited for.
+     */
+    fun decide(running: Boolean, status: TaskStatus?, pauseReason: String?, resumeAt: Long?, now: Long, shared: Boolean = false): Decision = when {
+        running -> Skip(if (shared) "skipped: the chat was busy (a run was going)" else "skipped: the previous run is still going")
+        shared && (status == TaskStatus.RATE_LIMITED || status == TaskStatus.PAUSED) && PauseReason.autoResumes(pauseReason) ->
+            Skip("skipped: the chat's current run is paused and resumes on its own")
         status == TaskStatus.RATE_LIMITED && PauseReason.autoResumes(pauseReason) && resumeAt != null && resumeAt > now &&
             resumeAt - now <= WAIT_FOR_RESUME_MS -> Skip("skipped: the previous run waits for the model quota and resumes on its own")
         status == TaskStatus.QUEUED || status == TaskStatus.PAUSED || status == TaskStatus.RATE_LIMITED -> Start(superseded = true)
