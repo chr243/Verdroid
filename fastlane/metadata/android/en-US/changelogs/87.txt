@@ -1,0 +1,5 @@
+- Limit X posts switch in Settings > Tools > Twitter: on by default (5/hour, 20/day), can be turned off; post log always kept
+- Scheduling: reminders ("remind me in 10 minutes..."), daily tasks ("every day at 10am check CNN.com"), interval checks every N minutes (min 15) with "only tell me if new"
+- Schedules screen in Settings > Activity, with battery optimization and exact alarm checks
+- Scheduled runs are unattended: risky actions are blocked unless Always allow is on (X posts with Always allow work)
+- Scheduled prompts show as a small label instead of a chat bubble
