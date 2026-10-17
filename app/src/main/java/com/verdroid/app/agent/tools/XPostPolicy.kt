@@ -4,7 +4,7 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-/** Rate cap + audit trail for x_post. Applies even with "Always allow" (that only skips the Post/Cancel dialog). */
+/** Optional rate cap ("Limit X posts", on by default) + audit trail (always) for x_post. The cap applies even with "Always allow". */
 interface XPostPolicy {
     /** Null = allowed now; otherwise the user-facing reason the cap was hit. */
     fun blockReason(now: Long): String?
@@ -28,17 +28,19 @@ object XPostLimits {
 
     fun prune(times: List<Long>, now: Long): List<Long> = times.filter { it in (now - DAY + 1)..now }.sorted()
 
-    fun blockReason(times: List<Long>, now: Long, perHour: Int, perDay: Int): String? {
+    /** [enabled] = the "Limit X posts" switch; off = never blocked. */
+    fun blockReason(times: List<Long>, now: Long, perHour: Int, perDay: Int, enabled: Boolean = true): String? {
+        if (!enabled) return null
         val day = prune(times, now)
         val hour = day.filter { it > now - HOUR }
         fun wait(ms: Long) = ((ms + 59_999) / 60_000).coerceAtLeast(1).let { if (it >= 60) "${(it + 59) / 60} h" else "$it min" }
         return when {
             perHour > 0 && hour.size >= perHour -> "RATE_LIMITED: x_post cap reached ($perHour posts per hour). Nothing was posted. " +
                 "Next post possible in about ${wait(hour[hour.size - perHour] + HOUR - now)}. Don't retry now; tell the user " +
-                "(they can change the cap in Settings → Tools → Twitter)."
+                "(they can change or turn off the limit in Settings → Tools → Twitter → Limit X posts)."
             perDay > 0 && day.size >= perDay -> "RATE_LIMITED: x_post cap reached ($perDay posts per day). Nothing was posted. " +
                 "Next post possible in about ${wait(day[day.size - perDay] + DAY - now)}. Don't retry now; tell the user " +
-                "(they can change the cap in Settings → Tools → Twitter)."
+                "(they can change or turn off the limit in Settings → Tools → Twitter → Limit X posts)."
             else -> null
         }
     }

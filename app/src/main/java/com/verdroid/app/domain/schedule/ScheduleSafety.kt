@@ -25,7 +25,7 @@ object ScheduleSafety {
 
     /**
      * Blocked tools the user can still allow unattended through their own "Always allow" setting (checked live):
-     * x_post with "Post to X without asking" / the dialog's Always allow. The rate cap and audit log still apply.
+     * x_post with "Post to X without asking" / the dialog's Always allow. The post limit (if on) and audit log still apply.
      */
     val ALWAYS_ALLOWABLE: Set<String> = setOf("x_post")
 
@@ -50,7 +50,7 @@ object ScheduleSafety {
         fun str(k: String) = (args[k] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty()
         return when {
             tool == "x_post" -> if (alwaysAllowed(tool)) null else "x_post needs the user's Post tap. (Turning on Always allow for X posts — " +
-                "Settings → Tools → Twitter → Post to X without asking — permits posting from scheduled runs, still within the hourly/daily cap)"
+                "Settings → Tools → Twitter → Post to X without asking — permits posting from scheduled runs, within the hourly/daily limit if Limit X posts is on)"
             tool == "cookie_login" -> "logging in needs the user. Assume the saved X/site login works; if a tool says NOT_LOGGED_IN, " +
                 "say in your summary that the user should open Verdroid and log in again (Settings → Tools → Logged-in sites)"
             tool in BLOCKED -> "$tool needs the user (confirmation, posting/sending, phone control, deleting or scheduling)"

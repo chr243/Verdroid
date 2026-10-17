@@ -132,30 +132,40 @@ fun XPostSetting(modifier: Modifier = Modifier) {
     }
 }
 
-/** Settings → Tools → Twitter: x_post cap (per hour / per day, 0 = no cap) and the audit log viewer. */
+/** Settings → Tools → Twitter: "Limit X posts" (on by default; per hour / per day, 0 = no cap for that window) and the audit log viewer. */
 @Composable
 fun XPostLimitsSetting(modifier: Modifier = Modifier) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val guard = remember { EntryPointAccessors.fromApplication(context.applicationContext, FileChangeConsentEntryPoint::class.java).xPostGuard() }
     val perHour by guard.perHour.collectAsState()
     val perDay by guard.perDay.collectAsState()
+    val limitOn by guard.limitOn.collectAsState()
     var showLog by remember { mutableStateOf(false) }
     val (h, d) = remember(perHour, perDay, showLog) { guard.usage() }
     Column(modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("x_post limit", style = MaterialTheme.typography.bodyLarge)
-        Text("Applies even with \"Always allow\". 0 = no limit. Used: $h in the last hour, $d in the last 24 h.",
-            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-            Text("Per hour", Modifier.width(72.dp))
-            OutlinedButton(onClick = { guard.setPerHour(perHour - 1) }, enabled = perHour > 0) { Text("−") }
-            Text("$perHour", Modifier.width(32.dp))
-            OutlinedButton(onClick = { guard.setPerHour(perHour + 1) }) { Text("+") }
+        Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("Limit X posts", style = MaterialTheme.typography.bodyLarge)
+                Text((if (limitOn) "On: x_post stops at the limits below, in chats and scheduled runs, even with \"Always allow\". 0 = no limit for that window."
+                    else "Off: no limit on x_post (chats and scheduled runs). Every post is still logged.") +
+                    " Used: $h in the last hour, $d in the last 24 h.",
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            Switch(checked = limitOn, onCheckedChange = guard::setLimitOn)
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-            Text("Per day", Modifier.width(72.dp))
-            OutlinedButton(onClick = { guard.setPerDay(perDay - 1) }, enabled = perDay > 0) { Text("−") }
-            Text("$perDay", Modifier.width(32.dp))
-            OutlinedButton(onClick = { guard.setPerDay(perDay + 1) }) { Text("+") }
+        if (limitOn) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Text("Per hour", Modifier.width(72.dp))
+                OutlinedButton(onClick = { guard.setPerHour(perHour - 1) }, enabled = perHour > 0) { Text("−") }
+                Text("$perHour", Modifier.width(32.dp))
+                OutlinedButton(onClick = { guard.setPerHour(perHour + 1) }) { Text("+") }
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                Text("Per day", Modifier.width(72.dp))
+                OutlinedButton(onClick = { guard.setPerDay(perDay - 1) }, enabled = perDay > 0) { Text("−") }
+                Text("$perDay", Modifier.width(32.dp))
+                OutlinedButton(onClick = { guard.setPerDay(perDay + 1) }) { Text("+") }
+            }
         }
         TextButton(onClick = { showLog = true }) { Text("View post log") }
     }

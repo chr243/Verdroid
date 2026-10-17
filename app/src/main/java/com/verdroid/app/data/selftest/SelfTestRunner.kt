@@ -403,6 +403,7 @@ class SelfTestRunner @Inject constructor(
             val now = System.currentTimeMillis()
             check(L.blockReason(List(5) { now - it * 60_000L }, now, 5, 20)?.startsWith("RATE_LIMITED") == true) { "hourly cap" }
             check(L.blockReason(listOf(now - 2 * L.HOUR), now, 5, 20) == null) { "old posts must not count per hour" }
+            check(L.blockReason(List(30) { now - it * 1_000L }, now, 5, 20, enabled = false) == null) { "\"Limit X posts\" off must never block" }
             val line = com.verdroid.app.agent.tools.XPostAudit.line(com.verdroid.app.agent.tools.XPostAudit.Entry(now,
                 com.verdroid.app.agent.tools.XPostAudit.Result.CANCELLED, "a\nb", null, null))
             check("cancelled" in line && "a\\nb" in line && line.count { it == '\n' } == 1) { "audit line" }
@@ -420,7 +421,7 @@ class SelfTestRunner @Inject constructor(
             }
             val r = com.verdroid.app.agent.tools.XPostTool(noTermux, shared, vault, blocked) { _, _, _ -> asked = true; true }.execute(args("text" to "self-test"))
             check("RATE_LIMITED" in r && !asked) { "cap must block before the dialog and the browser" }
-            "cap blocks before posting; audit log at Internal/${com.verdroid.app.agent.tools.XPostAudit.FILE}"
+            "limit (switch default on) blocks before posting, off = no limit; audit log at Internal/${com.verdroid.app.agent.tools.XPostAudit.FILE}"
         },
         "ebook_resume" to {
             val src = com.verdroid.app.data.ebook.EbookTranslatePy.SOURCE

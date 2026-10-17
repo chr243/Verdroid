@@ -98,4 +98,11 @@ class XPostPolicyTest {
         assertTrue(off.json, off.isError && "BLOCKED_IN_SCHEDULED_RUN" in off.json && "Always allow" in off.json)
         assertEquals(1, t.cmds.size)
     }
+
+    @Test fun limitSwitchOffNeverBlocksAndDefaultsOn() {
+        val many = List(30) { now - it * 1_000L }
+        assertNotNull(XPostLimits.blockReason(many, now, 5, 20))                 // default: enabled
+        assertNull(XPostLimits.blockReason(many, now, 5, 20, enabled = false))   // "Limit X posts" off
+        assertTrue(XPostLimits.blockReason(many, now, 5, 20)!!.contains("Limit X posts"))
+    }
 }

@@ -13,9 +13,10 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * x_post rate cap (Settings → Tools → Twitter; default 5/hour, 20/day; 0 = no cap) and the audit log
- * Documents/Verdroid/Internal/x_post_log.txt (app-private files/ fallback without storage access). The cap applies even
- * with "Always allow". Post times are kept in prefs (last 24 h only).
+ * x_post rate cap (Settings → Tools → Twitter → "Limit X posts", ON by default: 5/hour, 20/day; 0 = no cap for that
+ * window; switch off = no cap at all) and the audit log Documents/Verdroid/Internal/x_post_log.txt (always written;
+ * app-private files/ fallback without storage access). While on, the cap applies even with "Always allow" and in
+ * scheduled runs. Post times are kept in prefs (last 24 h only).
  */
 @Singleton
 class XPostGuard @Inject constructor(
@@ -27,13 +28,17 @@ class XPostGuard @Inject constructor(
     private val _perDay = MutableStateFlow(prefs.getInt(K_DAY, XPostLimits.DEFAULT_PER_DAY))
     val perHour: StateFlow<Int> = _perHour.asStateFlow()
     val perDay: StateFlow<Int> = _perDay.asStateFlow()
+    private val _limitOn = MutableStateFlow(prefs.getBoolean(K_LIMIT, true))
+    /** "Limit X posts" (default on). Off = no cap in chats or scheduled runs; the log is still written. */
+    val limitOn: StateFlow<Boolean> = _limitOn.asStateFlow()
+    fun setLimitOn(on: Boolean) { prefs.edit().putBoolean(K_LIMIT, on).apply(); _limitOn.value = on }
 
     fun setPerHour(n: Int) { val v = n.coerceIn(0, 100); prefs.edit().putInt(K_HOUR, v).apply(); _perHour.value = v }
     fun setPerDay(n: Int) { val v = n.coerceIn(0, 500); prefs.edit().putInt(K_DAY, v).apply(); _perDay.value = v }
 
     private fun times(): List<Long> = prefs.getString(K_TIMES, "").orEmpty().split(',').mapNotNull { it.toLongOrNull() }
 
-    @Synchronized override fun blockReason(now: Long): String? = XPostLimits.blockReason(times(), now, _perHour.value, _perDay.value)
+    @Synchronized override fun blockReason(now: Long): String? = XPostLimits.blockReason(times(), now, _perHour.value, _perDay.value, _limitOn.value)
 
     @Synchronized override fun recordAttempt(now: Long) {
         prefs.edit().putString(K_TIMES, (XPostLimits.prune(times(), now) + now).joinToString(",")).apply()
@@ -60,6 +65,6 @@ class XPostGuard @Inject constructor(
     }.getOrDefault("")
 
     private companion object {
-        const val K_HOUR = "per_hour"; const val K_DAY = "per_day"; const val K_TIMES = "times"
+        const val K_HOUR = "per_hour"; const val K_DAY = "per_day"; const val K_TIMES = "times"; const val K_LIMIT = "limit_on"
     }
 }
