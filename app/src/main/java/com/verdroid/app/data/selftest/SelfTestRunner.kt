@@ -438,6 +438,18 @@ class SelfTestRunner @Inject constructor(
             check(com.verdroid.app.ui.components.Links.MARKDOWN.find("[docs](https://example.com/a)")?.groupValues?.get(2) == "https://example.com/a") { "markdown link" }
             "bare URLs (punctuation trimmed) and [label](url) detected"
         },
+        "assistant" to {
+            val pm = context.packageManager
+            fun handles(action: String) = pm.queryIntentActivities(Intent(action), PackageManager.MATCH_DEFAULT_ONLY)
+                .any { it.activityInfo.packageName == context.packageName && it.activityInfo.name == com.verdroid.app.ui.assist.AssistActivity::class.java.name }
+            check(handles(Intent.ACTION_ASSIST)) { "ASSIST not registered (won't appear under Digital assistant app)" }
+            check(handles(Intent.ACTION_VOICE_COMMAND)) { "VOICE_COMMAND not registered" }
+            val om = com.verdroid.app.domain.assist.AssistLogic
+            check(om.route(false) == com.verdroid.app.domain.assist.AssistLogic.Route.MAIN_APP && om.route(true) == com.verdroid.app.domain.assist.AssistLogic.Route.CHAT_HEAD && om.prompt(" ") == null) { "assist routing" }
+            val rm = context.getSystemService(android.app.role.RoleManager::class.java)
+            val held = runCatching { rm.isRoleHeld(android.app.role.RoleManager.ROLE_ASSISTANT) }.getOrDefault(false)
+            "ASSIST + VOICE_COMMAND registered; default assistant: ${if (held) "Verdroid" else "not set"}; overlay ${if (android.provider.Settings.canDrawOverlays(context)) "→ chat head" else "missing → main app"}"
+        },
         "notifications" to {
             val ok = ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
             if (ok) "granted" else throw SkipCheck("notification permission not granted")

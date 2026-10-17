@@ -120,6 +120,9 @@ class MainActivity : ComponentActivity() {
         private fun taskIdFrom(intent: Intent?): Long? =
             intent?.getLongExtra(EXTRA_TASK_ID, 0L)?.takeIf { it != 0L }
 
+        fun launchIntent(context: Context): Intent =
+            Intent(context, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+
         fun openTaskIntent(context: Context, taskId: Long): Intent =
             Intent(context, MainActivity::class.java)
                 .setAction(Intent.ACTION_VIEW)

@@ -90,6 +90,19 @@ fun ChatHeadSettingsScreen(onBack: () -> Unit, vm: SettingsViewModel = hiltViewM
                 androidx.compose.material3.Switch(checked = autoHead, onCheckedChange = vm.appPrefs::setAutoChatHeadOnHome)
             }
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
+            val assistant = remember(refresh) {
+                runCatching { context.getSystemService(android.app.role.RoleManager::class.java).isRoleHeld(android.app.role.RoleManager.ROLE_ASSISTANT) }.getOrDefault(false)
+            }
+            Text("Digital assistant", style = MaterialTheme.typography.titleSmall)
+            Text("Set Verdroid as the default assistant (Settings → Apps → Default apps → Digital assistant app) to open a quick " +
+                "prompt from long-press Home/power or the assistant gesture. Replies show as a chat head (needs \"Display over other apps\"), otherwise in the app.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            StatusRow(if (assistant) "Default assistant: Verdroid" else "Default assistant: not Verdroid", assistant) {
+                val opened = listOf(android.provider.Settings.ACTION_VOICE_INPUT_SETTINGS, android.provider.Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS)
+                    .any { a -> runCatching { context.startActivity(android.content.Intent(a)) }.isSuccess }
+                if (!opened) context.startActivity(android.content.Intent(android.provider.Settings.ACTION_SETTINGS))
+            }
+            HorizontalDivider(Modifier.padding(vertical = 8.dp))
             Text("Permissions", style = MaterialTheme.typography.titleSmall)
             StatusRow("Display over other apps", overlayGranted) { context.startActivity(vm.chatHeads.overlayPermissionIntent()) }
             if (notificationPermissionMissing) {
