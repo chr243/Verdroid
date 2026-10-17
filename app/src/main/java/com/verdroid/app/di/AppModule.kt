@@ -221,7 +221,9 @@ object AppModule {
             }.getOrNull()
         },
         // Scheduled runs (the chat's newest user message is the scheduler's) can't use tools that need the user.
-        headless = { id -> com.verdroid.app.domain.schedule.ScheduleSafety.isScheduledMessage(messageDao.lastUserContent(id)) },
+        headless = { id -> com.verdroid.app.domain.schedule.ScheduleSafety.scheduleName(messageDao.lastUserContent(id)) },
+        // x_post may run unattended only with its own Always allow ("Post to X without asking"); cap + audit log still apply.
+        alwaysAllowed = { tool -> tool == "x_post" && xPostConsent.always.value },
     )
 }
 

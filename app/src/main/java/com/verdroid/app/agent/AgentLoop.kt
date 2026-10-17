@@ -452,7 +452,8 @@ class AgentLoop internal constructor(
               this prompt. Only schedule what the user asked for, with a self-contained prompt (the run has no chat context
               unless chat="this"). After creating, confirm briefly what and when in local time, and pass on any warnings
               (battery optimisation, exact alarms). Scheduled runs have no user present: tools that need confirmation are
-              blocked there (BLOCKED_IN_SCHEDULED_RUN) — never work around that; say what you'd like to do instead.
+              blocked there (BLOCKED_IN_SCHEDULED_RUN) — never work around that; say what you'd like to do instead. x_post
+              works in scheduled runs only when the user enabled Always allow for X posts (cap and log still apply).
             - Diagnostics: self_test runs safe on-device checks of every feature and returns a pass/fail/skip report
               (optional only="termux,pdf"). Use it when tools misbehave or the user asks what works on this phone.
             - Skills: skill_list, skill_get, skill_save, skill_edit, skill_delete. "Saved skills" below is only an index (name +

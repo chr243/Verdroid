@@ -17,6 +17,18 @@ object ScheduleSafety {
 
     fun isScheduledMessage(content: String?): Boolean = content?.trimStart()?.startsWith(MARKER) == true
 
+    /** Schedule name from a scheduled-run message (`⏰ Scheduled run "name" (…)`), "" if absent; null = not a scheduled message. */
+    fun scheduleName(content: String?): String? {
+        if (!isScheduledMessage(content)) return null
+        return Regex("""^\s*${Regex.escape(MARKER)}\s*"([^"\n]*)"""").find(content!!)?.groupValues?.get(1).orEmpty()
+    }
+
+    /**
+     * Blocked tools the user can still allow unattended through their own "Always allow" setting (checked live):
+     * x_post with "Post to X without asking" / the dialog's Always allow. The rate cap and audit log still apply.
+     */
+    val ALWAYS_ALLOWABLE: Set<String> = setOf("x_post")
+
     /** Always refused in a scheduled run. */
     val BLOCKED: Set<String> = setOf(
         "x_post",                                                               // posts publicly as the user
@@ -33,10 +45,14 @@ object ScheduleSafety {
     private val TERMUX_SENDS = Regex("""\btermux-(sms-send|telephony-call|share|open|open-url|notification|clipboard-set|wallpaper|toast)\b|\b(pkg|apt|apt-get|pip3?|npm|gem|cargo)\s+(install|upgrade|uninstall|remove)\b""")
 
     /** null = allowed; else the reason this tool call is refused in a scheduled run. */
-    fun blockReason(tool: String, args: kotlinx.serialization.json.JsonObject): String? {
+    fun blockReason(tool: String, args: kotlinx.serialization.json.JsonObject, alwaysAllowed: (String) -> Boolean = { false }): String? {
         fun bool(k: String) = (args[k] as? kotlinx.serialization.json.JsonPrimitive)?.content?.lowercase() == "true"
         fun str(k: String) = (args[k] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty()
         return when {
+            tool == "x_post" -> if (alwaysAllowed(tool)) null else "x_post needs the user's Post tap. (Turning on Always allow for X posts — " +
+                "Settings → Tools → Twitter → Post to X without asking — permits posting from scheduled runs, still within the hourly/daily cap)"
+            tool == "cookie_login" -> "logging in needs the user. Assume the saved X/site login works; if a tool says NOT_LOGGED_IN, " +
+                "say in your summary that the user should open Verdroid and log in again (Settings → Tools → Logged-in sites)"
             tool in BLOCKED -> "$tool needs the user (confirmation, posting/sending, phone control, deleting or scheduling)"
             tool.startsWith("mcp__") && MCP_WRITE.containsMatchIn(tool) -> "MCP tool $tool may change or send something"
             bool("confirm_install") -> "installing packages needs the user's yes"
@@ -57,6 +73,6 @@ object ScheduleSafety {
 }
 
 /** Coroutine-context flag set around tool execution in a scheduled run: consent prompts answer "no" instead of waiting. */
-class HeadlessRun(val taskId: Long) : AbstractCoroutineContextElement(Key) {
+class HeadlessRun(val taskId: Long, val scheduleName: String = "") : AbstractCoroutineContextElement(Key) {
     companion object Key : CoroutineContext.Key<HeadlessRun>
 }

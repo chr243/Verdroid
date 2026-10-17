@@ -81,4 +81,21 @@ class XPostPolicyTest {
         assertEquals(XPostAudit.Result.UNCERTAIN, p.log.single().result)
         assertNotNull(p.blockReason(now))
     }
+
+    @Test fun scheduledRunWithAlwaysAllowIsCappedAndLoggedAsScheduled() = runTest {
+        val t = T("""{"ok":true,"posted":true,"post_url":"https://x.com/me/status/9"}""")
+        val p = P(cap = 1)
+        val tool = XPostTool(t, folder, vault, p, { now }) { _, _, _ -> true }
+        // Through the real registry: unattended run of schedule "Morning post", Always allow on.
+        val reg = ToolRegistry(listOf(tool), headless = { "Morning post" }, alwaysAllowed = { it == "x_post" })
+        assertFalse(reg.execute("x_post", """{"text":"gm"}""", 4L).isError)
+        val second = reg.execute("x_post", """{"text":"gm again"}""", 4L)
+        assertTrue(second.json.contains("RATE_LIMITED")); assertEquals(1, t.cmds.size)
+        assertEquals(listOf("scheduled: Morning post", "scheduled: Morning post; rate cap"), p.log.map { it.note })
+        assertTrue(XPostAudit.line(p.log[0]).contains("note=scheduled: Morning post"))
+        // Without Always allow: blocked before the tool runs, with the hint.
+        val off = ToolRegistry(listOf(tool), headless = { "Morning post" }).execute("x_post", """{"text":"gm"}""", 4L)
+        assertTrue(off.json, off.isError && "BLOCKED_IN_SCHEDULED_RUN" in off.json && "Always allow" in off.json)
+        assertEquals(1, t.cmds.size)
+    }
 }

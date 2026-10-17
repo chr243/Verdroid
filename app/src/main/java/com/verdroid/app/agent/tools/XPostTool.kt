@@ -73,8 +73,11 @@ class XPostTool(termux: TermuxRunner, folder: SharedFolder, private val vault: C
         val cookies = BrowserCookies.forX(vault.all())
         if (cookies.none { it.name == "auth_token" })
             return errorJson("NOT_LOGGED_IN: no X login saved (no auth_token). Call cookie_login once (the user logs in), then retry this same tool.")
+        // Scheduled (unattended) run: only reached with Always allow; every log line says so, with the schedule's name.
+        val run = kotlin.coroutines.coroutineContext[com.verdroid.app.domain.schedule.HeadlessRun]
+        val sched = run?.let { "scheduled: ${it.scheduleName.ifBlank { "chat #${it.taskId}" }}" }
         fun audit(r: XPostAudit.Result, url: String? = null, note: String? = null) =
-            runCatching { policy.audit(XPostAudit.Entry(clock(), r, text, reply, url, note)) }
+            runCatching { policy.audit(XPostAudit.Entry(clock(), r, text, reply, url, listOfNotNull(sched, note).joinToString("; ").ifEmpty { null })) }
         policy.blockReason(clock())?.let { why ->
             audit(XPostAudit.Result.BLOCKED, note = "rate cap")
             return buildJsonObject { put("error", why); put("rate_limited", true); put("posted", false) }.toString()

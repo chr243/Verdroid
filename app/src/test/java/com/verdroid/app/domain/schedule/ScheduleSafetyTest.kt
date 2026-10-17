@@ -21,6 +21,11 @@ class ScheduleSafetyTest {
             "pdf_extract_text", "crypto_backtest").forEach { assertNull(it, ScheduleSafety.blockReason(it, args())) }
         assertNotNull(ScheduleSafety.blockReason("mcp__gmail__send_email", args()))
         assertNull(ScheduleSafety.blockReason("mcp__docs__search", args()))
+        // x_post: only with its own Always allow; the block message says how to allow it. Other tools can't be always-allowed.
+        assertTrue(ScheduleSafety.blockReason("x_post", args())!!.contains("Post to X without asking"))
+        assertNull(ScheduleSafety.blockReason("x_post", args()) { it == "x_post" })
+        assertNotNull(ScheduleSafety.blockReason("git_push", args()) { true })
+        assertTrue(ScheduleSafety.blockReason("cookie_login", args())!!.contains("NOT_LOGGED_IN"))
         assertNotNull(ScheduleSafety.blockReason("pdf_info", args("confirm_install" to true)))
         assertNotNull(ScheduleSafety.blockReason("ebook_translate", args("confirmed" to true)))
         assertNull(ScheduleSafety.blockReason("ebook_translate", args("input_path" to "Input/a.epub")))
@@ -35,6 +40,8 @@ class ScheduleSafetyTest {
         assertTrue(ScheduleSafety.NO_CHANGE in p)
         assertFalse(ScheduleSafety.isScheduledMessage("what's on cnn?"))
         assertFalse(ScheduleSafety.isScheduledMessage(null))
+        assertEquals("CNN", ScheduleSafety.scheduleName(p)); assertNull(ScheduleSafety.scheduleName("hi"))
+        assertTrue(p.contains("x_timeline")); assertTrue(p.contains("Always allow"))
     }
 
     private class Probe(override val name: String) : AgentTool {
@@ -47,11 +54,13 @@ class ScheduleSafetyTest {
 
     @Test fun `registry refuses blocked tools only in scheduled runs`() = runBlocking {
         val post = Probe("x_post"); val fetch = Probe("web_fetch")
-        val reg = ToolRegistry(listOf(post, fetch), headless = { it == 7L })
+        val reg = ToolRegistry(listOf(post, fetch), headless = { if (it == 7L) "t" else null })
         val r = reg.execute("x_post", "{\"text\":\"hi\"}", 7L)
         assertTrue(r.isError); assertTrue(r.json, "BLOCKED_IN_SCHEDULED_RUN" in r.json); assertFalse(post.ran)
         val ok = reg.execute("web_fetch", "{\"url\":\"https://a.b\"}", 7L)
         assertFalse(ok.isError); assertTrue(fetch.ran); assertTrue("consent prompts must see the headless flag", fetch.sawHeadless)
+        // Read-only X tools are not blocked unattended (assume logged in).
+        assertNull(ScheduleSafety.blockReason("x_timeline", buildJsonObject {}))
         // A normal (attended) chat is untouched.
         assertFalse(reg.execute("x_post", "{\"text\":\"hi\"}", 8L).isError); assertTrue(post.ran)
     }
@@ -60,7 +69,7 @@ class ScheduleSafetyTest {
         var asked = false
         val guard = FileChangeGuard({ asked = true; true })
         val shell = Probe("termux_run")
-        val reg = ToolRegistry(listOf(shell), fileGuard = guard, headless = { true })
+        val reg = ToolRegistry(listOf(shell), fileGuard = guard, headless = { "t" })
         val r = reg.execute("termux_run", "{\"command\":\"rm /storage/emulated/0/Documents/Verdroid/Output/a.txt\"}", 3L)
         assertTrue(r.json, r.isError && "BLOCKED_IN_SCHEDULED_RUN" in r.json); assertFalse(asked); assertFalse(shell.ran)
         val always = FileChangeGuard({ true }, overwritePolicy = object : com.verdroid.app.agent.tools.OverwritePolicy {

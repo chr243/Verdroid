@@ -468,8 +468,11 @@ class SelfTestRunner @Inject constructor(
             // The real enforcement path: a headless chat can't call a blocked tool.
             val probe = object : AgentTool { override val name = "x_post"; override val description = ""; override val parameters = buildJsonObject {}
                 override suspend fun execute(args: JsonObject) = "{\"ok\":true}" }
-            val r = ToolRegistry(listOf(probe), headless = { true }).execute("x_post", "{}", 1L)
-            check(r.isError && "BLOCKED_IN_SCHEDULED_RUN" in r.json) { "x_post must be blocked in scheduled runs" }
+            val r = ToolRegistry(listOf(probe), headless = { "self-test" }).execute("x_post", "{}", 1L)
+            check(r.isError && "BLOCKED_IN_SCHEDULED_RUN" in r.json && "Always allow" in r.json) { "x_post must be blocked in scheduled runs without Always allow" }
+            check(!ToolRegistry(listOf(probe), headless = { "self-test" }, alwaysAllowed = { it == "x_post" }).execute("x_post", "{}", 1L).isError) { "x_post with Always allow must run in scheduled runs" }
+            check(safety.blockReason("x_timeline", buildJsonObject {}) == null) { "read-only X tools must work unattended" }
+            check(safety.scheduleName(prompt) == "t") { "schedule name for the x_post log" }
             val pm = context.packageManager
             check(pm.queryBroadcastReceivers(Intent(context, com.verdroid.app.data.schedule.ScheduleAlarmReceiver::class.java), 0).isNotEmpty()) { "alarm receiver not registered" }
             val mgr = schedules.get()
@@ -478,7 +481,7 @@ class SelfTestRunner @Inject constructor(
             try { check(mgr.isArmed(e.id)) { "alarm not armed" } } finally { mgr.delete(e.id) }
             check(!mgr.isArmed(e.id)) { "alarm not cancelled on delete" }
             val h = mgr.health()
-            "next-run/DST/parsing ok, scheduled-run blocking ok, alarm arm/cancel ok; exact alarms ${if (h.exactAlarms) "allowed" else "NOT allowed (may be late)"}, " +
+            "next-run/DST/parsing ok, scheduled-run blocking ok (x_post only with Always allow), alarm arm/cancel ok; exact alarms ${if (h.exactAlarms) "allowed" else "NOT allowed (may be late)"}, " +
                 "battery optimisation ${if (h.batteryExempt) "off" else "ON (runs may be delayed)"}, notifications ${if (h.notifications) "on" else "OFF"}"
         },
         "notifications" to {

@@ -34,6 +34,8 @@ class XPostConsent @Inject constructor(
 
     override suspend fun confirm(taskId: Long, text: String, replyTo: String?): Boolean? {
         if (_always.value) return true
+        // Unattended scheduled run without Always allow: nobody can tap Post (the registry already refuses this; defence in depth).
+        if (kotlin.coroutines.coroutineContext[com.verdroid.app.domain.schedule.HeadlessRun] != null) return false
         val p = Pending(synchronized(this) { nextId++ }, taskId, text, replyTo, CompletableDeferred())
         _pending.update { it + p }
         notifier.notify(NOTIFY_BASE + (p.id % 100).toInt(), "Verdroid wants to post on X",
