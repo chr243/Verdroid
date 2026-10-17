@@ -21,3 +21,16 @@ class AssistLogicTest {
         assertEquals("hi", AssistLogic.prompt(" hi "))
     }
 }
+
+class AssistManifestTest {
+    @Test fun `assist activity runs in its own translucent task`() {
+        val f = listOf("src/main/AndroidManifest.xml", "app/src/main/AndroidManifest.xml").map { java.io.File(it) }.first { it.exists() }
+        val s = f.readText()
+        val i = s.indexOf(".ui.assist.AssistActivity")
+        val block = s.substring(i, s.indexOf("</activity>", i))
+        assertTrue(block, "android:taskAffinity=\"\"" in block)
+        assertTrue(block, "android:launchMode=\"singleInstance\"" in block)
+        assertTrue(block, "android:excludeFromRecents=\"true\"" in block)
+        assertTrue(block, "@style/Theme.Verdroid.Assist" in block)
+    }
+}

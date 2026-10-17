@@ -444,6 +444,8 @@ class SelfTestRunner @Inject constructor(
                 .any { it.activityInfo.packageName == context.packageName && it.activityInfo.name == com.verdroid.app.ui.assist.AssistActivity::class.java.name }
             check(handles(Intent.ACTION_ASSIST)) { "ASSIST not registered (won't appear under Digital assistant app)" }
             check(handles(Intent.ACTION_VOICE_COMMAND)) { "VOICE_COMMAND not registered" }
+            val ai = pm.getActivityInfo(android.content.ComponentName(context, com.verdroid.app.ui.assist.AssistActivity::class.java), 0)
+            check(ai.taskAffinity.isNullOrEmpty() && ai.launchMode == android.content.pm.ActivityInfo.LAUNCH_SINGLE_INSTANCE) { "assist card must run in its own task (else the app opens behind it)" }
             val om = com.verdroid.app.domain.assist.AssistLogic
             check(om.route(false) == com.verdroid.app.domain.assist.AssistLogic.Route.MAIN_APP && om.route(true) == com.verdroid.app.domain.assist.AssistLogic.Route.CHAT_HEAD && om.prompt(" ") == null) { "assist routing" }
             val rm = context.getSystemService(android.app.role.RoleManager::class.java)

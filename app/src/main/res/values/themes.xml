@@ -9,4 +9,9 @@
         <item name="android:windowBackground">@android:color/transparent</item>
         <item name="android:backgroundDimEnabled">false</item>
     </style>
+    <!-- Assistant card: translucent window in its own task so only the card shows over the previous app. -->
+    <style name="Theme.Verdroid.Assist" parent="Theme.Verdroid.Share">
+        <item name="android:windowAnimationStyle">@android:style/Animation.Dialog</item>
+        <item name="android:windowShowWallpaper">false</item>
+    </style>
 </resources>

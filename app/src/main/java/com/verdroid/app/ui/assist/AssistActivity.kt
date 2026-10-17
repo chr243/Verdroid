@@ -50,12 +50,12 @@ class AssistActivity : ComponentActivity() {
                     busy = true; error = null
                     lifecycleScope.launch {
                         runCatching { startConversation(p) }
-                            .onSuccess { id -> open(id); finish() }
+                            .onSuccess { id -> open(id); finishAndRemoveTask() }
                             .onFailure { error = it.message ?: "Could not start the chat"; busy = false }
                     }
                 }
                 Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = 0.32f))
-                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { finish() }
+                    .clickable(interactionSource = remember { MutableInteractionSource() }, indication = null) { finishAndRemoveTask() }
                     .systemBarsPadding().imePadding(), contentAlignment = Alignment.BottomCenter) {
                     Surface(Modifier.fillMaxWidth().padding(8.dp).clickable(enabled = false) {},
                         shape = MaterialTheme.shapes.extraLarge, tonalElevation = 6.dp) {
@@ -67,9 +67,9 @@ class AssistActivity : ComponentActivity() {
                                 keyboardActions = KeyboardActions(onSend = { submit() }))
                             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
-                                TextButton(onClick = { startActivity(MainActivity.launchIntent(this@AssistActivity)); finish() }) { Text("Open app") }
+                                TextButton(onClick = { startActivity(MainActivity.launchIntent(this@AssistActivity)); finishAndRemoveTask() }) { Text("Open app") }
                                 Spacer(Modifier.weight(1f))
-                                TextButton(onClick = { finish() }) { Text("Cancel") }
+                                TextButton(onClick = { finishAndRemoveTask() }) { Text("Cancel") }
                                 Button(enabled = !busy && AssistLogic.prompt(text) != null, onClick = { submit() }) {
                                     Text(if (busy) "Sending…" else "Send")
                                 }

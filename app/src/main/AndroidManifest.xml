@@ -77,13 +77,18 @@
             </intent-filter>
         </activity>
 
-        <!-- Default "Digital assistant app" (Settings > Default apps): compact prompt card over the current app. -->
+        <!-- Default "Digital assistant app" (Settings > Default apps): compact prompt card over the current app.
+             Own empty-affinity task: the system starts ASSIST with NEW_TASK, which would otherwise bring Verdroid's
+             existing task (MainActivity) to the front behind the translucent card. -->
         <activity
             android:name=".ui.assist.AssistActivity"
             android:excludeFromRecents="true"
             android:exported="true"
             android:label="@string/app_name"
-            android:theme="@style/Theme.Verdroid.Share"
+            android:launchMode="singleInstance"
+            android:noHistory="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.Verdroid.Assist"
             android:windowSoftInputMode="adjustResize|stateVisible">
             <intent-filter>
                 <action android:name="android.intent.action.ASSIST" />
