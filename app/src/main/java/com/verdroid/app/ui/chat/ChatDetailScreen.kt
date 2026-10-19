@@ -530,6 +530,9 @@ internal fun ToolCallCard(call: ToolCallRecord) {
                 remember(call.resultJson) { com.verdroid.app.agent.tools.ChartSpecs.fromResult(call.resultJson) }
                     ?.let { (spec, png) -> com.verdroid.app.ui.chart.ChartCard(spec, png) }
             }
+            if (call.name == com.verdroid.app.agent.tools.ShowImageTool.NAME && call.status == ToolCallStatus.SUCCESS) {
+                remember(call.resultJson) { ShownImageRef.fromResult(call.resultJson) }?.let { ShownImageCard(it) }
+            }
             AnimatedVisibility(expanded) {
                 Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     CodeBlock("arguments", pretty(call.argumentsJson), if (call.name == "run_shell") "json" else null)

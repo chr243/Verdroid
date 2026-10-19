@@ -19,6 +19,7 @@ data class ToolStatus(val ready: Boolean, val text: String) {
 
         fun of(name: String, env: ToolEnv): ToolStatus = when {
             name in setOf("read_file", "write_file", "list_dir") -> READY
+            name == "show_image" -> READY
             name.startsWith("workspace_") -> if (env.storageReady) READY
                 else ToolStatus(false, "Needs All files access for Documents/Verdroid (Settings > Tools > Shared folder)")
             name == "web_fetch" || name == "web_search" -> READY

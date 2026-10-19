@@ -7,7 +7,7 @@ object ToolGroups {
     enum class Master { ON, OFF, PARTIAL }
 
     val ORDER = listOf(
-        Group("files", "Files", "Documents/Verdroid (workspace_*), private scratch files"),
+        Group("files", "Files", "Documents/Verdroid (workspace_*), private scratch files, show_image"),
         Group("web", "Web", "Search, fetch, headless Chromium (web_*, selenium_*); beta: logged-in pages (cookie_*, stored encrypted), incl. Reddit via cookie_open"),
         Group("twitter", "X (Twitter)", "Beta: read your X timeline, profiles and search (x_timeline, x_user_posts, x_search) and post with confirmation (x_post), using your saved X login. Against X's Terms of Service: the account may be limited or banned"),
         Group("termux", "Termux & Python", "termux_run, termux_python"),
@@ -23,7 +23,7 @@ object ToolGroups {
 
     fun groupOf(name: String): String = when {
         name.startsWith("mcp__") -> "mcp"
-        name in setOf("read_file", "write_file", "list_dir") || name.startsWith("workspace_") -> "files"
+        name in setOf("read_file", "write_file", "list_dir", "show_image") || name.startsWith("workspace_") -> "files"
         name in setOf("x_timeline", "x_user_posts", "x_search", "x_post") -> "twitter"
         name.startsWith("web_") || name.startsWith("selenium_") || name.startsWith("cookie_") -> "web"
         name == "termux_run" || name == "termux_python" -> "termux"

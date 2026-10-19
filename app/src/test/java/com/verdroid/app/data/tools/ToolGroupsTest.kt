@@ -48,7 +48,7 @@ class ToolGroupsTest {
 
     @Test fun `presets dialog and settings share one description per group`() {
         ToolPreset.entries.forEach { p -> assertEquals(ToolGroups.ORDER.first { it.id == p.groupId }.description, p.description) }
-        assertEquals("Documents/Verdroid (workspace_*), private scratch files", ToolPreset.FILES.description)
+        assertEquals("Documents/Verdroid (workspace_*), private scratch files, show_image", ToolPreset.FILES.description)
         assertTrue(ToolGroups.ORDER.all { it.description.isNotBlank() })
     }
 }

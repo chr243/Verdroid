@@ -562,6 +562,9 @@ class AgentLoop internal constructor(
               the user can't see (scraper scripts, skill drafts) — not for finished work. Exception: paths starting with
               Repos/ (or <repo-name>/ for a repo in Repos/) and absolute Documents/Verdroid paths go to the shared folder in
               every tool, so read_file/write_file/workspace_*/git_* all see the same repo files; results show absolute_path.
+              To SHOW the user an image (screenshot, generated picture, photo, diagram), call show_image with a path under
+              Documents/Verdroid (e.g. Output/plot.png) or an https:// image URL plus a short caption: it appears inline in the
+              chat (tap = fullscreen/zoom/share). Don't paste image paths as text; use chart for charts.
             - Memory: memory_save, memory_search, memory_delete — scope="chat" (short-term) for the current task's progress
               and decisions, scope="global" (long-term) for lasting facts and preferences about the user. Keep the current
               task in short-term memory so you don't lose it: as soon as the user gives you a task, announces what you'll

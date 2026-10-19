@@ -481,6 +481,23 @@ class SelfTestRunner @Inject constructor(
             check(com.verdroid.app.data.tools.ToolGroups.needsTosWarning("twitter", wasOn = false, turningOn = true)) { "X ToS gate" }
             "Tools tab sections, universal login, no stale names"
         },
+        "show_image" to {
+            val S = com.verdroid.app.agent.tools.ShownImages
+            check(S.sniff(byteArrayOf(0x89.toByte(), 'P'.code.toByte(), 'N'.code.toByte(), 'G'.code.toByte(), 13, 10, 26, 10)) == "png" && S.sniff("<html>".toByteArray()) == null) { "type sniff" }
+            check(!S.hostAllowed("localhost") && !S.hostAllowed("192.168.1.5") && S.hostAllowed("example.com")) { "private hosts must be refused" }
+            val base = File(context.cacheDir, "selftest-img-${System.nanoTime()}")
+            try {
+                val shared = com.verdroid.app.data.storage.SharedFolder(File(base, "shared")) { true }
+                File(shared.root, "Output").mkdirs()
+                File(shared.root, "Output/a.png").writeBytes(byteArrayOf(0x89.toByte(), 'P'.code.toByte(), 'N'.code.toByte(), 'G'.code.toByte(), 13, 10, 26, 10, 0))
+                File(shared.root, "Output/a.txt").writeText("x")
+                val t = com.verdroid.app.agent.tools.ShowImageTool(shared, File(base, "charts"), File(base, "cache"))
+                fun r(src: String) = Json.parseToJsonElement(kotlinx.coroutines.runBlocking { t.execute(buildJsonObject { put("source", src) }) }).jsonObject
+                check(r("Output/a.png")["ok"]?.jsonPrimitive?.boolean == true) { "shows a file in Documents/Verdroid" }
+                check(r("../x.png")["error"] != null && r("Output/a.txt")["error"] != null && r("http://example.com/a.png")["error"] != null) { "traversal / non-image / http refused" }
+            } finally { base.deleteRecursively() }
+            "show_image: type sniff, root limits, private hosts refused"
+        },
         "shared_deletes" to {
             val S = com.verdroid.app.agent.tools.SharedFolderDeletes
             val d = "/storage/emulated/0/Documents/Verdroid"

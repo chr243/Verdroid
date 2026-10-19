@@ -18,6 +18,9 @@ class MiniHttpServer {
             headers.forEach { (k, v) -> h.append("$k: $v\r\n") }
             out.write((h.toString() + "\r\n").toByteArray()); out.write(b); out.flush(); sent = true
         }
+        fun replyBytes(b: ByteArray, code: Int = 200, type: String = "image/png") {
+            out.write("HTTP/1.1 $code X\r\nContent-Type: $type\r\nContent-Length: ${b.size}\r\nConnection: close\r\n\r\n".toByteArray()); out.write(b); out.flush(); sent = true
+        }
         /** Starts an open-ended event stream; write events with [event]. */
         fun startStream() {
             out.write("HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nConnection: close\r\n\r\n".toByteArray()); out.flush(); sent = true

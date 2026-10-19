@@ -185,6 +185,7 @@ object AppModule {
                 SkillListTool(skills), SkillGetTool(skills), SkillSaveTool(skills), SkillEditTool(skills), SkillDeleteTool(skills),
                 // v1.0.12: native charts in the chat (+ PNG export for sharing)
                 ChartTool(File(context.filesDir, "charts"), com.verdroid.app.ui.chart.AndroidChartPng()),
+                ShowImageTool(sharedFolder, File(context.filesDir, "charts"), context.cacheDir),
                 // On-device self-test (same checks as Settings → Self-test); runner resolved lazily (it needs this registry)
                 com.verdroid.app.agent.tools.SelfTestTool { selfTest.get() },
             ) +
