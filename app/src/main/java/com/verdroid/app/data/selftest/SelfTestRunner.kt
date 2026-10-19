@@ -305,7 +305,13 @@ class SelfTestRunner @Inject constructor(
             check(H.isChallenge("<div class=\"grecaptcha-badge\"></div>") && !H.isChallenge("<shreddit-post></shreddit-post>")) { "reddit challenge detection" }
             val py = com.verdroid.app.data.termux.VerdroidSeleniumPy.SOURCE
             val fetch = py.substringAfter("def reddit_fetch(").substringBefore("\ndef ")
-            check(fetch.indexOf("reddit_cookies(drv") in 0 until fetch.indexOf("drv.get(url)")) { "Reddit cookies must be set before the first navigation" }
+            // reddit_* must use cookie_open's own launch + CDP cookie injection + load (open_session), not a copy of it.
+            val session = py.substringAfter("def open_session(").substringBefore("\ndef ")
+            check(session.indexOf("inject_cookies(") in 0 until session.indexOf("load(drv")) { "cookies must be set before the first navigation" }
+            check("open_session(drv" in fetch && "open_session(drv, a.url" in py.substringAfter("def main(")) { "reddit_* and cookie_open must share open_session" }
+            check("def make_driver(width=1366, height=900, user_agent=None, cookies_for=None)" in py && "app_cookies(cookies_for)" in py) { "make_driver(cookies_for=…) for termux_python" }
+            check(com.verdroid.app.agent.tools.TermuxPythonTool.cookieSites(kotlinx.serialization.json.buildJsonObject {
+                put("cookies_for", kotlinx.serialization.json.JsonArray(listOf(kotlinx.serialization.json.JsonPrimitive("https://www.reddit.com/r/x")))) }) == listOf("reddit.com")) { "cookies_for site parsing" }
             check(com.verdroid.app.ui.cookies.CookieLoginBridge.markerFor("reddit.com") == "reddit_session") { "reddit login marker" }
             check("rhtml" in com.verdroid.app.data.termux.VerdroidSeleniumPy.SOURCE) { "helper lacks rhtml" }
             check(com.verdroid.app.domain.schedule.ScheduleSafety.blockReason("reddit_search", kotlinx.serialization.json.buildJsonObject {}) == null) { "reddit reads must work in scheduled runs" }

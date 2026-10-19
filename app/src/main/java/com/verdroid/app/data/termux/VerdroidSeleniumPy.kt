@@ -20,8 +20,10 @@ import argparse
 import re, json, os, shutil, sys, time
 
 
-def make_driver(width=1366, height=900, user_agent=None):
-    # Headless Chromium (Termux TUR package) via chromedriver; English UI.
+def make_driver(width=1366, height=900, user_agent=None, cookies_for=None):
+    # Headless Chromium (Termux TUR package) via chromedriver; English UI. Same launch for every tool and script.
+    # cookies_for="reddit.com" (opt-in, termux_python with cookies_for): the app's stored cookies for that site are set over
+    # CDP before the first get(), exactly like cookie_open. Values never leave the browser; drv.verdroid_cookies = names/counts.
     from selenium import webdriver
     from selenium.webdriver.chrome.service import Service
     opts = webdriver.ChromeOptions()
@@ -42,7 +44,47 @@ def make_driver(width=1366, height=900, user_agent=None):
     drv = webdriver.Chrome(service=service, options=opts)
     drv.set_page_load_timeout(60)
     _unheadless(drv, user_agent)
+    if cookies_for:
+        try:
+            drv.verdroid_cookies = inject_cookies(drv, "https://" + cookies_for.strip(".") + "/", app_cookies(cookies_for))
+        except Exception:
+            drv.quit()
+            raise
     return drv
+
+
+_APP_COOKIES = None
+
+
+def app_cookies(site):
+    # Stored cookies the app handed to this termux_python run (VERDROID_COOKIES: private 0600 file in ~/.verdroid, read
+    # once into memory and deleted at once). Only the sites the tool call named are in it.
+    global _APP_COOKIES
+    if _APP_COOKIES is None:
+        _APP_COOKIES = _read_cookies(os.environ.pop("VERDROID_COOKIES", None)) or []
+    site = site.lower().strip(".")
+    got = [c for c in _APP_COOKIES if c["domain"].lower().strip(".") == site or c["domain"].lower().strip(".").endswith("." + site)]
+    if not got:
+        raise RuntimeError("No app cookies for " + site + ": pass cookies_for=[\"" + site + "\"] to termux_python (needs a saved login).")
+    return got
+
+
+def open_session(drv, url, cookies, wait=0.0, wait_for=None):
+    # THE logged-in page load shared by cookie_open (open), reddit_search/reddit_read (rhtml) and scripts: stored cookies over
+    # CDP (Network.setCookies) before the first navigation, then url + wait. Returns the cookie report (names/counts only).
+    info = inject_cookies(drv, url, cookies) if cookies is not None else None
+    load(drv, url, wait, wait_for)
+    return info
+
+
+def cookie_report(drv, url):
+    # Cookies the browser now holds for url (names only, never values).
+    try:
+        got = drv.execute_cdp_cmd("Network.getCookies", {"urls": [url]}) or {}
+        names = sorted({c.get("name") for c in got.get("cookies", [])})
+    except Exception:
+        names = []
+    return {"present": len(names), "names": names}
 
 
 def normal_user_agent(ua):
@@ -186,45 +228,40 @@ def reddit_state(st):
     return None
 
 
-def reddit_cookies(drv, cookies):
-    # CDP, before the first navigation, in this driver's own browser context: one Network.setCookie per stored cookie on
-    # .reddit.com (secure, path /, httpOnly/sameSite/expiry as stored). Returns names only, never values.
-    drv.execute_cdp_cmd("Network.enable", {})
-    ok, failed = [], []
-    for c in cookies or []:
-        d = cdp_cookie(dict(c, domain=".reddit.com", path="/", secure=True))
-        d["url"] = "https://www.reddit.com/"
-        try:
-            r = drv.execute_cdp_cmd("Network.setCookie", d) or {}
-            (ok if r.get("success", True) else failed).append(c["name"])
-        except Exception as e:
-            failed.append(c.get("name", "?") + ":" + type(e).__name__)
-    present = []
-    try:
-        got = drv.execute_cdp_cmd("Network.getCookies", {"urls": ["https://www.reddit.com/"]}) or {}
-        present = sorted({x.get("name") for x in got.get("cookies", [])})
-    except Exception:
-        pass
-    return {"added": len(ok), "failed": failed, "present": len(present), "names": present, "method": "cdp-before-nav"}
-
-
-def reddit_fetch(drv, url, cookies, selector, settle_for, cap, count, max_chars):
-    out = {"cookies": reddit_cookies(drv, cookies)}
+def reddit_fetch(drv, url, cookies, selector, settle_for, wait, cap, count, max_chars):
+    # Same path as cookie_open: open_session (inject + get + plain wait, no page scripts while Reddit's bot check runs),
+    # then read the rendered page.
+    out = {"cookies": open_session(drv, url, cookies, wait) or {}}
+    out["cookies"].update(cookie_report(drv, "https://www.reddit.com/"))
+    out["url"] = drv.current_url
     if cookies and out["cookies"]["present"] == 0:
         return dict(out, state="no_cookies", html="", html_chars=0)
-    drv.get(url)
     out.update(reddit_page(drv, selector, settle_for, cap, count, max_chars))
-    try:
-        out["cookies"]["present_after_nav"] = len(drv.get_cookies())
-    except Exception:
-        pass
     return out
 
 
+REDDIT_POSTS_JS = r'''
+return Array.from(document.querySelectorAll('shreddit-post')).slice(0, arguments[0]).map(function (p) {
+  function g(a) { return p.getAttribute(a) || ''; }
+  return {title: g('post-title'), url: g('permalink') ? 'https://www.reddit.com' + g('permalink') : '', subreddit: g('subreddit-prefixed-name'),
+    author: g('author'), score: g('score'), comments: g('comment-count'), created: g('created-timestamp'), link: g('content-href')};
+});
+'''
+
+
+def reddit_posts(drv, url, wait=6.0, count=25, cap=15):
+    # For termux_python sweeps: one driver (make_driver(cookies_for="reddit.com")), many pages. Polite: ~1 page/s at most.
+    drv.get(url)
+    time.sleep(max(1.0, float(wait)))
+    r = reddit_page(drv, "shreddit-post", None, cap, count, 0)
+    posts = drv.execute_script(REDDIT_POSTS_JS, count) or [] if r["state"] == "ready" else []
+    return {"state": r["state"], "url": url, "posts": posts}
+
+
 def reddit_page(drv, selector, settle_for, cap, count, max_chars):
-    # Poll every 250 ms (cap = --wait seconds) for the content selector, then return the rendered HTML. A challenge page
-    # can clear itself with a valid session, so it only counts if it is still there at the end.
-    cap = max(5.0, min(float(cap or 20), 30.0))
+    # Called after open_session's plain wait. Checks once a second (cap seconds) for the content selector, then returns the
+    # rendered HTML. A challenge page can clear itself with a valid session, so it only counts if it is still there at the end.
+    cap = max(3.0, min(float(cap or 15), 30.0))
     end, state, retried, last = time.time() + cap, None, False, None
     while time.time() < end:
         try:
@@ -244,7 +281,7 @@ def reddit_page(drv, selector, settle_for, cap, count, max_chars):
             state = None
         elif state is not None:
             break
-        time.sleep(0.25)
+        time.sleep(1.0)
     if state is None:
         state = last or "timeout"
     if state == "ready":
@@ -499,6 +536,7 @@ def main(argv=None):
     ap.add_argument("--max-idle", type=int, default=4)
     ap.add_argument("--text-b64", default=None)
     ap.add_argument("--settle-for", default=None)
+    ap.add_argument("--cap", type=float, default=15.0)
     a = ap.parse_args(argv)
     out = {"ok": True}
     drv = None
@@ -506,13 +544,12 @@ def main(argv=None):
         cookies = _read_cookies(a.cookies)
         drv = make_driver(a.width, a.height)
         if a.cmd == "rhtml":
-            # Reddit: cookies via CDP on .reddit.com before the first navigation, verified, then one navigation.
-            out.update(reddit_fetch(drv, a.url, cookies or [], a.wait_for or "shreddit-post", a.settle_for, a.wait, a.count, a.max_chars))
+            out.update(reddit_fetch(drv, a.url, cookies or [], a.wait_for or "shreddit-post", a.settle_for, a.wait, a.cap, a.count, a.max_chars))
             print("$MARKER" + json.dumps(out, ensure_ascii=False))
             return 0
-        if cookies is not None:
-            out["cookies"] = inject_cookies(drv, a.url, cookies)
-        load(drv, a.url, a.wait, a.wait_for)
+        info = open_session(drv, a.url, cookies, a.wait, a.wait_for)
+        if info is not None:
+            out["cookies"] = info
         out["url"] = drv.current_url
         out["title"] = drv.title
         if a.cmd == "open":

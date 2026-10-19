@@ -134,18 +134,26 @@ class SeleniumScreenshotTool(termux: TermuxRunner, folder: SharedFolder) : Termu
 class TermuxPythonTool(
     private val termux: TermuxRunner,
     private val sandbox: WorkspaceSandbox,
+    /** The user's stored browser cookies, for the opt-in cookies_for (null = not offered). */
+    private val vault: com.verdroid.app.data.cookies.CookieVault? = null,
 ) : AgentTool {
     override val name = "termux_python"
     override val description = "Run a Python script you wrote (stored in the private workspace, e.g. scrapers/news.py) with Python in Termux. " +
         "Pass code to save it first. `from verdroid_selenium import make_driver` gives a headless Chromium Selenium driver; " +
         "write results to os.environ['VERDROID_OUTPUT'] (Documents/Verdroid/Output). Returns exit_code, stdout, stderr. Timeout max 600 s. " +
         "A script that installs packages (pip/apt…) first returns needs_install_confirmation: ask the user and re-run with " +
-        "confirm_install=true + install_id only after they agree."
+        "confirm_install=true + install_id only after they agree." +
+        (if (vault != null) " Logged-in scraping (read-only): pass cookies_for=[\"reddit.com\"] (sites with a saved login) and call " +
+            "make_driver(cookies_for=\"reddit.com\"): the user's stored cookies for that site are set in the browser before the first get(), " +
+            "like cookie_open. Reuse one driver for many pages (faster); for Reddit, verdroid_selenium.reddit_posts(drv, url) returns " +
+            "{state, posts}. Never print or save cookie values." else "")
     override val parameters = schema(listOf("path"),
         "path" to prop("string", "Script path in the private workspace, e.g. scrapers/news.py"),
         "code" to prop("string", "Optional Python source to (over)write at path before running"),
         "args" to buildJsonObject { put("type", "array"); put("items", buildJsonObject { put("type", "string") }); put("description", "Command-line arguments") },
         "timeout_seconds" to prop("integer", "Timeout in seconds (default 300, max 600)"),
+        *(if (vault != null) arrayOf(COOKIES_FOR to buildJsonObject { put("type", "array"); put("items", buildJsonObject { put("type", "string") })
+            put("description", "Optional sites whose stored login cookies make_driver(cookies_for=site) may use, e.g. [\"reddit.com\"]") }) else emptyArray()),
         InstallConsent.CONFIRM_PROP, InstallConsent.ID_PROP)
 
     override suspend fun execute(args: JsonObject): String {
@@ -161,7 +169,14 @@ class TermuxPythonTool(
         TermuxRunTool.gate(name, "the script ${sandbox.relativePath(f)} installs them", InstallConsent.detectPython(String(bytes)), args)?.let { return it }
         val timeout = (args.int("timeout_seconds") ?: 300).coerceIn(1, TermuxRunTool.MAX_TIMEOUT_S)
         val argv = (args["args"] as? JsonArray)?.mapNotNull { (it as? JsonPrimitive)?.contentOrNull } ?: emptyList()
-        val r = termux.runAndWait(command(f.name, bytes, argv, timeout), "py-${System.nanoTime()}", (timeout + 20) * 1_000L, label = "Verdroid: termux_python")
+        val sites = cookieSites(args)
+        val cookies = if (sites.isEmpty()) emptyList() else {
+            val v = vault ?: return errorJson("cookies_for is not available")
+            val all = v.all()
+            sites.flatMap { s -> cookiesForHost(all, s).ifEmpty { return errorJson("No saved login cookies for $s (Settings → Tools → Logged-in sites).") } }
+                .distinctBy { Triple(it.host, it.path, it.name) }
+        }
+        val r = termux.runAndWait(command(f.name, bytes, argv, timeout, cookies), "py-${System.nanoTime()}", (timeout + 20) * 1_000L, label = "Verdroid: termux_python")
             ?: return errorJson("Termux did not answer within ${timeout + 20} s. Check allow-external-apps in Termux.")
         val code = r.exitCode ?: -1
         return buildJsonObject {
@@ -169,15 +184,28 @@ class TermuxPythonTool(
             put("exit_code", code)
             if (code == 124) put("timed_out", true)
             if (code == 127) put("hint", "python3 not found — install 'chromium-selenium' (adds Python) in Settings > Tools")
-            put("stdout", r.stdout.takeLast(30_000)); put("stderr", r.stderr.takeLast(10_000))
+            put("stdout", com.verdroid.app.data.cookies.BrowserCookies.scrub(r.stdout.takeLast(30_000), cookies)); put("stderr", com.verdroid.app.data.cookies.BrowserCookies.scrub(r.stderr.takeLast(10_000), cookies))
+            if (cookies.isNotEmpty()) put("cookies_for", JsonArray(sites.map { JsonPrimitive(it) }))
         }.toString()
     }
 
     companion object {
         private const val MAX_SCRIPT = 256_000
+        const val COOKIES_FOR = "cookies_for"
 
-        /** Writes the helper + the script into Termux's tmp dir, then runs it in ~/verdroid-work under `timeout`. */
-        internal fun command(fileName: String, script: ByteArray, argv: List<String>, timeoutS: Int): String {
+        /** Sites named in cookies_for (normalized, e.g. "www.reddit.com" → "reddit.com"); empty = no cookies. */
+        fun cookieSites(args: JsonObject): List<String> = (args[COOKIES_FOR] as? JsonArray).orEmpty()
+            .mapNotNull { (it as? JsonPrimitive)?.contentOrNull?.trim()?.lowercase()?.removePrefix("https://")?.removePrefix("http://")?.substringBefore('/') }
+            .filter { it.isNotEmpty() }.map { com.verdroid.app.data.cookies.BrowserCookies.siteOf(it) }.distinct().take(5)
+
+        /**
+         * Writes the helper + the script into Termux's tmp dir, then runs it in ~/verdroid-work under `timeout`. [cookies] (opt-in)
+         * go to a 0600 file in Termux's private ~/.verdroid (never shared storage) named by VERDROID_COOKIES; the helper reads and
+         * deletes it on first use, and it is removed when the script ends anyway.
+         */
+        internal fun command(fileName: String, script: ByteArray, argv: List<String>, timeoutS: Int,
+                             cookies: List<com.verdroid.app.data.cookies.BrowserCookie> = emptyList()): String {
+            val ck = if (cookies.isEmpty()) null else cookiePreamble(cookies)
             val safeName = fileName.replace(Regex("[^A-Za-z0-9._-]"), "_")
             val tmp = "\"${'$'}{TMPDIR:-${'$'}PREFIX/tmp}/verdroid-scripts\""
             return VerdroidSeleniumPy.installCommand() + "\n" +
@@ -185,6 +213,8 @@ class TermuxPythonTool(
                 "echo " + Base64.getEncoder().encodeToString(script) + " | base64 -d > $tmp/$safeName\n" +
                 "export VERDROID_OUTPUT=${SharedFolder.DISPLAY_PATH}/Output VERDROID_INPUT=${SharedFolder.DISPLAY_PATH}/Input VERDROID_INTERNAL=${SharedFolder.DISPLAY_PATH}/Internal " +
                 "PYTHONPATH=${VerdroidSeleniumPy.DIR}${'$'}{PYTHONPATH:+:${'$'}PYTHONPATH}\n" +
+                (ck?.let { (file, pre) -> "mkdir -p ${VerdroidSeleniumPy.DIR}\ntrap 'rm -f " + file + "' EXIT\n" + pre +
+                    "export VERDROID_COOKIES=" + TermuxRunTool.shellQuote(file) + "\n" } ?: "unset VERDROID_COOKIES\n") +
                 TermuxRunTool.capped("python3 $tmp/$safeName " + argv.joinToString(" ") { TermuxRunTool.shellQuote(it) }, timeoutS)
         }
     }

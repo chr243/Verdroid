@@ -173,6 +173,10 @@ class ToolRegistry(val tools: List<AgentTool>, private val switches: com.verdroi
         }
         val args = runCatching { Json.parseToJsonElement(argumentsJson.ifBlank { "{}" }) as? JsonObject }.getOrNull()
             ?: return ToolResult(errorJson("Arguments must be a JSON object"), true)
+        // Stored login cookies in a script follow the same switch as cookie_open (Settings → Tools / chat preset).
+        if (name == "termux_python" && TermuxPythonTool.cookieSites(args).isNotEmpty() &&
+            !chatFilter.allowed(taskId, "cookie_open", switches.isEnabled("cookie_open")))
+            return ToolResult(errorJson("cookies_for needs the logged-in browsing tools (cookie_*), which are turned off. Run the script without cookies_for or ask the user to turn them on."), true)
         val scheduleName = if (taskId == 0L) null else try { headless(taskId) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Exception) { null }
         val unattended = scheduleName != null
         if (unattended) {

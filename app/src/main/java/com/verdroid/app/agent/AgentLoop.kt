@@ -452,6 +452,9 @@ class AgentLoop internal constructor(
               private workspace (e.g. scrapers/name.py; `from verdroid_selenium import make_driver` gives a headless driver,
               always call driver.quit()) and run it with termux_python; save scraped data to os.environ["VERDROID_OUTPUT"].
               Keep scraper scripts in the private workspace, not in Documents/Verdroid.
+              A script may use a saved login (read-only): termux_python cookies_for=["reddit.com"] + make_driver(cookies_for="reddit.com")
+              sets the stored cookies before the first get(), like cookie_open; reuse that one driver for many pages
+              (verdroid_selenium.reddit_posts(drv, url) for Reddit sweeps, ~1 page/s at most). Never print cookie values.
             - Logged-in pages (Web group, beta, only if enabled): cookie_login (opens an in-app login screen; the user logs in and taps
               Done — preferred), cookie_import (from a cookie export file the user put in Documents/Verdroid/Input),
               cookie_open (selenium_open with the user's stored cookies, for logged-in reads), cookie_list, cookie_clear.

@@ -95,6 +95,41 @@ class SeleniumToolsTest {
         assertTrue(obj(TermuxPythonTool(t, sb).execute(buildJsonObject { put("path", "x.sh"); put("code", "1") })).containsKey("error"))
     }
 
+    @Test fun termuxPythonCookiesForIsOptInPrivateAndScrubbed() = runTest {
+        assumeTrue(runCatching { ProcessBuilder("python3", "--version").start().waitFor() == 0 }.getOrDefault(false))
+        val home = File(base, "home").apply { mkdirs() }
+        val sb = WorkspaceSandbox(File(base, "files/workspace"))
+        val vault = com.verdroid.app.data.cookies.CookieVault.InMemory(listOf(
+            com.verdroid.app.data.cookies.BrowserCookie("token_v2", "TOPSECRETVALUE", ".reddit.com"),
+            com.verdroid.app.data.cookies.BrowserCookie("loid", "LOIDSECRET", ".reddit.com"),
+            com.verdroid.app.data.cookies.BrowserCookie("auth_token", "XSECRET", ".x.com")))
+        val code = "import os, stat, verdroid_selenium as v\n" +
+            "f = os.environ.get('VERDROID_COOKIES', '')\n" +
+            "print('mode', oct(stat.S_IMODE(os.stat(f).st_mode)), '/.verdroid/' in f)\n" +
+            "c = v.app_cookies('reddit.com')\n" +
+            "print('names', sorted(x['name'] for x in c), os.path.exists(f), 'VERDROID_COOKIES' in os.environ)\n" +
+            "print('leak', c[0]['value'])\n" +
+            "open(os.path.expanduser('~/where'), 'w').write(f)\n"
+        val r = obj(TermuxPythonTool(localBash(home), sb, vault).execute(buildJsonObject {
+            put("path", "s/ck.py"); put("code", code); putJsonArray("cookies_for") { add("https://www.reddit.com/r/x") } }))
+        val out = r["stdout"]!!.jsonPrimitive.content
+        assertEquals(r.toString(), 0, r["exit_code"]?.jsonPrimitive?.int)
+        assertTrue(out, out.contains("mode 0o600 True"))
+        assertTrue(out, out.contains("names ['loid', 'token_v2'] False False"))  // only the named site; file deleted on read
+        assertFalse(out, out.contains("TOPSECRETVALUE") || out.contains("LOIDSECRET") || r.toString().contains("XSECRET"))
+        assertFalse(File(File(home, "where").readText()).exists())
+        // Not asked → no cookies at all; unknown site → refused before running.
+        val t = FakeTermux { _, tag -> TermuxResult(tag, "", "", 0, -1, null) }
+        TermuxPythonTool(t, sb, vault).execute(buildJsonObject { put("path", "s/a.py"); put("code", "1") })
+        assertTrue(t.commands.single().contains("unset VERDROID_COOKIES") && !t.commands.single().contains("ck-"))
+        assertTrue(obj(TermuxPythonTool(t, sb, vault).execute(buildJsonObject { put("path", "s/a.py"); putJsonArray("cookies_for") { add("example.org") } }))
+            .containsKey("error"))
+        // Same switch as cookie_open.
+        val reg = ToolRegistry(listOf(TermuxPythonTool(t, sb, vault)), com.verdroid.app.data.tools.ToolSwitches { it != "cookie_open" })
+        val res = reg.execute("termux_python", """{"path":"s/a.py","cookies_for":["reddit.com"]}""")
+        assertTrue(res.toString(), res.isError && res.json.contains("cookies_for"))
+    }
+
     @Test fun packageAndStatusWiring() {
         val sel = TermuxPackages.ALL.first { it.pkg == "chromium-selenium" }
         val s = TermuxPackages.installScript(sel)

@@ -159,7 +159,7 @@ object AppModule {
                 RunShellTool(shell, sandbox), TermuxRunTool(termux), RishRunTool(rishStore, rishRunner, shell),
                 // Headless Chromium + Selenium inside Termux, and the agent's own Python scrapers (scripts stay in filesDir/workspace)
                 SeleniumOpenTool(termux, sharedFolder), SeleniumPageSourceTool(termux, sharedFolder),
-                SeleniumScreenshotTool(termux, sharedFolder), TermuxPythonTool(termux, sandbox),
+                SeleniumScreenshotTool(termux, sharedFolder), TermuxPythonTool(termux, sandbox, cookieVault),
                 // Beta (off by default): the user's own cookies injected into headless Chromium, stored encrypted
                 CookieImportTool(sharedFolder, cookieVault), CookieListTool(cookieVault), CookieClearTool(cookieVault),
                 CookieOpenTool(termux, sharedFolder, cookieVault),

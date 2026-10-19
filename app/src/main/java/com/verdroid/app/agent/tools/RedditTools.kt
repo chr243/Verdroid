@@ -40,12 +40,15 @@ abstract class RedditTool(termux: TermuxRunner, folder: SharedFolder, private va
         val noChromium = chromiumMissing()
         if (!loggedIn || noChromium) return fallback(if (!loggedIn) "NOT_LOGGED_IN" else "NO_CHROMIUM", !loggedIn, noChromium, url, query, ctx)
         RedditThrottle.await()
-        val (file, preamble) = cookiePreamble(cookies)
+        // Exactly what cookie_open sends for this URL (same cookie rule, same helper launch + CDP injection + load).
+        val sent = cookiesForHost(vault.all(), java.net.URI(url).host)
+        val (file, preamble) = cookiePreamble(sent)
         val cli = buildList {
-            addAll(listOf("rhtml", url, "--wait", "20", "--wait-for", waitFor, "--count", count(args).toString(), "--max-chars", "4000000", "--cookies", file))
+            addAll(listOf("rhtml", url, "--wait", FIRST_WAIT_S.toString(), "--cap", "15", "--wait-for", waitFor, "--count", count(args).toString(),
+                "--max-chars", "4000000", "--cookies", file))
             settleFor?.let { add("--settle-for"); add(it) }
         }
-        val raw = BrowserCookies.scrub(runHelper(cli, 75, null, preamble), cookies)
+        val raw = BrowserCookies.scrub(runHelper(cli, 75, null, preamble), sent + cookies)
         val o = runCatching { Json.parseToJsonElement(raw).jsonObject }.getOrNull() ?: return raw
         if (o["ok"]?.jsonPrimitive?.booleanOrNull == false) {
             val err = o["error"]?.jsonPrimitive?.contentOrNull.orEmpty()
@@ -101,9 +104,13 @@ abstract class RedditTool(termux: TermuxRunner, folder: SharedFolder, private va
     }
 
     protected companion object {
+        /** Plain wait after the load, like cookie_open's wait_seconds: no page scripts while Reddit's bot check runs. */
+        const val FIRST_WAIT_S = 6
         const val STEER = "For any Reddit request use this first (not web_search/web_fetch): assume the user's Reddit login is saved. " +
             "If it fails (code NOT_LOGGED_IN, NO_CHROMIUM, CHALLENGE, COOKIES_NOT_SET, IP_BLOCKED, RATE_LIMITED, LOGIN_GATED, TIMEOUT), use its fallback (web_search) and, " +
-            "if the result has tell_user, pass that hint on in your reply. Read-only; slow (~5–25 s, renders the real page)."
+            "if the result has tell_user, pass that hint on in your reply. Read-only; slow (~15–25 s, renders the real page). " +
+            "For many queries in one go, write a termux_python script with cookies_for=[\"reddit.com\"]: one " +
+            "make_driver(cookies_for=\"reddit.com\") session and verdroid_selenium.reddit_posts(drv, url) per page (driver.quit() at the end)."
     }
 }
 

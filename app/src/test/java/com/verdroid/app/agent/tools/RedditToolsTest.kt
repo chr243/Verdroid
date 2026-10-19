@@ -130,4 +130,17 @@ class RedditToolsTest {
         assertEquals(names.sorted(), json.map { it.jsonObject["name"]!!.jsonPrimitive.content }.sorted())
         assertTrue(json.all { it.jsonObject["domain"]!!.jsonPrimitive.content == ".reddit.com" })
     }
+
+    @Test fun redditSendsExactlyTheCookiesCookieOpenSends() = runTest {
+        val jwt = "h." + java.util.Base64.getUrlEncoder().withoutPadding().encodeToString("""{"sub":"user"}""".toByteArray()) + ".s"
+        val v = CookieVault.InMemory(listOf(BrowserCookie("token_v2", jwt, ".reddit.com"), BrowserCookie("loid", "l", "www.reddit.com"),
+            BrowserCookie("auth_token", "x", ".x.com")))
+        fun sent(cmd: String): String = Regex("echo ([A-Za-z0-9+/=]+) \\| base64 -d > \\S*ck-").find(cmd)!!.groupValues[1]
+        val r = T(buildJsonObject { put("ok", true); put("state", "ready"); put("html", page) }.toString())
+        RedditSearchTool(r, folder, v).execute(buildJsonObject { put("query", "x") }, ToolContext(70))
+        val c = T(buildJsonObject { put("ok", true); put("text", "") }.toString())
+        CookieOpenTool(c, folder, v).execute(buildJsonObject { put("url", "https://www.reddit.com/search/?q=x") })
+        assertEquals(sent(c.cmds.single()), sent(r.cmds.single()))
+        assertTrue(r.cmds.single().contains(" rhtml ") || r.cmds.single().contains("'rhtml'"))
+    }
 }

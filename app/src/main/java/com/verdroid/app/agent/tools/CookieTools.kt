@@ -14,6 +14,10 @@ import java.util.Base64
  * names and redacted values only, and any value that shows up in helper output is scrubbed.
  */
 /** Shell that writes [cookies] to a private (0600) temp file in Termux for the helper's --cookies; returns (path, shell). */
+/** The stored cookies the browser gets for [host]: one rule for cookie_open, reddit_* and termux_python cookies_for. */
+internal fun cookiesForHost(all: List<com.verdroid.app.data.cookies.BrowserCookie>, host: String) =
+    if (BrowserCookies.siteOf(host) in setOf("x.com", "twitter.com")) BrowserCookies.forX(all) else BrowserCookies.forHost(all, host)
+
 internal fun cookiePreamble(cookies: List<com.verdroid.app.data.cookies.BrowserCookie>): Pair<String, String> {
     val dir = com.verdroid.app.data.termux.VerdroidSeleniumPy.DIR
     val file = "$dir/ck-${System.nanoTime()}.json"
@@ -90,7 +94,7 @@ class CookieOpenTool(termux: TermuxRunner, folder: SharedFolder, private val vau
     override suspend fun execute(args: JsonObject): String {
         val url = url(args) ?: return errorJson("url (http/https) is required")
         val host = runCatching { URI(url).host }.getOrNull() ?: return errorJson("Bad url")
-        val cookies = if (BrowserCookies.siteOf(host) in setOf("x.com", "twitter.com")) BrowserCookies.forX(vault.all()) else BrowserCookies.forHost(vault.all(), host)
+        val cookies = cookiesForHost(vault.all(), host)
         if (cookies.isEmpty()) return errorJson("No stored cookies for $host. Ask the user to export them to a file in Documents/Verdroid/Input and run cookie_import.")
         val (file, preamble) = cookiePreamble(cookies)
         val cli = listOf("open", url) + commonArgs(args) +
