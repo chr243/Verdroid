@@ -307,13 +307,15 @@ class SelfTestRunner @Inject constructor(
             // cookie_open: shared open_session sets cookies before the first navigation and reports CHALLENGE / COOKIES_NOT_SET.
             val session = py.substringAfter("def open_session(").substringBefore("\ndef ")
             check(session.indexOf("inject_cookies(") in 0 until session.lastIndexOf("load(drv")) { "cookies must be set before the first navigation" }
-            check("code=\"CHALLENGE\"" in py && "code=\"COOKIES_NOT_SET\"" in py && "page_challenge(drv" in py) { "cookie_open challenge detection" }
+            check("code=\"CHALLENGE\"" in py && "code=\"COOKIES_NOT_SET\"" in py && "page_challenge(drv" in py &&
+                "grecaptcha" !in py && "enterprise.js" !in py) { "cookie_open challenge detection" }
             val B = com.verdroid.app.data.cookies.RedditBlock
             val wall = com.verdroid.app.data.cookies.RedditBlock.Kind.BOT_WALL
             val rej = com.verdroid.app.data.cookies.RedditBlock.Kind.COOKIES_REJECTED
             check(B.classify(8, 8, 8) == wall && B.classify(null, null, null) == wall && B.classify(8, 0, null) == rej && B.classify(8, 8, 2) == rej) { "bot wall vs rejected cookies" }
             check("again" !in com.verdroid.app.data.cookies.RedditHints.BOT_WALL.substringBefore("won't help") && "kept_after_load" in py) { "bot-wall hint must not suggest re-login" }
-            check(R.isChallenge("", "Reddit - Prove your humanity") && R.isChallenge("<div class=\"grecaptcha-badge\">") && !R.isChallenge("r/Android: Pixel 10 review")) { "challenge markers" }
+            check(R.isChallenge("", "Reddit - Prove your humanity") && !R.isChallenge("<script src=\"https://www.google.com/recaptcha/enterprise.js\"></script><div class=\"grecaptcha-badge\"></div>", "two dogs – wyszukiwanie w serwisie Reddit!") &&
+                !R.isChallenge("r/Android: Pixel 10 review")) { "challenge markers" }
             check("def make_driver(width=1366, height=900, user_agent=None, cookies_for=None)" in py && "app_cookies(cookies_for)" in py) { "make_driver(cookies_for=…) for termux_python" }
             check(com.verdroid.app.agent.tools.TermuxPythonTool.cookieSites(kotlinx.serialization.json.buildJsonObject {
                 put("cookies_for", kotlinx.serialization.json.JsonArray(listOf(kotlinx.serialization.json.JsonPrimitive("https://www.reddit.com/r/x")))) }) == listOf("reddit.com")) { "cookies_for site parsing" }

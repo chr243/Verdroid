@@ -106,12 +106,17 @@ class RedditHelperPyTest {
             PAGE.clear(); PAGE.update({"title": "Reddit - Prove your humanity", "text": ""})
             o = run(["open", "https://www.reddit.com/search/?q=x", "--cookies", ckfile()])
             assert o["ok"] is False and o["code"] == "CHALLENGE" and "text" not in o, o
-            PAGE.clear(); PAGE.update({"title": "Reddit", "text": "Hm... we couldn't find any results", "captcha": True})
+            # A real logged-in results page carries invisible reCAPTCHA Enterprise (script + badge): NOT a challenge.
+            PAGE.clear(); PAGE.update({"title": "two dogs \u2013 wyszukiwanie w serwisie Reddit!", "text": "r/dogs  Two dogs playing  1.2k votes",
+                "html": "<script src='https://www.google.com/recaptcha/enterprise.js'></script><div class='grecaptcha-badge'></div><shreddit-post></shreddit-post>"})
+            o = run(["open", "https://www.reddit.com/search/?q=two+dogs&type=posts&sort=relevance", "--cookies", ckfile()])
+            assert o["ok"] and "code" not in o and o.get("text"), o
+            PAGE.clear(); PAGE.update({"title": "Reddit", "text": "PROVE YOUR HUMANITY  Please complete the check"})   # case-insensitive
             assert run(["open", "https://www.reddit.com/search/?q=x", "--cookies", ckfile()])["code"] == "CHALLENGE"
             PAGE.clear(); PAGE.update({"title": "zzqx - Reddit Search!", "text": "Hm... we couldn't find any results for zzqx"})
             o = run(["open", "https://www.reddit.com/search/?q=zzqx", "--cookies", ckfile()])
             assert o["ok"] and "code" not in o, o
-            PAGE.clear(); PAGE.update({"title": "Sign in", "text": "Sign in", "captcha": True})   # a reCAPTCHA badge elsewhere is normal
+            PAGE.clear(); PAGE.update({"title": "Sign in", "text": "Sign in", "html": "<div class='grecaptcha-badge'></div>"})   # reCAPTCHA badges are never a challenge
             assert "code" not in run(["open", "https://example.com/login", "--cookies", ckfile()])
         """)
     }

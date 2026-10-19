@@ -90,21 +90,22 @@ def open_session(drv, url, cookies, wait=0.0, wait_for=None):
 
 CHALLENGE_JS = r'''
 var t = (document.title || ''), b = document.body ? (document.body.innerText || '').slice(0, 3000) : '';
-return {title: t, text: b, captcha: !!document.querySelector('.grecaptcha-badge, script[src*="recaptcha/enterprise.js"], iframe[src*="recaptcha"]')};
+return {title: t, text: b};
 '''
 
 
 def page_challenge(drv, url):
-    # Bot-check interstitial instead of the page ("Prove your humanity"; on Reddit also any reCAPTCHA Enterprise marker,
-    # which normal Reddit pages don't carry). Elsewhere a reCAPTCHA badge alone is normal (login forms), so only the text counts.
+    # Bot-check interstitial instead of the page: only its own "Prove your humanity" title/text (case-insensitive).
+    # NOT reCAPTCHA scripts/badges: Reddit embeds invisible reCAPTCHA Enterprise on every normal page.
     try:
         st = drv.execute_script(CHALLENGE_JS) or {}
     except Exception:
         return False
-    text = ((st.get("title") or "") + " " + (st.get("text") or "")).lower()
-    if "prove your humanity" in text:
-        return True
-    return bool(st.get("captcha")) and "reddit.com" in (url or "").lower()
+    return is_challenge_text(st.get("title"), st.get("text"))
+
+
+def is_challenge_text(title, text):
+    return "prove your humanity" in ((title or "") + " " + (text or "")).lower()
 
 
 def cookie_report(drv, url):
@@ -231,11 +232,10 @@ REDDIT_STATE_JS = r'''
 var sel = arguments[0], b = document.body, t = (document.title || '');
 var txt = b ? (b.innerText || '').slice(0, 1500) : '';
 var n = 0; try { n = document.querySelectorAll(sel).length; } catch (e) {}
-var cap = !!document.querySelector('.grecaptcha-badge, script[src*="recaptcha/enterprise.js"], iframe[src*="recaptcha"]');
-return {found: n, title: t, text: txt, path: location.pathname, captcha: cap};
+return {found: n, title: t, text: txt, path: location.pathname};
 '''
 
-REDDIT_CHALLENGE_MARKERS = ("prove your humanity", "recaptcha/enterprise.js", "grecaptcha-badge")
+REDDIT_CHALLENGE_MARKERS = ("prove your humanity",)
 
 
 def reddit_state(st):
@@ -244,7 +244,7 @@ def reddit_state(st):
     text = (st.get("text") or "").lower()
     if st.get("found"):
         return "ready"
-    if "prove your humanity" in title or "prove your humanity" in text or st.get("captcha"):
+    if is_challenge_text(title, text):
         return "challenge"
     if "blocked by network security" in text or "blocked by network security" in title:
         return "ip_blocked"

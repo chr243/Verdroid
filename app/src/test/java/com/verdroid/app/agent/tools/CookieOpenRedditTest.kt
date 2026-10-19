@@ -79,6 +79,15 @@ class CookieOpenRedditTest {
         assertEquals(true, e["ok"]!!.jsonPrimitive.boolean); assertNull(e["code"])
     }
 
+    @Test fun realResultsPageWithInvisibleRecaptchaIsNotAChallenge() {
+        val text = "r/dogs · Two dogs playing · 1.2k votes <script src=\\\"https://www.google.com/recaptcha/enterprise.js\\\"></script> grecaptcha-badge"
+        val r = open(T("""{"ok":true,"title":"two dogs – wyszukiwanie w serwisie Reddit!","text":"$text","cookies":{"added":8,"present":8,"kept_after_load":8}}"""),
+            loggedIn(), "https://www.reddit.com/search/?q=two+dogs&type=posts&sort=relevance", 11)
+        assertEquals(r.toString(), true, r["ok"]!!.jsonPrimitive.boolean); assertNull(r["code"]); assertNull(r["tell_user"])
+        assertTrue(com.verdroid.app.data.cookies.RedditJson.isChallenge("", "REDDIT - PROVE YOUR HUMANITY"))
+        assertFalse(com.verdroid.app.data.cookies.RedditJson.isChallenge("<div class=\"grecaptcha-badge\"></div> recaptcha/enterprise.js", "Reddit"))
+    }
+
     @Test fun hintsNeverRequireAnAccount() {
         for (h in listOf(RedditHints.LOGIN, RedditHints.RESAVE, RedditHints.BOT_WALL, RedditHints.CHROMIUM))
             assertFalse(h, Regex("account|sign in|log in to your", RegexOption.IGNORE_CASE).containsMatchIn(h.replace("Log in to Reddit)", "")))

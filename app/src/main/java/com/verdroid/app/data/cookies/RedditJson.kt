@@ -80,10 +80,13 @@ object RedditJson {
         return "https://www.reddit.com$path/"
     }
 
-    /** A bot-check page instead of Reddit content (helper misses guarded by text/title). */
+    /**
+     * A bot-check page instead of Reddit content: only its own "Prove your humanity" title/text. reCAPTCHA scripts/badges are
+     * NOT a signal (Reddit embeds invisible reCAPTCHA Enterprise on every normal page). No reliable locale-independent marker.
+     */
     fun isChallenge(text: String?, title: String? = null): Boolean {
         val t = (title.orEmpty() + " " + text.orEmpty()).lowercase()
-        return "prove your humanity" in t || "recaptcha/enterprise.js" in t || "grecaptcha-badge" in t
+        return "prove your humanity" in t
     }
 
     /** Fallback the agent can use without the logged-in browser. */
