@@ -40,7 +40,7 @@ fun LoggedInSitesSection(vm: LoggedInSitesViewModel = hiltViewModel()) {
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = { ask = true }, modifier = Modifier.padding(vertical = 8.dp)) { Text("Log in to a site") }
-            // Reddit tools (reddit_search / reddit_read) read with this login.
+            // cookie_open reads Reddit (search, threads) with this login.
             OutlinedButton(onClick = { runCatching { context.startActivity(CookieLoginBridge.intent(context, CookieLoginBridge.REDDIT_URL)) } },
                 modifier = Modifier.padding(vertical = 8.dp)) { Text("Log in to Reddit") }
         }

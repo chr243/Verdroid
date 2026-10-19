@@ -22,7 +22,7 @@ object SelfTestCoverage {
         "run_shell" to "shizuku", "rish_run" to "rish",
         "termux_run" to "termux", "termux_python" to "python",
         "selenium_open" to "termux", "selenium_page_source" to "termux", "selenium_screenshot" to "termux",
-        "cookie_import" to "cookies", "cookie_list" to "cookies", "cookie_clear" to "cookies", "cookie_open" to "cookies", "cookie_login" to "cookie_webview", "reddit_search" to "reddit", "reddit_read" to "reddit", "x_timeline" to "x_posts", "x_user_posts" to "x_posts", "x_search" to "x_posts", "x_post" to "x_post_guard",
+        "cookie_import" to "cookies", "cookie_list" to "cookies", "cookie_clear" to "cookies", "cookie_open" to "cookies", "cookie_login" to "cookie_webview", "x_timeline" to "x_posts", "x_user_posts" to "x_posts", "x_search" to "x_posts", "x_post" to "x_post_guard",
         "ebook_translate" to "python",
         "pdf_info" to "pdf", "pdf_extract_text" to "pdf", "pdf_extract_pages" to "pdf", "pdf_merge" to "pdf", "pdf_annotate" to "pdf",
         "git_status" to "git", "git_commit" to "git", "git_clone" to "git", "git_push" to "git",

@@ -164,7 +164,6 @@ object AppModule {
                 CookieImportTool(sharedFolder, cookieVault), CookieListTool(cookieVault), CookieClearTool(cookieVault),
                 CookieOpenTool(termux, sharedFolder, cookieVault),
                 XTimelineTool(termux, sharedFolder, cookieVault), XUserPostsTool(termux, sharedFolder, cookieVault),
-                RedditSearchTool(termux, sharedFolder, cookieVault), RedditReadTool(termux, sharedFolder, cookieVault),
                 XSearchTool(termux, sharedFolder, cookieVault), XPostTool(termux, sharedFolder, cookieVault, xPostGuard, confirmer = xPostConsent),
                 CookieLoginTool({ url ->
                     val d = kotlinx.coroutines.CompletableDeferred<com.verdroid.app.ui.cookies.CookieLoginResult>()

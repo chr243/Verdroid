@@ -1,5 +1,8 @@
 package com.verdroid.app.agent.tools
 
+import com.verdroid.app.data.cookies.RedditThrottle
+import com.verdroid.app.data.cookies.RedditHints
+import com.verdroid.app.data.cookies.RedditJson
 import com.verdroid.app.data.cookies.BrowserCookies
 import com.verdroid.app.data.cookies.CookieVault
 import com.verdroid.app.data.storage.SharedFolder
@@ -87,19 +90,78 @@ class CookieClearTool(private val vault: CookieVault) : AgentTool {
 class CookieOpenTool(termux: TermuxRunner, folder: SharedFolder, private val vault: CookieVault) : TermuxSeleniumBase(termux, folder) {
     override val name = "cookie_open"
     override val description = PREFIX + "$COOKIE_NOTE Like selenium_open, but first injects the stored cookies for the URL's site " +
-        "(import them with cookie_import), so pages behind the user's login can be read. Read-only: never post, like, follow or change settings."
+        "(import them with cookie_import, or the user's saved login), so pages behind the user's login can be read. Read-only: never post, like, follow or change settings. " +
+        "Also THE tool for Reddit (see REDDIT below). code CHALLENGE = the site showed a bot check (blocked, not empty); " +
+        "COOKIES_NOT_SET = the browser refused the stored cookies. $REDDIT"
     override val parameters = schema(listOf("url"), URL_PROP, WAIT_PROP, WAIT_FOR_PROP,
         "max_chars" to prop("integer", "Max characters of visible text (default 12000, max 60000)"))
 
-    override suspend fun execute(args: JsonObject): String {
-        val url = url(args) ?: return errorJson("url (http/https) is required")
-        val host = runCatching { URI(url).host }.getOrNull() ?: return errorJson("Bad url")
+    override suspend fun execute(args: JsonObject): String = execute(args, ToolContext(0))
+    override suspend fun execute(args: JsonObject, ctx: ToolContext): String {
+        val raw = url(args) ?: return errorJson("url (http/https) is required")
+        val rawHost = runCatching { URI(raw).host }.getOrNull() ?: return errorJson("Bad url")
+        val reddit = BrowserCookies.siteOf(rawHost) == "reddit.com" || rawHost.lowercase() == "redd.it"
+        // old.reddit / redd.it / .json thread links → the rendered www.reddit.com thread (the others are blocked or login-gated).
+        val url = if (reddit) RedditJson.readUrl(raw) ?: raw else raw
+        val host = URI(url).host
+        if (reddit) {
+            val noLogin = !RedditJson.loggedIn(vault.all())
+            val noChromium = !termux.isInstalled() || !termux.hasRunCommandPermission()
+            if (noLogin || noChromium) return redditFallback(if (noLogin) "NOT_LOGGED_IN" else "NO_CHROMIUM", noLogin, noChromium, url, ctx)
+            RedditThrottle.await()
+        }
         val cookies = cookiesForHost(vault.all(), host)
         if (cookies.isEmpty()) return errorJson("No stored cookies for $host. Ask the user to export them to a file in Documents/Verdroid/Input and run cookie_import.")
         val (file, preamble) = cookiePreamble(cookies)
-        val cli = listOf("open", url) + commonArgs(args) +
+        val wait = if (reddit && args.int("wait_seconds") == null) JsonObject(args + ("wait_seconds" to JsonPrimitive(REDDIT_WAIT_S))) else args
+        val cli = listOf("open", url) + commonArgs(wait) +
             listOf("--max-chars", (args.int("max_chars") ?: 12_000).coerceIn(500, 60_000).toString(), "--cookies", file)
-        return BrowserCookies.scrub(runHelper(cli, 120, null, preamble), cookies)
+        val out = BrowserCookies.scrub(runHelper(cli, 120, null, preamble), cookies)
+        return if (reddit) redditResult(out, url, ctx) else out
+    }
+
+    /** Reddit triage: blocked (CHALLENGE / COOKIES_NOT_SET) is never "empty"; failures carry the web_search fallback. */
+    private fun redditResult(out: String, url: String, ctx: ToolContext): String {
+        val o = runCatching { Json.parseToJsonElement(out).jsonObject }.getOrNull() ?: return out
+        var code = o["code"]?.jsonPrimitive?.contentOrNull
+        val ok = o["ok"]?.jsonPrimitive?.booleanOrNull != false
+        if (ok && RedditJson.isChallenge(o["text"]?.jsonPrimitive?.contentOrNull?.take(3_000), o["title"]?.jsonPrimitive?.contentOrNull)) code = "CHALLENGE"
+        if (!ok && code == null) {
+            val err = o["error"]?.jsonPrimitive?.contentOrNull.orEmpty()
+            if (Regex("not installed|python3 missing|Run commands|did not answer|selenium", RegexOption.IGNORE_CASE).containsMatchIn(err))
+                return redditFallback("NO_CHROMIUM", false, true, url, ctx, err)
+        }
+        if (code == null) return out
+        return JsonObject(o.filterKeys { it != "text" && it != "links" } + mapOf(
+            "ok" to JsonPrimitive(false), "code" to JsonPrimitive(code),
+            "error" to JsonPrimitive(if (code == "CHALLENGE") "Reddit showed its \"Prove your humanity\" bot check instead of the page: blocked, not empty."
+                else o["error"]?.jsonPrimitive?.contentOrNull ?: "The browser refused the saved Reddit cookies."),
+            "fallback" to JsonPrimitive(RedditJson.fallbackHint(null, url)),
+        ) + (RedditHints.once(ctx.taskId, RedditHints.RELOGIN)?.let { mapOf("tell_user" to JsonPrimitive("In your reply, tell the user briefly (once): $it")) } ?: emptyMap())).toString()
+    }
+
+    private fun redditFallback(code: String, noLogin: Boolean, noChromium: Boolean, url: String, ctx: ToolContext, detail: String? = null): String {
+        val hint = listOfNotNull(RedditHints.LOGIN.takeIf { noLogin }, RedditHints.CHROMIUM.takeIf { noChromium }).joinToString(" ")
+        return buildJsonObject {
+            put("ok", false); put("code", code)
+            put("error", if (code == "NOT_LOGGED_IN") "No Reddit login saved (no reddit_session / user token_v2 cookie)."
+                else "Headless Chromium isn't available (Termux / chromium-selenium add-on)." + (detail?.let { " $it".take(200) } ?: ""))
+            put("fallback", RedditJson.fallbackHint(null, url))
+            RedditHints.once(ctx.taskId, hint)?.let { put("tell_user", "In your reply, tell the user briefly (once): $it") }
+        }.toString()
+    }
+
+    companion object {
+        const val REDDIT_WAIT_S = 15
+        /** How the agent reads Reddit (shared with the system prompt). */
+        const val REDDIT = "REDDIT (read-only): for any Reddit search/read call cookie_open FIRST (not web_search), one query per call, " +
+            "wait_seconds 15–20 (default 15 for reddit.com): search https://www.reddit.com/search/?q=<urlencoded>&type=posts " +
+            "(optional &sort=new|top|comments&t=hour|day|week|month|year|all), one subreddit https://www.reddit.com/r/<sub>/search/?q=<urlencoded>&restrict_sr=1&type=posts, " +
+            "a listing https://www.reddit.com/r/<sub>/<hot|new|top|rising>/, or the thread URL (old.reddit/redd.it links are converted). " +
+            "On code CHALLENGE, COOKIES_NOT_SET, NOT_LOGGED_IN or NO_CHROMIUM use the fallback (web_search \"site:reddit.com …\"), say briefly why, " +
+            "and pass on tell_user if present. Don't web_fetch reddit .json / old.reddit (blocked). No posting, voting or commenting. " +
+            "For many queries in one go: termux_python with cookies_for=[\"reddit.com\"], one make_driver(cookies_for=\"reddit.com\") and " +
+            "verdroid_selenium.reddit_posts(drv, url) per page (~1 page/s, driver.quit() at the end)."
     }
 }
 

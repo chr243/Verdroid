@@ -297,29 +297,28 @@ class SelfTestRunner @Inject constructor(
         },
         "reddit" to {
             val R = com.verdroid.app.data.cookies.RedditJson
-            val H = com.verdroid.app.data.cookies.RedditHtml
-            val posts = H.parsePosts("<shreddit-post post-title=\"T\" permalink=\"/r/s/comments/x1/t/\" subreddit-prefixed-name=\"r/s\" author=\"a\" score=\"5\" comment-count=\"2\"></shreddit-post>", 5)
-            check(R.formatPosts(posts).startsWith("Post 1: r/s · u/a · 5 points · 2 comments")) { "reddit parser/formatter" }
-            check(R.readUrl("https://old.reddit.com/r/s/comments/abc/t/") == "https://www.reddit.com/r/s/comments/abc/t/") { "reddit url" }
-            check(H.triage("challenge", null)?.first == "CHALLENGE" && H.triage("ip_blocked", null)?.first == "IP_BLOCKED") { "reddit error triage" }
-            check(H.isChallenge("<div class=\"grecaptcha-badge\"></div>") && !H.isChallenge("<shreddit-post></shreddit-post>")) { "reddit challenge detection" }
             val py = com.verdroid.app.data.termux.VerdroidSeleniumPy.SOURCE
-            val fetch = py.substringAfter("def reddit_fetch(").substringBefore("\ndef ")
-            // reddit_* must use cookie_open's own launch + CDP cookie injection + load (open_session), not a copy of it.
+            // Routing: Reddit goes through cookie_open (the dedicated reddit_* tools are gone), with the documented URLs.
+            val names = registry.tools.map { it.name }
+            check("cookie_open" in names && names.none { it.startsWith("reddit_") }) { "Reddit must route through cookie_open" }
+            val steer = com.verdroid.app.agent.tools.CookieOpenTool.REDDIT
+            check("https://www.reddit.com/search/?q=" in steer && "restrict_sr=1" in steer && "CHALLENGE" in steer && "cookies_for" in steer) { "Reddit instructions" }
+            check(R.readUrl("https://old.reddit.com/r/s/comments/abc/t/") == "https://www.reddit.com/r/s/comments/abc/t/") { "reddit thread url" }
+            // cookie_open: shared open_session sets cookies before the first navigation and reports CHALLENGE / COOKIES_NOT_SET.
             val session = py.substringAfter("def open_session(").substringBefore("\ndef ")
-            check(session.indexOf("inject_cookies(") in 0 until session.indexOf("load(drv")) { "cookies must be set before the first navigation" }
-            check("open_session(drv" in fetch && "open_session(drv, a.url" in py.substringAfter("def main(")) { "reddit_* and cookie_open must share open_session" }
+            check(session.indexOf("inject_cookies(") in 0 until session.lastIndexOf("load(drv")) { "cookies must be set before the first navigation" }
+            check("code=\"CHALLENGE\"" in py && "code=\"COOKIES_NOT_SET\"" in py && "page_challenge(drv" in py) { "cookie_open challenge detection" }
+            check(R.isChallenge("", "Reddit - Prove your humanity") && R.isChallenge("<div class=\"grecaptcha-badge\">") && !R.isChallenge("r/Android: Pixel 10 review")) { "challenge markers" }
             check("def make_driver(width=1366, height=900, user_agent=None, cookies_for=None)" in py && "app_cookies(cookies_for)" in py) { "make_driver(cookies_for=…) for termux_python" }
             check(com.verdroid.app.agent.tools.TermuxPythonTool.cookieSites(kotlinx.serialization.json.buildJsonObject {
                 put("cookies_for", kotlinx.serialization.json.JsonArray(listOf(kotlinx.serialization.json.JsonPrimitive("https://www.reddit.com/r/x")))) }) == listOf("reddit.com")) { "cookies_for site parsing" }
             check(com.verdroid.app.ui.cookies.CookieLoginBridge.markerFor("reddit.com") == "reddit_session") { "reddit login marker" }
-            check("rhtml" in com.verdroid.app.data.termux.VerdroidSeleniumPy.SOURCE) { "helper lacks rhtml" }
-            check(com.verdroid.app.domain.schedule.ScheduleSafety.blockReason("reddit_search", kotlinx.serialization.json.buildJsonObject {}) == null) { "reddit reads must work in scheduled runs" }
-            if (!R.loggedIn(cookieVault.all())) throw SkipCheck("no Reddit login saved (Settings → Tools → Logged-in sites → Log in to Reddit); reddit_* fall back to web search")
+            check(com.verdroid.app.domain.schedule.ScheduleSafety.blockReason("cookie_open", kotlinx.serialization.json.buildJsonObject {}) == null) { "Reddit reads must work in scheduled runs" }
+            if (!R.loggedIn(cookieVault.all())) throw SkipCheck("no Reddit login saved (Settings → Tools → Logged-in sites → Log in to Reddit); Reddit falls back to web search")
             requireTermux()
             val out = termuxEcho("python -c 'import selenium; print(\"selenium-ok\")' 2>&1 || echo noselenium")
-            if ("selenium-ok" !in out) throw SkipCheck("chromium-selenium add-on not installed; reddit_* fall back to web search")
-            "parser ok, Reddit login saved (token_v2/reddit_session), Selenium present"
+            if ("selenium-ok" !in out) throw SkipCheck("chromium-selenium add-on not installed; Reddit falls back to web search")
+            "routing via cookie_open ok, Reddit login saved, Selenium present"
         },
         "cookie_webview" to {
             check(com.verdroid.app.data.cookies.BrowserCookies.fromCookieHeader("x.com", "a=1; b=2").size == 2) { "cookie header parse" }

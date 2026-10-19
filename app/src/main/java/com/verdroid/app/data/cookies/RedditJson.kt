@@ -6,8 +6,8 @@ import java.net.URLEncoder
 import kotlinx.coroutines.sync.withLock
 
 /**
- * Reddit reads for reddit_search / reddit_read (pure, unit-tested): login detection, page URLs and text formatting.
- * The pages are rendered by the logged-in headless browser and parsed by [RedditHtml]. Nothing is saved.
+ * Reddit reads through cookie_open (pure, unit-tested): login detection, page URLs, challenge detection, fallback hints.
+ * Pages are rendered by the logged-in headless browser (open_session). Nothing is saved.
  */
 object RedditJson {
     /** Logged-in marker: reddit_session is only set after a real login (token_v2 / loid / csv exist for guests too). */
@@ -78,32 +78,11 @@ object RedditJson {
         return "https://www.reddit.com$path/"
     }
 
-    data class Post(val title: String, val sub: String, val author: String, val score: Int, val comments: Int,
-                    val permalink: String, val link: String, val text: String, val created: Long = 0, val age: String = "")
-    data class Comment(val author: String, val score: Int, val body: String, val depth: Int)
-
-    fun formatPosts(posts: List<Post>, snippet: Int = 300): String = posts.mapIndexed { i, p ->
-        buildString {
-            append("Post ${i + 1}: r/${p.sub}" + (if (p.author.isNotBlank()) " · u/${p.author}" else "") +
-                " · ${p.score} points · ${p.comments} comments" + (if (p.age.isNotBlank()) " · ${p.age}" else "") + "\n")
-            append(p.title).append('\n')
-            if (p.text.isNotBlank()) append(p.text.replace(Regex("\\s+"), " ").take(snippet)).append(if (p.text.length > snippet) "…\n" else "\n")
-            append(p.permalink)
-            if (p.link.isNotBlank() && !p.link.contains("reddit.com/") && p.link != p.permalink) append("\nLink: ").append(p.link)
-        }
-    }.joinToString("\n\n")
-
-    fun formatThread(p: Post?, comments: List<Comment>, maxPostChars: Int = 6_000): String = buildString {
-        if (p != null) {
-            append("r/${p.sub}" + (if (p.author.isNotBlank()) " · u/${p.author}" else "") + " · ${p.score} points · ${p.comments} comments" +
-                (if (p.age.isNotBlank()) " · ${p.age}" else "") + "\n")
-            append(p.title).append('\n')
-            if (p.text.isNotBlank()) append(p.text.take(maxPostChars)).append('\n')
-            if (p.link.isNotBlank() && !p.link.contains("reddit.com/")) append("Link: ").append(p.link).append('\n')
-        }
-        if (comments.isNotEmpty()) append("\nTop comments:\n")
-        comments.forEach { c -> append("  ".repeat(c.depth.coerceIn(0, 4))).append("- u/${c.author} (${c.score}): ").append(c.body.replace(Regex("\\s+"), " ").take(1_000)).append('\n') }
-    }.trimEnd()
+    /** A bot-check page instead of Reddit content (helper misses guarded by text/title). */
+    fun isChallenge(text: String?, title: String? = null): Boolean {
+        val t = (title.orEmpty() + " " + text.orEmpty()).lowercase()
+        return "prove your humanity" in t || "recaptcha/enterprise.js" in t || "grecaptcha-badge" in t
+    }
 
     /** Fallback the agent can use without the logged-in browser. */
     fun fallbackHint(query: String?, url: String?): String = buildString {

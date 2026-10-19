@@ -70,11 +70,38 @@ def app_cookies(site):
 
 
 def open_session(drv, url, cookies, wait=0.0, wait_for=None):
-    # THE logged-in page load shared by cookie_open (open), reddit_search/reddit_read (rhtml) and scripts: stored cookies over
-    # CDP (Network.setCookies) before the first navigation, then url + wait. Returns the cookie report (names/counts only).
-    info = inject_cookies(drv, url, cookies) if cookies is not None else None
+    # THE logged-in page load shared by cookie_open (open/source/shot) and scripts: stored cookies over CDP
+    # (Network.setCookies) before the first navigation, checked (names/counts only), then url + plain wait.
+    # state "no_cookies" = the browser kept none of them (the page is then not loaded).
+    if cookies is None:
+        load(drv, url, wait, wait_for)
+        return None
+    info = inject_cookies(drv, url, cookies)
+    info.update(cookie_report(drv, url))
+    if cookies and info["present"] == 0:
+        info["state"] = "no_cookies"
+        return info
     load(drv, url, wait, wait_for)
     return info
+
+
+CHALLENGE_JS = r'''
+var t = (document.title || ''), b = document.body ? (document.body.innerText || '').slice(0, 3000) : '';
+return {title: t, text: b, captcha: !!document.querySelector('.grecaptcha-badge, script[src*="recaptcha/enterprise.js"], iframe[src*="recaptcha"]')};
+'''
+
+
+def page_challenge(drv, url):
+    # Bot-check interstitial instead of the page ("Prove your humanity"; on Reddit also any reCAPTCHA Enterprise marker,
+    # which normal Reddit pages don't carry). Elsewhere a reCAPTCHA badge alone is normal (login forms), so only the text counts.
+    try:
+        st = drv.execute_script(CHALLENGE_JS) or {}
+    except Exception:
+        return False
+    text = ((st.get("title") or "") + " " + (st.get("text") or "")).lower()
+    if "prove your humanity" in text:
+        return True
+    return bool(st.get("captcha")) and "reddit.com" in (url or "").lower()
 
 
 def cookie_report(drv, url):
@@ -226,18 +253,6 @@ def reddit_state(st):
     if ("find any results" in text or "no results" in text) and "search" in (st.get("path") or "") + title:
         return "empty"
     return None
-
-
-def reddit_fetch(drv, url, cookies, selector, settle_for, wait, cap, count, max_chars):
-    # Same path as cookie_open: open_session (inject + get + plain wait, no page scripts while Reddit's bot check runs),
-    # then read the rendered page.
-    out = {"cookies": open_session(drv, url, cookies, wait) or {}}
-    out["cookies"].update(cookie_report(drv, "https://www.reddit.com/"))
-    out["url"] = drv.current_url
-    if cookies and out["cookies"]["present"] == 0:
-        return dict(out, state="no_cookies", html="", html_chars=0)
-    out.update(reddit_page(drv, selector, settle_for, cap, count, max_chars))
-    return out
 
 
 REDDIT_POSTS_JS = r'''
@@ -521,7 +536,7 @@ def _save(path, data, binary=False):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="verdroid_selenium")
-    ap.add_argument("cmd", choices=["open", "source", "shot", "xposts", "xpost", "rhtml"])
+    ap.add_argument("cmd", choices=["open", "source", "shot", "xposts", "xpost"])
     ap.add_argument("url")
     ap.add_argument("--wait", type=float, default=2.0)
     ap.add_argument("--wait-for", default=None)
@@ -535,21 +550,24 @@ def main(argv=None):
     ap.add_argument("--count", type=int, default=20)
     ap.add_argument("--max-idle", type=int, default=4)
     ap.add_argument("--text-b64", default=None)
-    ap.add_argument("--settle-for", default=None)
-    ap.add_argument("--cap", type=float, default=15.0)
     a = ap.parse_args(argv)
     out = {"ok": True}
     drv = None
     try:
         cookies = _read_cookies(a.cookies)
         drv = make_driver(a.width, a.height)
-        if a.cmd == "rhtml":
-            out.update(reddit_fetch(drv, a.url, cookies or [], a.wait_for or "shreddit-post", a.settle_for, a.wait, a.cap, a.count, a.max_chars))
-            print("$MARKER" + json.dumps(out, ensure_ascii=False))
-            return 0
         info = open_session(drv, a.url, cookies, a.wait, a.wait_for)
         if info is not None:
-            out["cookies"] = info
+            out["cookies"] = {k: info[k] for k in ("added", "present", "names", "method", "failed") if k in info}
+            if info.get("state") == "no_cookies":
+                out.update(ok=False, code="COOKIES_NOT_SET", error="The browser kept none of the stored cookies, so the page was not loaded.")
+                print("$MARKER" + json.dumps(out, ensure_ascii=False))
+                return 0
+            if page_challenge(drv, a.url):
+                out.update(ok=False, code="CHALLENGE", url=drv.current_url, title=drv.title,
+                           error="The site showed a bot check (\"Prove your humanity\" / reCAPTCHA) instead of the page: blocked, not empty.")
+                print("$MARKER" + json.dumps(out, ensure_ascii=False))
+                return 0
         out["url"] = drv.current_url
         out["title"] = drv.title
         if a.cmd == "open":

@@ -460,12 +460,16 @@ class AgentLoop internal constructor(
               cookie_open (selenium_open with the user's stored cookies, for logged-in reads), cookie_list, cookie_clear.
               Cookie values are secrets: never print, repeat or save them, never ask the user to paste cookies into the chat.
               With cookie_open only read pages (never post, like, follow or change account settings).
-            - Reddit (read-only): for any Reddit request call reddit_search (search all of Reddit or one subreddit, or list a
-              subreddit) and reddit_read (a thread with top comments) FIRST, not web_search/web_fetch; assume the Reddit login
-              is saved. Only when they fail (NOT_LOGGED_IN, NO_CHROMIUM, CHALLENGE, COOKIES_NOT_SET, IP_BLOCKED, RATE_LIMITED, LOGIN_GATED, TIMEOUT)
-              use their fallback (web_search "site:reddit.com …"; don't web_fetch reddit .json / old.reddit, they're blocked), say
-              briefly why, and if the result has tell_user, pass that hint on in your reply. On RATE_LIMITED don't retry right away. Don't call
-              cookie_login for Reddit unless the user wants to log in. No posting, voting or commenting.
+            - Reddit (read-only): for any Reddit search or thread call cookie_open FIRST (not web_search/web_fetch); assume
+              the Reddit login is saved. One query per call, wait_seconds 15–20 (15 is the default for reddit.com). URLs:
+              search https://www.reddit.com/search/?q=<urlencoded>&type=posts (optional &sort=new|top|comments&t=day|week|…),
+              one subreddit https://www.reddit.com/r/<sub>/search/?q=<urlencoded>&restrict_sr=1&type=posts, a listing
+              https://www.reddit.com/r/<sub>/<hot|new|top|rising>/, or the thread URL. Code CHALLENGE ("Prove your humanity")
+              means blocked, not empty. On CHALLENGE, COOKIES_NOT_SET, NOT_LOGGED_IN or NO_CHROMIUM use the fallback
+              (web_search "site:reddit.com …"; don't web_fetch reddit .json / old.reddit, they're blocked), say briefly why,
+              and if the result has tell_user, pass that hint on in your reply. Many queries at once: a termux_python script with
+              cookies_for=["reddit.com"] (see above). Don't call cookie_login for Reddit unless the user wants to log in.
+              No posting, voting or commenting.
             - Twitter (beta, only if enabled): x_timeline (home feed), x_user_posts (one account), x_search (search) — use
               these for X instead of cookie_open + parsing HTML; they return formatted posts. Assume the X login is already
               saved: call the X tool first, never cookie_login or cookie_clear first or "just in case". Only when an X tool
