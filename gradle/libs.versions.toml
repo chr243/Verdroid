@@ -11,6 +11,7 @@ composeBom = "2024.12.01"
 materialKolor = "2.0.0"
 activityCompose = "1.9.3"
 coreKtx = "1.15.0"
+webkit = "1.14.0"
 lifecycle = "2.8.7"
 navigation = "2.8.5"
 work = "2.10.0"
@@ -29,6 +30,7 @@ jgit = "5.13.3.202401111512-r"
 
 [libraries]
 jsoup = { group = "org.jsoup", name = "jsoup", version.ref = "jsoup" }
+androidx-webkit = { group = "androidx.webkit", name = "webkit", version.ref = "webkit" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
 androidx-lifecycle-runtime-ktx = { group = "androidx.lifecycle", name = "lifecycle-runtime-ktx", version.ref = "lifecycle" }

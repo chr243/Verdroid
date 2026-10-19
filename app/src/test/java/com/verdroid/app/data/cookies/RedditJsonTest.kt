@@ -71,4 +71,29 @@ class RedditJsonTest {
         RedditHints.resetForTest()
         assertNotNull(RedditHints.once(7, "x")); assertNull(RedditHints.once(7, "x")); assertNotNull(RedditHints.once(8, "x"))
     }
+
+    private fun jwt(payload: String) = "eyJhbGciOiJSUzI1NiJ9." +
+        java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(payload.toByteArray()) + ".sig"
+
+    @Test fun tokenV2CountsOnlyWhenIssuedToAUser() {
+        assertTrue(RedditJson.isUserToken(jwt("""{"sub":"user","lid":"t2_abc","exp":1}""")))
+        assertTrue(RedditJson.isUserToken(jwt("""{"sub":"t2_abc"}""")))
+        assertFalse(RedditJson.isUserToken(jwt("""{"sub":"loid","loid":"000"}""")))
+        assertFalse(RedditJson.isUserToken("garbage")); assertFalse(RedditJson.isUserToken(null))
+        assertTrue(RedditJson.loggedIn(listOf(BrowserCookie("token_v2", jwt("""{"sub":"user"}"""), ".reddit.com"))))
+        assertFalse(RedditJson.loggedIn(listOf(BrowserCookie("token_v2", jwt("""{"sub":"loid"}"""), ".reddit.com"))))
+        val names = RedditJson.loginNames(listOf("token_v2" to jwt("""{"sub":"user"}"""), "loid" to "x"))
+        assertTrue(RedditJson.USER_TOKEN_MARK in names)
+        assertEquals(LoginDetector.Verdict.DONE, LoginDetector.check("reddit.com", "https://www.reddit.com/", names, 0, 0))
+        assertFalse(RedditJson.isLoggedInNames(RedditJson.loginNames(listOf("token_v2" to jwt("""{"sub":"loid"}""")))))
+    }
+
+    @Test fun blankPageDetection() {
+        assertTrue(LoginDetector.isBlank("\"0,4\""))
+        assertFalse(LoginDetector.isBlank("\"0,300\"")) // shadow-DOM app: little innerText, many elements
+        assertFalse(LoginDetector.isBlank("\"120,10\""))
+        assertFalse(LoginDetector.isBlank(null)); assertFalse(LoginDetector.isBlank("null"))
+        assertTrue(LoginDetector.blankHint("https://www.reddit.com/login/").contains("old.reddit.com"))
+        assertTrue(CookieLoginBridge.isReddit("https://old.reddit.com/login")); assertFalse(CookieLoginBridge.isReddit("https://x.com/"))
+    }
 }

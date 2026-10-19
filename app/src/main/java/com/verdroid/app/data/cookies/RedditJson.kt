@@ -18,7 +18,33 @@ object RedditJson {
     fun forReddit(cookies: List<BrowserCookie>): List<BrowserCookie> =
         cookies.filter { BrowserCookies.siteOf(it.host) == "reddit.com" }.map { it.copy(domain = ".reddit.com") }.distinctBy { it.name to it.path }
 
-    fun loggedIn(cookies: List<BrowserCookie>): Boolean = forReddit(cookies).any { it.name == LOGIN_COOKIE && it.value.isNotBlank() }
+    /** Synthetic cookie "name" the login screen adds when token_v2 belongs to a user (names-only login detection). */
+    const val USER_TOKEN_MARK = "token_v2(user)"
+
+    /**
+     * Logged in = a reddit_session cookie, or a token_v2 JWT issued to a user (payload sub "user" or lid "t2_…"). Logged-out
+     * visitors also get token_v2, but with sub "loid", so token_v2 alone is not enough.
+     */
+    fun loggedIn(cookies: List<BrowserCookie>): Boolean = forReddit(cookies).any {
+        (it.name == LOGIN_COOKIE && it.value.isNotBlank()) || (it.name == "token_v2" && isUserToken(it.value))
+    }
+
+    /** Login detection from cookie (name, value) pairs; adds [USER_TOKEN_MARK] for a user token_v2. Values never leave here. */
+    fun loginNames(pairs: List<Pair<String, String>>): Set<String> =
+        pairs.map { it.first }.toSet() + (if (pairs.any { it.first == "token_v2" && isUserToken(it.second) }) setOf(USER_TOKEN_MARK) else emptySet())
+
+    fun isLoggedInNames(names: Set<String>): Boolean = LOGIN_COOKIE in names || USER_TOKEN_MARK in names
+
+    /** token_v2 JWT payload: sub == "user" or lid starting with t2_ (account id) = logged in; sub "loid" = guest. */
+    fun isUserToken(jwt: String?): Boolean {
+        val part = jwt?.split('.')?.getOrNull(1)?.takeIf { it.isNotEmpty() } ?: return false
+        val json = runCatching { String(java.util.Base64.getUrlDecoder().decode(part.trimEnd('=').let { it + "=".repeat((4 - it.length % 4) % 4) })) }
+            .getOrNull() ?: return false
+        val o = runCatching { Json.parseToJsonElement(json).jsonObject }.getOrNull() ?: return false
+        val sub = (o["sub"] as? JsonPrimitive)?.contentOrNull.orEmpty()
+        val lid = (o["lid"] as? JsonPrimitive)?.contentOrNull.orEmpty()
+        return sub == "user" || sub.startsWith("t2_") || lid.startsWith("t2_")
+    }
 
     fun subreddit(raw: String?): String? = raw?.trim()?.removePrefix("/")?.removePrefix("r/")?.removePrefix("/")?.trimEnd('/')
         ?.takeIf { it.isNotEmpty() }?.takeIf { SUB.matches(it) }

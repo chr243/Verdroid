@@ -57,6 +57,13 @@ object CookieLoginBridge {
         else -> null
     }
     const val REDDIT_URL = "https://www.reddit.com/login/"
+    const val REDDIT_OLD_URL = "https://old.reddit.com/login"
+    /** Empty X-Requested-With allow-list = the header is never sent. False when this WebView can't do it (update WebView). */
+    @SuppressLint("RequiresFeature")
+    fun dropRequestedWith(settings: android.webkit.WebSettings): Boolean =
+        runCatching { androidx.webkit.WebSettingsCompat.setRequestedWithHeaderOriginAllowList(settings, emptySet()) }.isSuccess
+
+    fun isReddit(url: String): Boolean = runCatching { BrowserCookies.siteOf(java.net.URI(url).host) == "reddit.com" }.getOrDefault(false)
 
     /** Reads the WebView's cookies for the URL's site (+ siblings, + subdomains) and stores them in [vault]. */
     fun capture(url: String, vault: CookieVault, read: (String) -> String?): CookieLoginResult {
@@ -69,8 +76,9 @@ object CookieLoginBridge {
         vault.save(BrowserCookies.replaceSites(vault.all(), sites.filter { s -> fresh.any { BrowserCookies.siteOf(it.host) == s } }, fresh))
         val names = fresh.map { it.name }.distinct().sorted()
         val marker = markerFor(BrowserCookies.siteOf(host))
+        val site = BrowserCookies.siteOf(host)
         return CookieLoginResult(true, fresh.map { BrowserCookies.siteOf(it.host) }.distinct(), fresh.size, names,
-            loggedIn = marker == null || marker in names)
+            loggedIn = if (site == "reddit.com") com.verdroid.app.data.cookies.RedditJson.loggedIn(fresh) else marker == null || marker in names)
     }
 }
 
@@ -78,6 +86,22 @@ object CookieLoginBridge {
 object LoginDetector {
     enum class Verdict { NOT_YET, WAIT, DONE }
     private val loginPath = Regex("login|signin|sign-in|sign_in|/flow/|/auth|oauth|session", RegexOption.IGNORE_CASE)
+
+    /** [BLANK_JS] result ("\"chars,elements\"") → nothing visible. Shadow-DOM pages have little innerText, so require few elements too. */
+    fun isBlank(jsResult: String?): Boolean {
+        val parts = jsResult?.trim('"')?.split(',') ?: return false
+        val chars = parts.getOrNull(0)?.toIntOrNull() ?: return false
+        val elements = parts.getOrNull(1)?.toIntOrNull() ?: return false
+        return chars < 5 && elements < 15
+    }
+
+    fun blankHint(url: String): String {
+        val site = runCatching { BrowserCookies.siteOf(java.net.URI(url).host) }.getOrDefault("")
+        return if (site == "reddit.com") "Reddit's login page didn't show. Update Android System WebView (Play Store) and try again, or try old Reddit " +
+            "(old.reddit.com/login). Use username + password: Google/Apple sign-in doesn't work in in-app browsers. You can also import cookies from a " +
+            "desktop browser export with cookie_import."
+        else "The page didn't show. Update Android System WebView (Play Store) and try again, or import cookies from a browser export (cookie_import)."
+    }
 
     fun isLoginUrl(url: String?): Boolean = url != null && loginPath.containsMatchIn(runCatching { java.net.URI(url).path.orEmpty() }.getOrDefault(url))
 
@@ -92,7 +116,7 @@ object LoginDetector {
             return if (settled) Verdict.DONE else Verdict.WAIT
         }
         if (site == "reddit.com") {
-            if (com.verdroid.app.data.cookies.RedditJson.LOGIN_COOKIE !in names) return Verdict.NOT_YET
+            if (!com.verdroid.app.data.cookies.RedditJson.isLoggedInNames(names)) return Verdict.NOT_YET
             return if ((url != null && !isLoginUrl(url)) || markerAgeMs >= 1_500) Verdict.DONE else Verdict.WAIT
         }
         if (url == null || isLoginUrl(url) || names.size <= baseline) return Verdict.NOT_YET
@@ -103,13 +127,15 @@ object LoginDetector {
 /** Full-screen WebView: the user logs in normally, taps Done, the cookies go into the encrypted CookieStore. */
 class CookieLoginActivity : ComponentActivity() {
     private var finished = false
+    private var web: WebView? = null
     private var baseline = -1
     private var markerSince = 0L
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
 
-    private fun names(site: String): Set<String> =
-        CookieLoginBridge.urlsFor(site).flatMap { u -> BrowserCookies.parseCookieHeader(runCatching { CookieManager.getInstance().getCookie(u) }.getOrNull()) }
-            .map { it.first }.toSet()
+    private fun names(site: String): Set<String> {
+        val pairs = CookieLoginBridge.urlsFor(site).flatMap { u -> BrowserCookies.parseCookieHeader(runCatching { CookieManager.getInstance().getCookie(u) }.getOrNull()) }
+        return if (site == "reddit.com") com.verdroid.app.data.cookies.RedditJson.loginNames(pairs) else pairs.map { it.first }.toSet()
+    }
 
     /** Auto-close: called on page start/finish/history change; saves and closes once the site shows a login cookie. */
     private fun autoCheck(loginUrl: String, current: String?) {
@@ -150,14 +176,16 @@ class CookieLoginActivity : ComponentActivity() {
                     )
                 }) { padding ->
                     Column(Modifier.fillMaxSize().padding(padding)) {
-                        Text("Cookies are saved encrypted on this phone for cookie_open. Some sites (e.g. Google) block logins in this screen. $title",
+                        Text("Cookies are saved encrypted on this phone. Use username + password: Google sign-in is blocked in this screen. $title",
                             style = MaterialTheme.typography.bodySmall, maxLines = 2,
                             modifier = Modifier.padding(horizontal = 12.dp(), vertical = 4.dp()))
                         if (progress in 1..99) LinearProgressIndicator(progress = { progress / 100f }, modifier = Modifier.fillMaxWidth().height(2.dp()))
                         error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall,
                             modifier = Modifier.padding(horizontal = 12.dp(), vertical = 4.dp())) }
+                        if (error != null && CookieLoginBridge.isReddit(url) && web?.url?.contains("old.reddit.com") != true)
+                            TextButton(onClick = { error = null; web?.loadUrl(CookieLoginBridge.REDDIT_OLD_URL) }) { Text("Try old Reddit login") }
                         AndroidView(modifier = Modifier.fillMaxWidth().weight(1f), factory = { ctx ->
-                            WebView(ctx).apply {
+                            WebView(ctx).also { web = it }.apply {
                                 layoutParams = android.view.ViewGroup.LayoutParams(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.MATCH_PARENT)
                                 settings.javaScriptEnabled = true
                                 settings.domStorageEnabled = true
@@ -169,6 +197,10 @@ class CookieLoginActivity : ComponentActivity() {
                                 settings.setSupportMultipleWindows(true) // window.open → onCreateWindow → same WebView
                                 settings.mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_COMPATIBILITY_MODE
                                 settings.userAgentString = CookieLoginBridge.chromeUserAgent(settings.userAgentString)
+                                // WebView sends "X-Requested-With: <app id>" on every request; Reddit serves WebView logins a blank
+                                // page. Drop the header (WebView 110+) so the page sees a normal mobile Chrome.
+                                // (Throws UnsupportedOperationException on WebViews without the feature; its feature constant isn't public.)
+                                CookieLoginBridge.dropRequestedWith(settings)
                                 CookieManager.getInstance().setAcceptCookie(true)
                                 CookieManager.getInstance().setAcceptThirdPartyCookies(this, true)
                                 webChromeClient = object : WebChromeClient() {
@@ -192,7 +224,18 @@ class CookieLoginActivity : ComponentActivity() {
                                 }
                                 webViewClient = object : WebViewClient() {
                                     override fun onPageStarted(view: WebView?, u: String?, favicon: android.graphics.Bitmap?) { error = null; autoCheck(url, u) }
-                                    override fun onPageFinished(view: WebView?, u: String?) { title = u.orEmpty(); progress = 100; autoCheck(url, u) }
+                                    override fun onPageFinished(view: WebView?, u: String?) {
+                                        title = u.orEmpty(); progress = 100; autoCheck(url, u)
+                                        // A login page that is still empty after a few seconds: say why and what to try.
+                                        handler.postDelayed({
+                                            if (finished) return@postDelayed
+                                            view?.evaluateJavascript(BLANK_JS) { r -> if (LoginDetector.isBlank(r)) error = LoginDetector.blankHint(url) }
+                                        }, 5_000)
+                                    }
+                                    override fun onReceivedHttpError(view: WebView?, request: WebResourceRequest?, response: android.webkit.WebResourceResponse?) {
+                                        if (request?.isForMainFrame == true && (response?.statusCode ?: 0) >= 400)
+                                            error = "The site answered HTTP ${response?.statusCode} (blocked?). " + LoginDetector.blankHint(url)
+                                    }
                                     override fun doUpdateVisitedHistory(view: WebView?, u: String?, isReload: Boolean) { autoCheck(url, u) }
                                     override fun onReceivedError(view: WebView?, request: WebResourceRequest?, err: WebResourceError?) {
                                         if (request?.isForMainFrame == true) error = "Couldn't load page: ${err?.description ?: "error"}"
@@ -211,6 +254,11 @@ class CookieLoginActivity : ComponentActivity() {
         }
     }
 
+    private companion object {
+        /** Visible text length + element count of the page (shadow DOM apps count via their custom elements). */
+        const val BLANK_JS = "(function(){var b=document.body;return b?(b.innerText||'').trim().length+','+b.getElementsByTagName('*').length:'0,0';})()"
+    }
+
     private fun done(url: String, save: Boolean, attempt: Int = 0) {
         if (finished) return
         handler.removeCallbacksAndMessages(null)
@@ -221,10 +269,11 @@ class CookieLoginActivity : ComponentActivity() {
         val marker = CookieLoginBridge.markerFor(site)
         val seen = names(site)
         // Cookies can land a moment late (async CookieManager load / redirects): retry a few times before giving up.
-        if ((seen.isEmpty() || (marker != null && marker !in seen)) && attempt < 3) {
+        val missing = marker != null && (if (site == "reddit.com") !com.verdroid.app.data.cookies.RedditJson.isLoggedInNames(seen) else marker !in seen)
+        if ((seen.isEmpty() || missing) && attempt < 3) {
             handler.postDelayed({ done(url, save, attempt + 1) }, 400); return
         }
-        if (marker != null && marker !in seen) {
+        if (missing) {
             // Guest cookies only: don't save them as a "login"; keep the screen open so the user can finish logging in.
             android.widget.Toast.makeText(this, "Not logged in yet (no $marker cookie). Finish logging in, then tap Done.", android.widget.Toast.LENGTH_LONG).show()
             return

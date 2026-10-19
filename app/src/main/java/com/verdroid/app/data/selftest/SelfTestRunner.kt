@@ -313,7 +313,11 @@ class SelfTestRunner @Inject constructor(
             val pkg = runCatching { android.webkit.WebView.getCurrentWebViewPackage() }.getOrNull()
                 ?: throw IllegalStateException("No WebView provider installed/enabled")
             runCatching { android.webkit.CookieManager.getInstance() }.getOrElse { throw IllegalStateException("CookieManager unavailable: ${it.javaClass.simpleName}") }
-            "WebView ${pkg.packageName} ${pkg.versionName}"
+            val noXrw = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                runCatching { android.webkit.WebView(context).let { w -> com.verdroid.app.ui.cookies.CookieLoginBridge.dropRequestedWith(w.settings).also { w.destroy() } } }.getOrDefault(false)
+            }
+            check(com.verdroid.app.ui.cookies.LoginDetector.isBlank("\"0,3\"") && !com.verdroid.app.ui.cookies.LoginDetector.isBlank("\"0,400\"")) { "blank-page detector" }
+            "WebView ${pkg.packageName} ${pkg.versionName}; X-Requested-With removable: " + (if (noXrw) "yes" else "no (update Android System WebView; Reddit login may stay blank)")
         },
         "share_target" to {
             val pm = context.packageManager
