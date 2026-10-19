@@ -412,12 +412,31 @@ class SelfTestRunner @Inject constructor(
             val D = com.verdroid.app.agent.tools.DestructiveDetector
             check(D.shell("rm -rf /sdcard/Download/x").isNotEmpty()) { "rm not detected" }
             check(D.shell("ls -la && echo hi > out.txt").isEmpty()) { "harmless command flagged" }
+            val T = com.verdroid.app.agent.tools.TermuxHomeDeletes
+            check(T.allInTermuxHome("rm -rf ~/verdroid-work/build") && T.allInTermuxHome("W=~/t; rm -rf \"\$W\"")) { "Termux-home deletes should not ask" }
+            check(!T.allInTermuxHome("rm -rf /sdcard/x") && !T.allInTermuxHome("rm ~/a /sdcard/b") && !T.allInTermuxHome("rm -rf ~/../usr") &&
+                !T.allInTermuxHome("rm -rf \"\$W\"") && !T.allInTermuxHome("rm -rf build")) { "deletes outside Termux home must ask" }
             check(D.python("import os\nos.remove('/sdcard/a.txt')").isNotEmpty()) { "os.remove not detected" }
             var asked = false
             val g = com.verdroid.app.agent.tools.FileChangeGuard({ asked = true; false })
             val denied = g.check(0, "termux_run", buildJsonObject { put("command", "mv a b") })
             check(asked && denied != null && "denied_by_user" in denied) { "deny path broken" }
             "delete/move/overwrite detection and Deny path ok"
+        },
+        "git_access" to {
+            val G = com.verdroid.app.data.git.GitErrors
+            val tok = "ghp_selftestTOKEN0000"
+            val e = Exception("https://x-access-token:$tok@github.com/o/r.git: git-upload-pack not permitted")
+            fun code(st: Int?, op: String = "clone") = G.explain(op, "https://github.com/o/r", e, st?.let { it to "remote: denied" }, true, tok)
+            check(code(401)["code"].toString().contains("AUTH_FAILED") && code(403)["code"].toString().contains("PERMISSION_DENIED") &&
+                code(404)["code"].toString().contains("REPO_NOT_FOUND")) { "status mapping" }
+            check("Read and write" in code(403, "push").toString() && "denied" in code(403).toString() && tok !in code(403).toString()) { "hint/remote text/token scrub" }
+            check(G.explain("clone", "u", org.eclipse.jgit.api.errors.InvalidRemoteException("Invalid remote: origin"), null, true, null).toString().contains("not visible to this token")) { "missing repo message" }
+            val W = com.verdroid.app.agent.tools.WebFetchTool
+            check(W.gitHostNote(404, "github.com") != null && W.gitHostNote(404, "example.com") == null && W.gitHostNote(200, "github.com") == null) { "web_fetch 404 note" }
+            val R = com.verdroid.app.agent.tools.TermuxRunTool
+            check(R.script("git status", 10).startsWith(R.GIT_WORKDIR) && R.script("ls", 10).startsWith(R.WORKDIR)) { "git cwd must be Termux home" }
+            "git 401/403/404 mapping, web_fetch note, git cwd in Termux home"
         },
         "backtest_python" to {
             requireTermux()

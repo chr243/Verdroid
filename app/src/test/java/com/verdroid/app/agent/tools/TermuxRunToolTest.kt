@@ -105,4 +105,22 @@ class TermuxRunToolTest {
         assertEquals(124, runLikeTermux(TermuxRunTool.script("sleep 30", 1)).third)
         assertTrue((System.nanoTime() - t0) / 1e9 < 10)
     }
+
+    @Test fun `git commands start in Termux home, never under storage emulated`() = runTest {
+        val t = FakeTermux(answer = { tag -> TermuxResult(tag, "", "", 0, -1, null) })
+        TermuxRunTool(t).execute(args("git status"))
+        TermuxRunTool(t).execute(args("cd repo && git -C . log"))
+        TermuxRunTool(t).execute(args("ls; ffmpeg -version"))
+        val (g1, g2, plain) = t.commands.map { it.first }
+        for (g in listOf(g1, g2)) {
+            assertTrue(g.startsWith(TermuxRunTool.GIT_WORKDIR))
+            assertFalse(g.substringBefore("timeout").contains("/storage/emulated"))
+        }
+        assertTrue(plain.startsWith(TermuxRunTool.WORKDIR))
+        assertTrue(TermuxRunTool.usesGit("subprocess.run([\"git\", \"clone\", u])"))
+        assertFalse(TermuxRunTool.usesGit("echo digit; cat .gitignore; legit x"))
+        assertTrue(TermuxRunTool(t).description.contains("/storage/emulated"))
+        assertTrue(TermuxPythonTool.command("a.py", "import subprocess; subprocess.run(['git','status'])".toByteArray(), emptyList(), 30)
+            .contains(TermuxRunTool.GIT_WORKDIR))
+    }
 }

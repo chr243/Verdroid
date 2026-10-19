@@ -30,6 +30,16 @@ class GitManager @Inject constructor(
 ) {
     private fun credentials() = creds.token?.let { UsernamePasswordCredentialsProvider(creds.username, it) }
 
+    /** Smart-HTTP probe used only to explain a failed clone/push (same host, same credentials git sends). */
+    internal var prober: GitErrors.Prober = GitErrors.HTTP
+
+    private fun fail(op: String, url: String, e: Exception, service: String): Nothing {
+        if (e is IllegalArgumentException || e is IllegalStateException) throw e
+        val token = creds.token
+        val probe = runCatching { prober.probe(url, service, creds.username, token) }.getOrNull()
+        throw GitAccessException(GitErrors.explain(op, url, e, probe, token != null, token))
+    }
+
     fun repoDir(path: String?): File = sandbox.resolve(path?.ifBlank { "." } ?: ".")
 
     private fun open(path: String?): Git {
@@ -43,10 +53,19 @@ class GitManager @Inject constructor(
         val name = path?.ifBlank { null } ?: url.trimEnd('/').substringAfterLast('/').removeSuffix(".git")
         val dir = sandbox.resolve(name)
         if (dir.exists() && dir.listFiles()?.isNotEmpty() == true) throw IllegalArgumentException("Target is not empty: ${sandbox.relativePath(dir)}")
+        val existed = dir.exists()
         val cmd = Git.cloneRepository().setURI(url).setDirectory(dir).setCredentialsProvider(credentials())
         if (!branch.isNullOrBlank()) cmd.setBranch(branch)
         // depth > 0 → shallow clone isn't supported by JGit 5.x; the parameter is accepted but ignored.
-        cmd.call().use { git -> git.repository.branch }
+        try {
+            cmd.call().use { git ->
+                // A token embedded in the clone URL must not stay in .git/config (like `git remote set-url origin <clean url>`).
+                val clean = GitErrors.stripUserInfo(url)
+                if (clean != url) git.repository.config.apply { setString("remote", "origin", "url", clean); save() }
+                git.repository.branch
+            }
+        }
+        catch (e: Exception) { if (!existed) runCatching { dir.deleteRecursively() }; fail("clone", url, e, "git-upload-pack") }
         sandbox.relativePath(dir)
     }
 
@@ -72,7 +91,9 @@ class GitManager @Inject constructor(
         open(path).use { git ->
             val cmd = git.push().setRemote(remote?.ifBlank { null } ?: "origin").setCredentialsProvider(cp)
             if (!branch.isNullOrBlank()) cmd.add(branch)
-            cmd.call().flatMap { result -> result.remoteUpdates.map { "${it.remoteName}: ${it.status}${it.message?.let { m -> " ($m)" } ?: ""}" } }
+            val url = runCatching { git.repository.config.getString("remote", remote?.ifBlank { null } ?: "origin", "url") }.getOrNull().orEmpty()
+            val results = try { cmd.call() } catch (e: Exception) { fail("push", url, e, "git-receive-pack") }
+            results.flatMap { result -> result.remoteUpdates.map { "${it.remoteName}: ${it.status}${it.message?.let { m -> " ($m)" } ?: ""}" } }
         }
     }
 }

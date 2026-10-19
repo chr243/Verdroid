@@ -68,21 +68,24 @@ class GitCommitTool(private val git: GitManager) : AgentTool {
 
 class GitCloneTool(private val git: GitManager) : AgentTool {
     override val name = "git_clone"
-    override val description = "Clone an https:// git repository into the workspace (uses the Git token from settings for private repos)."
+    override val description = "Clone an https:// git repository into the workspace (uses the Git token from settings for private repos). " +
+        "Failures carry code AUTH_FAILED (401), PERMISSION_DENIED (403: token lacks Contents permission), REPO_NOT_FOUND (404) with http_status, the server's remote text and a hint."
     override val parameters = schema(listOf("url"),
         "url" to prop("string", "https:// clone URL"),
         "path" to prop("string", "Target folder relative to the workspace (default: repo name)"),
         "branch" to prop("string", "Branch to check out"))
     override suspend fun execute(args: JsonObject): String {
         val url = args.str("url") ?: return errorJson("url is required")
-        val path = git.clone(url, args.str("path"), args.str("branch"), null)
+        val path = try { git.clone(url, args.str("path"), args.str("branch"), null) }
+            catch (e: com.verdroid.app.data.git.GitAccessException) { return e.json.toString() }
         return buildJsonObject { put("ok", true); put("path", path) }.toString()
     }
 }
 
 class GitPushTool(private val git: GitManager) : AgentTool {
     override val name = "git_push"
-    override val description = "Push a workspace repository to its remote using the Git token from encrypted settings."
+    override val description = "Push a workspace repository to its remote using the Git token from encrypted settings. " +
+        "Failures carry code AUTH_FAILED / PERMISSION_DENIED (needs Contents: Read and write) / REPO_NOT_FOUND with http_status and the server's text."
     override val parameters = schema(emptyList(),
         "repo_path" to prop("string", "Repository path relative to the workspace"),
         "remote" to prop("string", "Remote name (default origin)"),
@@ -91,6 +94,7 @@ class GitPushTool(private val git: GitManager) : AgentTool {
         val updates = git.push(args.str("repo_path"), args.str("remote"), args.str("branch"))
         buildJsonObject { put("ok", updates.none { "REJECTED" in it }); put("updates", JsonArray(updates.map { JsonPrimitive(it) })) }.toString()
     } catch (e: IllegalStateException) { errorJson(e.message ?: "push failed") }
+    catch (e: com.verdroid.app.data.git.GitAccessException) { e.json.toString() }
 }
 
 // ---------------------------------------------------------------- Accessibility

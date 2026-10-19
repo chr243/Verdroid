@@ -144,7 +144,13 @@ class FileChangeGuard(
                 reasons = if (mode != "create" && (args["directory"] as? JsonPrimitive)?.booleanOrNull != true && f?.isFile == true && !isInternal(p))
                     listOf("${if (mode == "append") "append to" else "overwrite"} existing $p") else emptyList()
             }
-            tool == "termux_run" -> { shown = s("command"); reasons = DestructiveDetector.shell(shown.orEmpty(), cwdOwned = true) }
+            tool == "termux_run" -> {
+                shown = s("command")
+                val all = DestructiveDetector.shell(shown.orEmpty(), cwdOwned = true)
+                // rm/rmdir/unlink/mv proven to stay inside Termux's private home need no question (anything else still asks).
+                reasons = if (TermuxHomeDeletes.allInTermuxHome(shown.orEmpty()))
+                    all.filterNot { r -> r.endsWith(" (delete/move/rename)") && r.substringBefore(' ') in TermuxHomeDeletes.VERBS } else all
+            }
             tool == "run_shell" || tool == "rish_run" -> { shown = s("command"); reasons = DestructiveDetector.shell(shown.orEmpty(), cwdOwned = tool == "run_shell" && s("workdir") == null) }
             tool == "termux_python" || tool == "crypto_backtest_script" -> {
                 shown = s("code") ?: readScript(tool, args)

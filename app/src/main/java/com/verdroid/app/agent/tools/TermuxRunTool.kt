@@ -9,7 +9,9 @@ import kotlinx.serialization.json.*
  */
 class TermuxRunTool(private val termux: TermuxRunner) : AgentTool {
     override val name = "termux_run"
-    override val description = "Run a bash command inside Termux (cwd Documents/Verdroid/Internal) to use Termux packages such as ffmpeg, " +
+    override val description = "Run a bash command inside Termux (cwd Documents/Verdroid/Internal; commands that run git start in Termux home " +
+        "~/verdroid-work instead, because Termux git crashes with any cwd or -C under /storage/emulated: keep git repos under ~ / \$HOME, or use " +
+        "git --git-dir=<abs>/.git --work-tree=<abs> from \$HOME) to use Termux packages such as ffmpeg, " +
         "magick (imagemagick), yt-dlp, git, node, jq, curl, pandoc — whichever the user installed in Settings > Tools. " +
         "Returns exit_code, stdout, stderr as soon as the command finishes (timeout_seconds is only a cap, max 600 s; " +
         "background jobs left running are stopped when the command ends). Installing packages (pip/apt/pkg/npm install, " +
@@ -65,8 +67,17 @@ class TermuxRunTool(private val termux: TermuxRunner) : AgentTool {
         const val WORKDIR = "{ mkdir -p /storage/emulated/0/Documents/Verdroid/Internal 2>/dev/null && " +
             "cd /storage/emulated/0/Documents/Verdroid/Internal; } || { mkdir -p ~/verdroid-work && cd ~/verdroid-work; } || exit 1\n"
 
+        /**
+         * Termux git dies whenever its cwd is under /storage/emulated ("fatal: failed to stat '   /storage/emulated'"; also with
+         * git -C <sdcard dir>), so commands that run git start in Termux's own home instead ($HOME/verdroid-work).
+         */
+        const val GIT_WORKDIR = "mkdir -p ~/verdroid-work && cd ~/verdroid-work || exit 1\n"
+        private val USES_GIT = Regex("""(^|[\s;&|(`'"/])git([\s'"]|$)""")
+        fun usesGit(text: String): Boolean = USES_GIT.containsMatchIn(text)
+        fun workdirFor(text: String): String = if (usesGit(text)) GIT_WORKDIR else WORKDIR
+
         internal fun script(command: String, timeoutS: Int): String =
-            WORKDIR + capped("bash -lc " + shellQuote(command), timeoutS)
+            workdirFor(command) + capped("bash -lc " + shellQuote(command), timeoutS)
 
         /**
          * Runs the shell fragment [cmdline] under `timeout -k [grace] [timeoutS]` so that the Termux result comes back as soon

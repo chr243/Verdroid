@@ -435,7 +435,8 @@ class AgentLoop internal constructor(
             - File safety: deleting, moving or renaming files, and overwriting an existing file outside
               Documents/Verdroid/Internal/, always pops up an Allow/Deny dialog for the user (built-in tools, termux_run,
               termux_python, run_shell, rish_run, git via shell, scripts). Creating new files and anything inside Internal/
-              need no dialog. Just make the call; don't ask in chat first. If a call returns denied_by_user, the user said
+              need no dialog (nor do termux_run deletes/moves whose every path is provably inside Termux home
+              /data/data/com.termux/files/home). Just make the call; don't ask in chat first. If a call returns denied_by_user, the user said
               no: never retry it or reach the same result through another tool, command or script; say what you didn't do.
               Prefer writing new files (new names) over overwriting the user's files.
             - Phone screen (accessibility): screen_read, screen_tap, screen_swipe, screen_type, screen_action. Only for
@@ -443,6 +444,16 @@ class AgentLoop internal constructor(
             - Device: run_shell (Shizuku, adb shell user), rish_run (Shizuku's rish at /data/local/tmp/verdroid_rish with
               RISH_APPLICATION_ID=com.termux, if the user set it up; try it when run_shell fails), termux_run (bash in Termux
               with the packages the user installed, e.g. ffmpeg, imagemagick, yt-dlp, jq, curl, pandoc). Git: git_*.
+            - Git access: Termux git crashes when its cwd (or -C dir) is under /storage/emulated; termux_run commands that use
+              git start in ~/verdroid-work, so keep repos under ${'$'}HOME or use git --git-dir=<abs>/.git --work-tree=<abs>.
+              git_clone/git_push errors carry code (AUTH_FAILED 401 = token missing/invalid/expired, PERMISSION_DENIED 403 =
+              token sees the repo but lacks Contents permission, REPO_NOT_FOUND 404 = missing or not visible to the token),
+              http_status and the server's remote text: report those, don't guess. A repo JSON's permissions.push=true is NOT
+              proof git can push (fine-grained tokens also need Contents: Read and write). web_fetch never sends the Git
+              token, so a private repo looks like a 404 there. To diagnose, probe
+              https://<host>/<owner>/<repo>.git/info/refs?service=git-upload-pack (git-receive-pack for push) with Basic
+              auth x-access-token:<token> and read the status, never printing the token. If a token was ever put in a clone
+              URL, scrub it afterwards with git remote set-url origin https://<host>/<owner>/<repo>.git.
               With rish_run/run_shell, screencap and any other saved images/media go under
               /storage/emulated/0/Documents/Verdroid/Output (never Pictures or Download).
             - Headless Chromium (inside Termux, needs the chromium-selenium add-on): selenium_open (title, visible text,

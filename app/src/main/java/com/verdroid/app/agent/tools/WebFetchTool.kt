@@ -17,6 +17,7 @@ class WebFetchTool(
         .readTimeout(30, TimeUnit.SECONDS)
         .followRedirects(true)
         .build(),
+    private val gitHosts: Set<String> = GIT_HOSTS,
 ) : AgentTool {
     override val name = "web_fetch"
     override val description = "Fetch a known URL with a plain HTTP GET (or HEAD) — no browser, no JavaScript. format=markdown " +
@@ -60,6 +61,7 @@ class WebFetchTool(
                     put("bytes", bytes.size)
                     put("truncated", truncated)
                     if (method != "HEAD") put("body", text)
+                    gitHostNote(resp.code, resp.request.url.host, gitHosts)?.let { put("note", it) }
                 }.toString()
             }
         } catch (e: Exception) {
@@ -116,9 +118,22 @@ class WebFetchTool(
             put("source", source)
             put("untrusted", true)
             put("blocked", blockReason != null); blockReason?.let { put("block_reason", it) }
+            gitHostNote(status, runCatching { java.net.URI(finalUrl).host }.getOrNull(), gitHosts)?.let { put("note", it) }
             put("content", com.verdroid.app.data.websearch.UntrustedFence.fence(text, finalUrl))
         }.toString()
     }
 
-    private companion object { const val MAX_HTML = 3_000_000 }
+    companion object {
+        private const val MAX_HTML = 3_000_000
+        /** Git hosting sites whose private repos answer 404 without auth. web_fetch never sends the Git token. */
+        val GIT_HOSTS = setOf("github.com", "api.github.com", "raw.githubusercontent.com", "gitlab.com", "codeberg.org", "bitbucket.org")
+        const val GIT_404_NOTE = "404 on a Git host may just mean the repository is PRIVATE: web_fetch sends no credentials (it never uses the Git token), " +
+            "and the host hides private repos behind 404 (/users/<name>/repos lists only public ones). Use git_clone (it uses the saved Git token) to check " +
+            "access; don't conclude the repo doesn't exist."
+
+        fun gitHostNote(status: Int, host: String?, hosts: Set<String> = GIT_HOSTS): String? {
+            val h = host?.lowercase() ?: return null
+            return if (status == 404 && hosts.any { h == it || h.endsWith(".$it") }) GIT_404_NOTE else null
+        }
+    }
 }
