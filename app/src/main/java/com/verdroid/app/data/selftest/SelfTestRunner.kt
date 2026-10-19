@@ -294,6 +294,20 @@ class SelfTestRunner @Inject constructor(
             if ("selenium-ok" !in out) throw SkipCheck("chromium-selenium add-on not installed")
             "formatter ok, X login saved, Selenium present"
         },
+        "reddit" to {
+            val R = com.verdroid.app.data.cookies.RedditJson
+            val posts = R.parseListing("{\"data\":{\"children\":[{\"kind\":\"t3\",\"data\":{\"title\":\"T\",\"subreddit\":\"s\",\"author\":\"a\",\"score\":5,\"num_comments\":2,\"permalink\":\"/r/s/comments/x/t/\"}}]}}")
+            check(R.formatPosts(posts).startsWith("Post 1: r/s · u/a · 5 points · 2 comments")) { "reddit formatter" }
+            check(R.readUrl("https://old.reddit.com/r/s/comments/abc/t/", 10)?.startsWith("https://www.reddit.com/r/s/comments/abc/t.json") == true) { "reddit url" }
+            check(com.verdroid.app.ui.cookies.CookieLoginBridge.markerFor("reddit.com") == "reddit_session") { "reddit login marker" }
+            check("rjson" in com.verdroid.app.data.termux.VerdroidSeleniumPy.SOURCE) { "helper lacks rjson" }
+            check(com.verdroid.app.domain.schedule.ScheduleSafety.blockReason("reddit_search", kotlinx.serialization.json.buildJsonObject {}) == null) { "reddit reads must work in scheduled runs" }
+            if (!R.loggedIn(cookieVault.all())) throw SkipCheck("no Reddit login saved (Settings → Tools → Logged-in sites → Log in to Reddit); reddit_* fall back to web search")
+            requireTermux()
+            val out = termuxEcho("python -c 'import selenium; print(\"selenium-ok\")' 2>&1 || echo noselenium")
+            if ("selenium-ok" !in out) throw SkipCheck("chromium-selenium add-on not installed; reddit_* fall back to web search")
+            "parser ok, Reddit login saved, Selenium present"
+        },
         "cookie_webview" to {
             check(com.verdroid.app.data.cookies.BrowserCookies.fromCookieHeader("x.com", "a=1; b=2").size == 2) { "cookie header parse" }
             val pkg = runCatching { android.webkit.WebView.getCurrentWebViewPackage() }.getOrNull()

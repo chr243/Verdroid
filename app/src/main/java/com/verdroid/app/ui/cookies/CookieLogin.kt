@@ -51,7 +51,12 @@ object CookieLoginBridge {
         listOf("https://$site/", "https://www.$site/", "https://api.$site/", "https://mobile.$site/")
 
     /** Login marker cookie for known sites (null = no known marker). */
-    fun markerFor(site: String): String? = if (site == "x.com" || site == "twitter.com") "auth_token" else null
+    fun markerFor(site: String): String? = when (site) {
+        "x.com", "twitter.com" -> "auth_token"
+        "reddit.com" -> com.verdroid.app.data.cookies.RedditJson.LOGIN_COOKIE // token_v2 is set for guests too
+        else -> null
+    }
+    const val REDDIT_URL = "https://www.reddit.com/login/"
 
     /** Reads the WebView's cookies for the URL's site (+ siblings, + subdomains) and stores them in [vault]. */
     fun capture(url: String, vault: CookieVault, read: (String) -> String?): CookieLoginResult {
@@ -85,6 +90,10 @@ object LoginDetector {
             if ("auth_token" !in names) return Verdict.NOT_YET
             val settled = ("ct0" in names && "twid" in names) || (url != null && !url.contains("/i/flow/")) || markerAgeMs >= 1_500
             return if (settled) Verdict.DONE else Verdict.WAIT
+        }
+        if (site == "reddit.com") {
+            if (com.verdroid.app.data.cookies.RedditJson.LOGIN_COOKIE !in names) return Verdict.NOT_YET
+            return if ((url != null && !isLoginUrl(url)) || markerAgeMs >= 1_500) Verdict.DONE else Verdict.WAIT
         }
         if (url == null || isLoginUrl(url) || names.size <= baseline) return Verdict.NOT_YET
         return if (markerAgeMs >= 1_000) Verdict.DONE else Verdict.WAIT

@@ -31,6 +31,9 @@ data class ToolStatus(val ready: Boolean, val text: String) {
             name == "cookie_open" ->
                 if (env.termuxReady) ToolStatus(true, "Beta: ready if chromium-selenium is installed and cookies were imported (cookie_import)")
                 else ToolStatus(false, "Needs Termux + the chromium-selenium add-on (Settings > Tools)")
+            name.startsWith("reddit_") ->
+                if (env.termuxReady) ToolStatus(true, "Best with chromium-selenium and a Reddit login (Logged-in sites → Log in to Reddit); otherwise web search")
+                else ToolStatus(true, "Falls back to web search; Termux + chromium-selenium and a Reddit login make it reliable")
             name in setOf("x_timeline", "x_user_posts", "x_search") ->
                 if (env.termuxReady) ToolStatus(true, "Beta: needs chromium-selenium and an X login (Logged-in sites / cookie_login)")
                 else ToolStatus(false, "Needs Termux + the chromium-selenium add-on (Settings > Tools)")

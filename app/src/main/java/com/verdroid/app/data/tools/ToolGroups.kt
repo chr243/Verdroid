@@ -10,6 +10,7 @@ object ToolGroups {
         Group("files", "Files", "Documents/Verdroid (workspace_*), private scratch files"),
         Group("web", "Web", "web_search, web_fetch, headless Chromium (selenium_*); beta: logged-in pages with your own cookies (cookie_*, stored encrypted)"),
         Group("twitter", "Twitter", "Beta: read your X timeline, profiles and search (x_timeline, x_user_posts, x_search) and post with confirmation (x_post), using your saved X login. Against X's Terms of Service: the account may be limited or banned"),
+        Group("reddit", "Reddit", "Read-only: search Reddit and read threads (reddit_search, reddit_read) with your Reddit login in headless Chromium; falls back to web search without a login or the chromium-selenium add-on"),
         Group("termux", "Termux & Python", "termux_run, termux_python"),
         Group("pdf", "PDF & documents", "PDF read/edit (pdf_*), ebook translation"),
         Group("system", "Shizuku & phone screen", "Shizuku shell, rish, screen control (accessibility)"),
@@ -25,6 +26,7 @@ object ToolGroups {
         name.startsWith("mcp__") -> "mcp"
         name in setOf("read_file", "write_file", "list_dir") || name.startsWith("workspace_") -> "files"
         name in setOf("x_timeline", "x_user_posts", "x_search", "x_post") -> "twitter"
+        name.startsWith("reddit_") -> "reddit"
         name.startsWith("web_") || name.startsWith("selenium_") || name.startsWith("cookie_") -> "web"
         name == "termux_run" || name == "termux_python" -> "termux"
         name.startsWith("pdf_") || name == "ebook_translate" -> "pdf"

@@ -10,7 +10,7 @@ object SelfTestCoverage {
     val CHECKS = listOf(
         "tool_registry", "json", "room", "settings", "agents_md", "memory", "skills", "sandbox", "shared_folder",
         "network", "providers", "web_fetch", "web_search", "termux", "python", "pdf", "shizuku", "rish", "accessibility",
-        "overlay", "git", "updater", "notifications", "font_scale", "feedback", "internal_folder", "crypto_history", "backtest_python", "file_guard", "share_target", "chat_ui", "cookies", "cookie_webview", "x_posts", "overwrite_policy", "x_post_guard", "crash_log", "twitter_tos", "model_pins",
+        "overlay", "git", "updater", "notifications", "font_scale", "feedback", "internal_folder", "crypto_history", "backtest_python", "file_guard", "share_target", "chat_ui", "cookies", "cookie_webview", "x_posts", "reddit", "overwrite_policy", "x_post_guard", "crash_log", "twitter_tos", "model_pins",
         "oom_hardening", "install_prompt", "x_post_limits", "ebook_resume", "update_hint", "chat_links", "assistant", "scheduling",
     )
 
@@ -22,7 +22,7 @@ object SelfTestCoverage {
         "run_shell" to "shizuku", "rish_run" to "rish",
         "termux_run" to "termux", "termux_python" to "python",
         "selenium_open" to "termux", "selenium_page_source" to "termux", "selenium_screenshot" to "termux",
-        "cookie_import" to "cookies", "cookie_list" to "cookies", "cookie_clear" to "cookies", "cookie_open" to "cookies", "cookie_login" to "cookie_webview", "x_timeline" to "x_posts", "x_user_posts" to "x_posts", "x_search" to "x_posts", "x_post" to "x_post_guard",
+        "cookie_import" to "cookies", "cookie_list" to "cookies", "cookie_clear" to "cookies", "cookie_open" to "cookies", "cookie_login" to "cookie_webview", "reddit_search" to "reddit", "reddit_read" to "reddit", "x_timeline" to "x_posts", "x_user_posts" to "x_posts", "x_search" to "x_posts", "x_post" to "x_post_guard",
         "ebook_translate" to "python",
         "pdf_info" to "pdf", "pdf_extract_text" to "pdf", "pdf_extract_pages" to "pdf", "pdf_merge" to "pdf", "pdf_annotate" to "pdf",
         "git_status" to "git", "git_commit" to "git", "git_clone" to "git", "git_push" to "git",

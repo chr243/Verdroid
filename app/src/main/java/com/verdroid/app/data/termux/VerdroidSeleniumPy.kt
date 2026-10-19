@@ -358,7 +358,7 @@ def _save(path, data, binary=False):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="verdroid_selenium")
-    ap.add_argument("cmd", choices=["open", "source", "shot", "xposts", "xpost"])
+    ap.add_argument("cmd", choices=["open", "source", "shot", "xposts", "xpost", "rjson"])
     ap.add_argument("url")
     ap.add_argument("--wait", type=float, default=2.0)
     ap.add_argument("--wait-for", default=None)
@@ -403,6 +403,13 @@ def main(argv=None):
         elif a.cmd == "xpost":
             import base64
             out.update(post_x(drv, base64.b64decode(a.text_b64 or "").decode("utf-8"), a.url))
+        elif a.cmd == "rjson":
+            # Reddit .json endpoint loaded in the logged-in browser: raw JSON text (parsed by Verdroid, never saved).
+            body = drv.execute_script(
+                "var p = document.querySelector('pre'); return p ? p.innerText : (document.body ? document.body.innerText : '');") or ""
+            out["body_chars"] = len(body)
+            out["truncated"] = len(body) > a.max_chars
+            out["body"] = body[: a.max_chars]
         elif a.cmd == "xposts":
             out.update(scrape_x(drv, max(1, min(a.count, 100)), a.max_idle))
         elif a.cmd == "source":

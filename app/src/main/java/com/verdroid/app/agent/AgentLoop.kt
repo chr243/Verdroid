@@ -457,6 +457,11 @@ class AgentLoop internal constructor(
               cookie_open (selenium_open with the user's stored cookies, for logged-in reads), cookie_list, cookie_clear.
               Cookie values are secrets: never print, repeat or save them, never ask the user to paste cookies into the chat.
               With cookie_open only read pages (never post, like, follow or change account settings).
+            - Reddit (read-only): for any Reddit request call reddit_search (search all of Reddit or one subreddit, or list a
+              subreddit) and reddit_read (a thread with top comments) FIRST, not web_search/web_fetch; assume the Reddit login
+              is saved. Only when they return NOT_LOGGED_IN / NO_CHROMIUM use their fallback (web_search "site:reddit.com …",
+              web_fetch old.reddit.com), and if the result has tell_user, pass that hint on briefly in your reply. Don't call
+              cookie_login for Reddit unless the user wants to log in. No posting, voting or commenting.
             - Twitter (beta, only if enabled): x_timeline (home feed), x_user_posts (one account), x_search (search) — use
               these for X instead of cookie_open + parsing HTML; they return formatted posts. Assume the X login is already
               saved: call the X tool first, never cookie_login or cookie_clear first or "just in case". Only when an X tool

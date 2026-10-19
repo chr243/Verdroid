@@ -108,7 +108,8 @@ class CookieLoginTool(
     private val timeoutMs: Long = 10 * 60_000L,
 ) : AgentTool {
     override val name = "cookie_login"
-    override val description = "$COOKIE_NOTE Fallback only: for X, call it only after x_timeline/x_user_posts/x_search report NOT_LOGGED_IN (never first or just in case). Opens a full-screen in-app browser so the user logs in to a site themselves (default x.com), " +
+    override val description = "$COOKIE_NOTE Fallback only: for X, call it only after x_timeline/x_user_posts/x_search report NOT_LOGGED_IN (never first or just in case); " +
+        "for Reddit only when the user wants to log in (url=${com.verdroid.app.ui.cookies.CookieLoginBridge.REDDIT_URL}). Opens a full-screen in-app browser so the user logs in to a site themselves (default x.com), " +
         "then taps Done; the session cookies are saved encrypted for cookie_open. Waits up to 10 min. Tell the user to log in and tap Done. " +
         "Some sites (e.g. Google) block this kind of login."
     override val parameters = schema(emptyList(), "url" to prop("string", "Login page URL (default https://x.com/i/flow/login)"))

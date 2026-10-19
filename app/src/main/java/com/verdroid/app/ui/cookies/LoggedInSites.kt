@@ -34,11 +34,16 @@ fun LoggedInSitesSection(vm: LoggedInSitesViewModel = hiltViewModel()) {
     LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) { vm.refresh() }
     Column(Modifier.padding(horizontal = 16.dp)) {
         Text("Logged-in sites (beta)", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 20.dp))
-        Text("For the cookie_* tools (Web) and the Twitter tools: log in once in an in-app browser and cookie_open can read those pages. " +
+        Text("For the cookie_* tools (Web), the Twitter tools and the Reddit tools: log in once in an in-app browser and cookie_open can read those pages. " +
             "Cookies are stored encrypted on this phone. Some sites (e.g. Google) block this kind of login; " +
             "you can also import a cookie export file with cookie_import.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        OutlinedButton(onClick = { ask = true }, modifier = Modifier.padding(vertical = 8.dp)) { Text("Log in to a site") }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = { ask = true }, modifier = Modifier.padding(vertical = 8.dp)) { Text("Log in to a site") }
+            // Reddit tools (reddit_search / reddit_read) read with this login.
+            OutlinedButton(onClick = { runCatching { context.startActivity(CookieLoginBridge.intent(context, CookieLoginBridge.REDDIT_URL)) } },
+                modifier = Modifier.padding(vertical = 8.dp)) { Text("Log in to Reddit") }
+        }
         if (sites.isEmpty()) Text("No saved sites", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         sites.forEach { (site, n) ->
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
