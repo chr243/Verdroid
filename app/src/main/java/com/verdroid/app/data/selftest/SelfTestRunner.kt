@@ -51,6 +51,7 @@ class SelfTestRunner @Inject constructor(
     private val customStore: com.verdroid.app.data.network.CustomProviderStore,
     private val cookieVault: com.verdroid.app.data.cookies.CookieVault,
     private val schedules: javax.inject.Provider<com.verdroid.app.data.schedule.ScheduleManager>,
+    private val taskRepo: javax.inject.Provider<com.verdroid.app.domain.repository.TaskRepository>,
 ) {
     private val http = OkHttpClient.Builder().connectTimeout(8, TimeUnit.SECONDS).readTimeout(10, TimeUnit.SECONDS).build()
     private fun tool(name: String): AgentTool = registry.tools.firstOrNull { it.name == name } ?: throw IllegalStateException("$name not registered")
@@ -296,17 +297,19 @@ class SelfTestRunner @Inject constructor(
         },
         "reddit" to {
             val R = com.verdroid.app.data.cookies.RedditJson
-            val posts = R.parseListing("{\"data\":{\"children\":[{\"kind\":\"t3\",\"data\":{\"title\":\"T\",\"subreddit\":\"s\",\"author\":\"a\",\"score\":5,\"num_comments\":2,\"permalink\":\"/r/s/comments/x/t/\"}}]}}")
-            check(R.formatPosts(posts).startsWith("Post 1: r/s · u/a · 5 points · 2 comments")) { "reddit formatter" }
-            check(R.readUrl("https://old.reddit.com/r/s/comments/abc/t/", 10)?.startsWith("https://www.reddit.com/r/s/comments/abc/t.json") == true) { "reddit url" }
+            val H = com.verdroid.app.data.cookies.RedditHtml
+            val posts = H.parsePosts("<shreddit-post post-title=\"T\" permalink=\"/r/s/comments/x1/t/\" subreddit-prefixed-name=\"r/s\" author=\"a\" score=\"5\" comment-count=\"2\"></shreddit-post>", 5)
+            check(R.formatPosts(posts).startsWith("Post 1: r/s · u/a · 5 points · 2 comments")) { "reddit parser/formatter" }
+            check(R.readUrl("https://old.reddit.com/r/s/comments/abc/t/") == "https://www.reddit.com/r/s/comments/abc/t/") { "reddit url" }
+            check(H.triage("challenge", null)?.first == "CHALLENGE" && H.triage("ip_blocked", null)?.first == "IP_BLOCKED") { "reddit error triage" }
             check(com.verdroid.app.ui.cookies.CookieLoginBridge.markerFor("reddit.com") == "reddit_session") { "reddit login marker" }
-            check("rjson" in com.verdroid.app.data.termux.VerdroidSeleniumPy.SOURCE) { "helper lacks rjson" }
+            check("rhtml" in com.verdroid.app.data.termux.VerdroidSeleniumPy.SOURCE) { "helper lacks rhtml" }
             check(com.verdroid.app.domain.schedule.ScheduleSafety.blockReason("reddit_search", kotlinx.serialization.json.buildJsonObject {}) == null) { "reddit reads must work in scheduled runs" }
             if (!R.loggedIn(cookieVault.all())) throw SkipCheck("no Reddit login saved (Settings → Tools → Logged-in sites → Log in to Reddit); reddit_* fall back to web search")
             requireTermux()
             val out = termuxEcho("python -c 'import selenium; print(\"selenium-ok\")' 2>&1 || echo noselenium")
             if ("selenium-ok" !in out) throw SkipCheck("chromium-selenium add-on not installed; reddit_* fall back to web search")
-            "parser ok, Reddit login saved, Selenium present"
+            "parser ok, Reddit login saved (token_v2/reddit_session), Selenium present"
         },
         "cookie_webview" to {
             check(com.verdroid.app.data.cookies.BrowserCookies.fromCookieHeader("x.com", "a=1; b=2").size == 2) { "cookie header parse" }
@@ -342,6 +345,26 @@ class SelfTestRunner @Inject constructor(
             check(!om.restoreShareHead(0, false, true) && om.restoreShareHead(1, false, true)) { "share head must only return with an unread/running reply" }
             "text + documents registered, images not, no Direct Share (new chat only); attachment line hidden; links shared without title; " +
                 "opens in ${if (om.shareUsesBubble(android.provider.Settings.canDrawOverlays(context))) "Bubble" else "Full app"}"
+        },
+        "chat_seen" to {
+            val S = com.verdroid.app.domain.model.ChatSeen
+            check(S.shouldMark(resumed = true, transitioning = false, unread = 2, hasMessages = true)) { "open chat must clear unread" }
+            check(!S.shouldMark(resumed = false, transitioning = false, unread = 2, hasMessages = true)) { "a chat in the background must not be marked seen" }
+            // Round trip on a throwaway chat: an unread reply shows on the head badge, viewing the chat clears it.
+            val repo = taskRepo.get()
+            val id = repo.createTask("self-test unread", "x", com.verdroid.app.domain.model.TaskType.infer("x"))
+            try {
+                repo.markOpened(id)
+                Thread.sleep(5)
+                repo.addMessage(com.verdroid.app.domain.model.ChatMessage(0, id, com.verdroid.app.domain.model.MessageRole.ASSISTANT, "reply",
+                    com.verdroid.app.domain.model.MessageKind.NORMAL, null, null, null, null, false, null, System.currentTimeMillis() + 1))
+                suspend fun unread() = repo.observeConversations().first().firstOrNull { it.task.id == id }?.unreadCount ?: -1
+                check(unread() == 1) { "unread reply not counted (${unread()})" }
+                Thread.sleep(5)
+                repo.markOpened(id)
+                check(unread() == 0) { "viewing the chat didn't clear the unread badge (${unread()})" }
+            } finally { runCatching { repo.deleteTask(id) } }
+            "viewing a chat in the app clears its chat-head badge"
         },
         "chat_ui" to {
             fun m(id: Long, role: com.verdroid.app.domain.model.MessageRole, c: String?, calls: String? = null) = com.verdroid.app.domain.model.ChatMessage(

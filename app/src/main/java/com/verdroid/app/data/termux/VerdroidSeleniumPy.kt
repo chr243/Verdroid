@@ -155,6 +155,83 @@ return Array.from(document.querySelectorAll('article[data-testid="tweet"]')).map
 '''
 
 
+REDDIT_STATE_JS = r'''
+var sel = arguments[0], b = document.body, t = (document.title || '');
+var txt = b ? (b.innerText || '').slice(0, 1500) : '';
+var n = 0; try { n = document.querySelectorAll(sel).length; } catch (e) {}
+return {found: n, title: t, text: txt, path: location.pathname};
+'''
+
+
+def reddit_state(st):
+    # Classifies a Reddit page while it renders. Strings, not versions: Reddit changes these gates often.
+    title = (st.get("title") or "").lower()
+    text = (st.get("text") or "").lower()
+    if st.get("found"):
+        return "ready"
+    if "prove your humanity" in title or "prove your humanity" in text:
+        return "challenge"
+    if "blocked by network security" in text or "blocked by network security" in title:
+        return "ip_blocked"
+    if "too many requests" in text or "too many requests" in title or "429" in title:
+        return "rate_limited"
+    if (st.get("path") or "").startswith("/login"):
+        return "login_gated"
+    if "find any results" in text or "no results" in text:
+        return "empty"
+    return None
+
+
+def reddit_page(drv, selector, settle_for, cap, count, max_chars):
+    # One navigation: poll every 250 ms (cap = --wait seconds) for the content selector, then return the rendered HTML.
+    cap = max(5.0, min(float(cap or 20), 30.0))
+    end, state, retried = time.time() + cap, None, False
+    while time.time() < end:
+        try:
+            st = drv.execute_script(REDDIT_STATE_JS, selector) or {}
+        except Exception:
+            st = {}
+        state = reddit_state(st)
+        if state == "rate_limited" and not retried:
+            retried = True  # back off once, then reload
+            time.sleep(6)
+            drv.refresh()
+            end = max(end, time.time() + 8)
+            state = None
+            continue
+        if state is not None:
+            break
+        time.sleep(0.25)
+    if state is None:
+        state = "timeout"
+    if state == "ready":
+        if settle_for:  # e.g. comments render after the post
+            end2 = time.time() + 4
+            while time.time() < end2:
+                try:
+                    if drv.execute_script("return document.querySelectorAll(arguments[0]).length;", settle_for):
+                        break
+                except Exception:
+                    pass
+                time.sleep(0.25)
+            time.sleep(0.5)
+        for _ in range(4):  # scroll a little for more results (polite: max 4)
+            try:
+                if drv.execute_script("return document.querySelectorAll(arguments[0]).length;", selector) >= count:
+                    break
+                drv.execute_script("window.scrollTo(0, document.body.scrollHeight);")
+            except Exception:
+                break
+            time.sleep(1.0)
+    html = ""
+    try:
+        html = drv.execute_script("return document.documentElement.outerHTML;") or ""
+    except Exception:
+        pass
+    return {"state": state, "html_chars": len(html), "truncated": len(html) > max_chars, "html": html[:max_chars],
+            "text_head": (drv.execute_script("return document.body ? document.body.innerText.slice(0, 400) : '';") or "") if state != "ready" else ""}
+
+
 def _status_id(url):
     m = re.search(r"/status/(\d+)", url or "")
     return m.group(1) if m else None
@@ -358,7 +435,7 @@ def _save(path, data, binary=False):
 
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="verdroid_selenium")
-    ap.add_argument("cmd", choices=["open", "source", "shot", "xposts", "xpost", "rjson"])
+    ap.add_argument("cmd", choices=["open", "source", "shot", "xposts", "xpost", "rhtml"])
     ap.add_argument("url")
     ap.add_argument("--wait", type=float, default=2.0)
     ap.add_argument("--wait-for", default=None)
@@ -372,6 +449,7 @@ def main(argv=None):
     ap.add_argument("--count", type=int, default=20)
     ap.add_argument("--max-idle", type=int, default=4)
     ap.add_argument("--text-b64", default=None)
+    ap.add_argument("--settle-for", default=None)
     a = ap.parse_args(argv)
     out = {"ok": True}
     drv = None
@@ -380,7 +458,10 @@ def main(argv=None):
         drv = make_driver(a.width, a.height)
         if cookies is not None:
             out["cookies"] = inject_cookies(drv, a.url, cookies)
-        load(drv, a.url, a.wait, a.wait_for)
+        if a.cmd == "rhtml":
+            drv.get(a.url)
+        else:
+            load(drv, a.url, a.wait, a.wait_for)
         out["url"] = drv.current_url
         out["title"] = drv.title
         if a.cmd == "open":
@@ -403,13 +484,8 @@ def main(argv=None):
         elif a.cmd == "xpost":
             import base64
             out.update(post_x(drv, base64.b64decode(a.text_b64 or "").decode("utf-8"), a.url))
-        elif a.cmd == "rjson":
-            # Reddit .json endpoint loaded in the logged-in browser: raw JSON text (parsed by Verdroid, never saved).
-            body = drv.execute_script(
-                "var p = document.querySelector('pre'); return p ? p.innerText : (document.body ? document.body.innerText : '');") or ""
-            out["body_chars"] = len(body)
-            out["truncated"] = len(body) > a.max_chars
-            out["body"] = body[: a.max_chars]
+        elif a.cmd == "rhtml":
+            out.update(reddit_page(drv, a.wait_for or "shreddit-post", a.settle_for, a.wait, a.count, a.max_chars))
         elif a.cmd == "xposts":
             out.update(scrape_x(drv, max(1, min(a.count, 100)), a.max_idle))
         elif a.cmd == "source":

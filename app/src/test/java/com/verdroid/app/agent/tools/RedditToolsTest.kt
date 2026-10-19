@@ -38,15 +38,34 @@ class RedditToolsTest {
     private fun loggedIn() = CookieVault.InMemory(listOf(BrowserCookie("reddit_session", secret, ".reddit.com"), BrowserCookie("token_v2", "g", ".reddit.com")))
     private fun o(s: String) = Json.parseToJsonElement(s).jsonObject
 
-    @Test fun loggedInSearchUsesChromiumAndFormats() = runTest {
-        val body = """{"data":{"children":[{"kind":"t3","data":{"title":"Hello","subreddit":"s","author":"a","score":3,"num_comments":1,"permalink":"/r/s/comments/z/h/"}}]}}"""
-        val t = T(buildJsonObject { put("ok", true); put("body", body) }.toString())
+    private val page = "<shreddit-post post-title=\"Hello\" permalink=\"/r/sub/comments/z1/h/\" subreddit-prefixed-name=\"r/sub\" author=\"a\" score=\"3\" comment-count=\"1\"></shreddit-post>"
+
+    @Test fun loggedInSearchRendersInChromiumAndParses() = runTest {
+        val t = T(buildJsonObject { put("ok", true); put("state", "ready"); put("html", page) }.toString())
         val raw = RedditSearchTool(t, folder, loggedIn()).execute(buildJsonObject { put("query", "hello"); put("subreddit", "sub") }, ToolContext(3))
-        val r = o(raw); assertNotNull(raw, r["ok"])
-        assertEquals(raw, true, r["ok"]!!.jsonPrimitive.boolean)
-        assertTrue(r["posts"]!!.jsonPrimitive.content.startsWith("Post 1: r/s · u/a"))
+        val r = o(raw); assertEquals(raw, true, r["ok"]!!.jsonPrimitive.boolean)
+        assertTrue(r["posts"]!!.jsonPrimitive.content.startsWith("Post 1: r/sub · u/a"))
         val cmd = t.cmds.single()
-        assertTrue(cmd.contains("rjson")); assertTrue(cmd.contains("r/sub/search.json")); assertFalse(cmd.contains(secret))
+        assertTrue(cmd.contains("rhtml")); assertTrue(cmd.contains("r/sub/search/")); assertTrue(cmd.contains("--wait-for")); assertFalse(cmd.contains(secret))
+    }
+
+    @Test fun loginWithUserTokenV2OnlyCounts() = runTest {
+        val jwt = "h." + java.util.Base64.getUrlEncoder().withoutPadding().encodeToString("""{"sub":"user","lid":"t2_x"}""".toByteArray()) + ".s"
+        val t = T(buildJsonObject { put("ok", true); put("state", "ready"); put("html", page) }.toString())
+        val v = CookieVault.InMemory(listOf(BrowserCookie("token_v2", jwt, ".reddit.com"), BrowserCookie("loid", "l", ".reddit.com")))
+        assertEquals(true, o(RedditSearchTool(t, folder, v).execute(buildJsonObject { put("query", "x") }, ToolContext(2)))["ok"]!!.jsonPrimitive.boolean)
+    }
+
+    @Test fun challengeAndBlocksAreTriaged() = runTest {
+        fun run(state: String, task: Long) = RedditReadTool(T(buildJsonObject { put("ok", true); put("state", state); put("title", "Reddit - Prove your humanity"); put("html", "") }.toString()),
+            folder, loggedIn())
+        val c = o(run("challenge", 1).execute(buildJsonObject { put("url", "https://redd.it/abc12") }, ToolContext(11)))
+        assertEquals("CHALLENGE", c["code"]!!.jsonPrimitive.content); assertTrue(c["tell_user"]!!.jsonPrimitive.content.contains("Log in to Reddit again"))
+        val b = o(run("ip_blocked", 2).execute(buildJsonObject { put("url", "https://redd.it/abc12") }, ToolContext(12)))
+        assertEquals("IP_BLOCKED", b["code"]!!.jsonPrimitive.content); assertNull(b["tell_user"]); assertNotNull(b["fallback"])
+        val e = o(RedditSearchTool(T(buildJsonObject { put("ok", true); put("state", "empty"); put("html", "") }.toString()), folder, loggedIn())
+            .execute(buildJsonObject { put("query", "zzqx") }, ToolContext(13)))
+        assertEquals(0, e["count"]!!.jsonPrimitive.int)
     }
 
     @Test fun noLoginFallsBackWithOneHintPerChat() = runTest {
@@ -72,7 +91,7 @@ class RedditToolsTest {
     }
 
     @Test fun blockPageGivesFallbackNotGarbage() = runTest {
-        val t = T(buildJsonObject { put("ok", true); put("body", "whoa there, pardner! $secret") }.toString())
+        val t = T(buildJsonObject { put("ok", true); put("state", "ready"); put("html", "<html>whoa there, pardner! $secret</html>") }.toString())
         val r = RedditReadTool(t, folder, loggedIn()).execute(buildJsonObject { put("url", "https://redd.it/abc12") }, ToolContext(1))
         assertFalse(r.contains(secret))
         val j = o(r); assertEquals(false, j["ok"]!!.jsonPrimitive.boolean); assertNotNull(j["fallback"])
@@ -83,6 +102,6 @@ class RedditToolsTest {
         assertFalse("on by default", "reddit_search" in ToolPrefs.DEFAULT_OFF)
         assertNull(ScheduleSafety.blockReason("reddit_read", buildJsonObject {}))
         assertFalse(ToolGroups.needsTosWarning("reddit", false, true))
-        assertTrue("rjson" in VerdroidSeleniumPy.SOURCE)
+        assertTrue("rhtml" in VerdroidSeleniumPy.SOURCE)
     }
 }

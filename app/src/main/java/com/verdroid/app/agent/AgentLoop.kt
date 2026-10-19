@@ -459,8 +459,9 @@ class AgentLoop internal constructor(
               With cookie_open only read pages (never post, like, follow or change account settings).
             - Reddit (read-only): for any Reddit request call reddit_search (search all of Reddit or one subreddit, or list a
               subreddit) and reddit_read (a thread with top comments) FIRST, not web_search/web_fetch; assume the Reddit login
-              is saved. Only when they return NOT_LOGGED_IN / NO_CHROMIUM use their fallback (web_search "site:reddit.com …",
-              web_fetch old.reddit.com), and if the result has tell_user, pass that hint on briefly in your reply. Don't call
+              is saved. Only when they fail (NOT_LOGGED_IN, NO_CHROMIUM, CHALLENGE, IP_BLOCKED, RATE_LIMITED, LOGIN_GATED, TIMEOUT)
+              use their fallback (web_search "site:reddit.com …"; don't web_fetch reddit .json / old.reddit, they're blocked), say
+              briefly why, and if the result has tell_user, pass that hint on in your reply. On RATE_LIMITED don't retry right away. Don't call
               cookie_login for Reddit unless the user wants to log in. No posting, voting or commenting.
             - Twitter (beta, only if enabled): x_timeline (home feed), x_user_posts (one account), x_search (search) — use
               these for X instead of cookie_open + parsing HTML; they return formatted posts. Assume the X login is already

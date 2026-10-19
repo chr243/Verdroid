@@ -141,7 +141,15 @@ fun ChatDetailScreen(onBack: () -> Unit, onChatMemory: (Long) -> Unit = {}, vm: 
     LaunchedEffect(transitioning) { if (!transitioning) contentReady = true }
     val listAlpha by androidx.compose.animation.core.animateFloatAsState(
         if (contentReady) 1f else 0f, androidx.compose.animation.core.tween(120), label = "chatListFade")
-    LaunchedEffect(messages.size, transitioning) { if (!transitioning) vm.markOpened() }
+    // v1.0.60: the message list is windowed, so its size stops changing in long chats and new replies were never marked
+    // seen (the chat head kept its unread badge). Mark seen whenever this chat is on screen (resumed) and has unread
+    // replies, and on every resume, keyed on the unread count itself.
+    val unread by vm.unread.collectAsStateWithLifecycle()
+    val resumed = androidx.lifecycle.compose.LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsState().value
+        .isAtLeast(Lifecycle.State.RESUMED)
+    LaunchedEffect(messages.lastOrNull()?.id, messages.size, unread, resumed, transitioning) {
+        if (com.verdroid.app.domain.model.ChatSeen.shouldMark(resumed, transitioning, unread, messages.isNotEmpty())) vm.markOpened()
+    }
     // Only follow new output when already near the bottom (or the user just sent something); reading older messages
     // while a task runs is no longer interrupted.
     val follow = rememberFollowBottom(listState)

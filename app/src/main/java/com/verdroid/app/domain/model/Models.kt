@@ -60,6 +60,12 @@ enum class PauseReason(val autoResume: Boolean) {
     }
 }
 
+/** When the open chat screen marks its replies seen (clears the unread badge of the chat head / list). Pure, tested. */
+object ChatSeen {
+    fun shouldMark(resumed: Boolean, transitioning: Boolean, unread: Int, hasMessages: Boolean): Boolean =
+        resumed && !transitioning && (unread > 0 || hasMessages)
+}
+
 data class Conversation(val task: Task, val unreadCount: Int) {
     val hasUnread: Boolean get() = unreadCount > 0
 }

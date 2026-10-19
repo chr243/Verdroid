@@ -179,5 +179,10 @@ class ChatViewModel @Inject constructor(
     /** Opens the current conversation as a bubble or overlay chat head (null for an unsaved new chat). */
     suspend fun openChatHead(): ChatHeadResult? = taskId.value.takeIf { it != 0L }?.let { chatHeads.open(it) }
 
+    /** Unread replies of this chat (same count as the chat head badge / chat list). */
+    val unread: StateFlow<Int> = taskId.flatMapLatest { id ->
+        if (id == 0L) flowOf(0) else tasks.observeConversations().map { list -> list.firstOrNull { it.task.id == id }?.unreadCount ?: 0 }
+    }.distinctUntilChanged().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+
     fun markOpened() { taskId.value.takeIf { it != 0L }?.let { viewModelScope.launch { tasks.markOpened(it) } } }
 }

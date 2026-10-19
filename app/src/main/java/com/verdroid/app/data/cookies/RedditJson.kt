@@ -3,10 +3,11 @@ package com.verdroid.app.data.cookies
 import kotlinx.serialization.json.*
 import java.net.URI
 import java.net.URLEncoder
+import kotlinx.coroutines.sync.withLock
 
 /**
- * Reddit reads for reddit_search / reddit_read (pure, unit-tested): builds www.reddit.com .json URLs and turns the
- * listing JSON the logged-in headless browser fetched into compact text (posts + top comments). Nothing is saved.
+ * Reddit reads for reddit_search / reddit_read (pure, unit-tested): login detection, page URLs and text formatting.
+ * The pages are rendered by the logged-in headless browser and parsed by [RedditHtml]. Nothing is saved.
  */
 object RedditJson {
     /** Logged-in marker: reddit_session is only set after a real login (token_v2 / loid / csv exist for guests too). */
@@ -49,76 +50,42 @@ object RedditJson {
     fun subreddit(raw: String?): String? = raw?.trim()?.removePrefix("/")?.removePrefix("r/")?.removePrefix("/")?.trimEnd('/')
         ?.takeIf { it.isNotEmpty() }?.takeIf { SUB.matches(it) }
 
-    /** Search (or, with no query, a subreddit listing). Null = invalid input. */
-    fun searchUrl(query: String?, subreddit: String?, sort: String?, time: String?, limit: Int): String? {
+    /** Rendered search page (or, with no query, a subreddit listing). Null = invalid input. */
+    fun searchUrl(query: String?, subreddit: String?, sort: String?, time: String?): String? {
         val q = query?.trim().orEmpty()
         val sub = subreddit?.let { subreddit(it) ?: return null }
         val t = time?.trim()?.lowercase()?.takeIf { it in TIMES }
-        val n = limit.coerceIn(1, 50)
         if (q.isEmpty()) {
             sub ?: return null
             val so = sort?.trim()?.lowercase()?.takeIf { it in setOf("hot", "new", "top", "rising") } ?: "hot"
-            return "https://www.reddit.com/r/$sub/$so.json?limit=$n&raw_json=1" + (if (so == "top" && t != null) "&t=$t" else "")
+            return "https://www.reddit.com/r/$sub/$so/" + (if (so == "top" && t != null) "?t=$t" else "")
         }
         val so = sort?.trim()?.lowercase()?.takeIf { it in SORTS } ?: "relevance"
-        val base = if (sub != null) "https://www.reddit.com/r/$sub/search.json?restrict_sr=1&" else "https://www.reddit.com/search.json?"
-        return base + "q=" + URLEncoder.encode(q, "UTF-8") + "&sort=$so" + (t?.let { "&t=$it" } ?: "") + "&limit=$n&raw_json=1&type=link"
+        val base = if (sub != null) "https://www.reddit.com/r/$sub/search/?restrict_sr=1&" else "https://www.reddit.com/search/?"
+        return base + "q=" + URLEncoder.encode(q, "UTF-8") + "&type=posts&sort=$so" + (t?.let { "&t=$it" } ?: "")
     }
 
-    /** A post permalink (reddit.com / old. / new. / m. / redd.it/<id>) → its .json URL; null = not a Reddit post link. */
-    fun readUrl(url: String?, comments: Int): String? {
+    /** A post link (reddit.com / old. / new. / m. / redd.it/<id>) → its rendered www.reddit.com thread page; null = not a post. */
+    fun readUrl(url: String?): String? {
         val u = runCatching { URI(url?.trim().orEmpty()) }.getOrNull() ?: return null
         val host = u.host?.lowercase() ?: return null
-        val n = comments.coerceIn(0, 100)
         val path: String = when {
             host == "redd.it" -> u.path.trim('/').takeIf { Regex("^[a-z0-9]{4,12}$").matches(it) }?.let { "/comments/$it" } ?: return null
             host == "reddit.com" || host.endsWith(".reddit.com") -> u.path.orEmpty().trimEnd('/').removeSuffix(".json")
                 .takeIf { it.contains("/comments/") } ?: return null
             else -> return null
         }
-        return "https://www.reddit.com$path.json?limit=$n&depth=2&sort=top&raw_json=1"
+        return "https://www.reddit.com$path/"
     }
 
     data class Post(val title: String, val sub: String, val author: String, val score: Int, val comments: Int,
-                    val permalink: String, val link: String, val text: String, val created: Long)
+                    val permalink: String, val link: String, val text: String, val created: Long = 0, val age: String = "")
     data class Comment(val author: String, val score: Int, val body: String, val depth: Int)
-
-    private fun JsonObject.s(k: String) = (this[k] as? JsonPrimitive)?.contentOrNull.orEmpty()
-    private fun JsonObject.i(k: String) = (this[k] as? JsonPrimitive)?.contentOrNull?.toDoubleOrNull()?.toInt() ?: 0
-    private fun children(listing: JsonElement?): List<JsonObject> =
-        ((listing as? JsonObject)?.get("data") as? JsonObject)?.get("children")?.let { it as? JsonArray }?.mapNotNull { it as? JsonObject }.orEmpty()
-
-    private fun post(d: JsonObject) = Post(d.s("title"), d.s("subreddit"), d.s("author"), d.i("score"), d.i("num_comments"),
-        "https://www.reddit.com" + d.s("permalink"), d.s("url"), d.s("selftext"), d.i("created_utc").toLong())
-
-    /** Posts of a search / subreddit listing. Throws on non-JSON (e.g. a block page). */
-    fun parseListing(raw: String): List<Post> {
-        val e = Json.parseToJsonElement(raw.trim()) as? JsonObject
-        require(e?.get("data") is JsonObject) { "not a Reddit listing" }
-        return children(e).filter { it.s("kind") == "t3" }.mapNotNull { it["data"] as? JsonObject }.map(::post)
-    }
-
-    /** (post, comments flattened depth-first, top-level first). Throws on non-JSON. */
-    fun parseThread(raw: String, maxComments: Int): Pair<Post?, List<Comment>> {
-        val arr = Json.parseToJsonElement(raw.trim()) as? JsonArray ?: error("not a thread")
-        val p = children(arr.getOrNull(0)).firstOrNull { it.s("kind") == "t3" }?.get("data")?.let { it as? JsonObject }?.let(::post)
-        val out = mutableListOf<Comment>()
-        fun walk(list: List<JsonObject>, depth: Int) {
-            for (c in list) {
-                if (out.size >= maxComments) return
-                if (c.s("kind") != "t1") continue
-                val d = c["data"] as? JsonObject ?: continue
-                out += Comment(d.s("author"), d.i("score"), d.s("body"), depth)
-                if (depth < 2) walk(children(d["replies"]), depth + 1)
-            }
-        }
-        walk(children(arr.getOrNull(1)), 0)
-        return p to out
-    }
 
     fun formatPosts(posts: List<Post>, snippet: Int = 300): String = posts.mapIndexed { i, p ->
         buildString {
-            append("Post ${i + 1}: r/${p.sub} · u/${p.author} · ${p.score} points · ${p.comments} comments\n")
+            append("Post ${i + 1}: r/${p.sub}" + (if (p.author.isNotBlank()) " · u/${p.author}" else "") +
+                " · ${p.score} points · ${p.comments} comments" + (if (p.age.isNotBlank()) " · ${p.age}" else "") + "\n")
             append(p.title).append('\n')
             if (p.text.isNotBlank()) append(p.text.replace(Regex("\\s+"), " ").take(snippet)).append(if (p.text.length > snippet) "…\n" else "\n")
             append(p.permalink)
@@ -128,22 +95,23 @@ object RedditJson {
 
     fun formatThread(p: Post?, comments: List<Comment>, maxPostChars: Int = 6_000): String = buildString {
         if (p != null) {
-            append("r/${p.sub} · u/${p.author} · ${p.score} points · ${p.comments} comments\n")
+            append("r/${p.sub}" + (if (p.author.isNotBlank()) " · u/${p.author}" else "") + " · ${p.score} points · ${p.comments} comments" +
+                (if (p.age.isNotBlank()) " · ${p.age}" else "") + "\n")
             append(p.title).append('\n')
             if (p.text.isNotBlank()) append(p.text.take(maxPostChars)).append('\n')
             if (p.link.isNotBlank() && !p.link.contains("reddit.com/")) append("Link: ").append(p.link).append('\n')
         }
         if (comments.isNotEmpty()) append("\nTop comments:\n")
-        comments.forEach { c -> append("  ".repeat(c.depth)).append("- u/${c.author} (${c.score}): ").append(c.body.replace(Regex("\\s+"), " ").take(1_000)).append('\n') }
+        comments.forEach { c -> append("  ".repeat(c.depth.coerceIn(0, 4))).append("- u/${c.author} (${c.score}): ").append(c.body.replace(Regex("\\s+"), " ").take(1_000)).append('\n') }
     }.trimEnd()
 
     /** Fallback the agent can use without the logged-in browser. */
     fun fallbackHint(query: String?, url: String?): String = buildString {
         append("Fall back to web_search (e.g. \"")
         append(query?.takeIf { it.isNotBlank() }?.let { "site:reddit.com $it" } ?: "site:reddit.com …")
-        append("\") and web_fetch on old.reddit.com pages or their .json (e.g. ")
-        append(url?.replace("https://www.reddit.com", "https://old.reddit.com") ?: "https://old.reddit.com/r/<sub>/search.json?q=…&restrict_sr=1")
-        append("); Reddit often blocks these.")
+        append("\"). Reddit's .json / old.reddit pages are blocked or login-gated, so don't use them")
+        if (url != null) append(" (page was $url)")
+        append(".")
     }
 }
 
@@ -151,9 +119,22 @@ object RedditJson {
 object RedditHints {
     private val told = java.util.Collections.synchronizedSet(mutableSetOf<Long>())
     const val LOGIN = "Log in to Reddit once in Verdroid (Settings → Tools → Logged-in sites → Log in to Reddit) so Reddit searches and threads are read reliably."
+    const val RELOGIN = "Reddit didn't accept the saved login (\"Prove your humanity\" / login page). Log in to Reddit again in Verdroid (Settings → Tools → Logged-in sites → Log in to Reddit)."
     const val CHROMIUM = "Install Termux and the chromium-selenium add-on (Settings → Tools → Available to install) so Verdroid can read Reddit with your login."
 
     /** The hint for [taskId] the first time (0 = always), else null. */
     fun once(taskId: Long, text: String): String? = if (taskId == 0L || told.add(taskId)) text else null
     fun resetForTest() = told.clear()
+}
+
+/** At most one Reddit page load per second across all Reddit tool calls (etiquette; the helper backs off once on 429). */
+object RedditThrottle {
+    private val lock = kotlinx.coroutines.sync.Mutex()
+    @Volatile private var last = 0L
+    const val MIN_GAP_MS = 1_000L
+    suspend fun await(now: () -> Long = System::currentTimeMillis) = lock.withLock {
+        val wait = last + MIN_GAP_MS - now()
+        if (wait > 0) kotlinx.coroutines.delay(wait)
+        last = now()
+    }
 }
