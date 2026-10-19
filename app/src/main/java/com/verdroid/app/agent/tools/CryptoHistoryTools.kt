@@ -256,7 +256,7 @@ print({"total_return_pct": (eq.iloc[-1]-1)*100, "max_drawdown_pct": ((eq.cummax(
         val NEEDS_SETUP: JsonObject = buildJsonObject {
             put("error", "Python libraries for crypto backtesting (pandas, numpy, matplotlib) are not installed.")
             put("needs_setup", true)
-            put("tell_user", "Go to Settings → Tools → Available to install and tap Install for crypto-backtest (Crypto backtesting). Then ask me again.")
+            put("tell_user", "Go to Settings → Tools → Terminal → Verdroid add-ons and tap Install for crypto-backtest (Crypto backtesting). Then ask me again.")
             put("next_step", "Tell the user exactly that, then STOP and wait for them. Do not run crypto_backtest or any other fallback " +
                 "backtest unless the user explicitly asks for it. Do not install packages from the chat (no pip/pkg via termux_run).")
         }

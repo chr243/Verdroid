@@ -334,7 +334,7 @@ class SelfTestRunner @Inject constructor(
                     com.verdroid.app.ui.cookies.CookieLoginResult(true, emptyList(), 1).closedBy == C.CLOSED_SELF) { "only Done may report a login (closed_by)" }
             }
             check(com.verdroid.app.domain.schedule.ScheduleSafety.blockReason("cookie_open", kotlinx.serialization.json.buildJsonObject {}) == null) { "Reddit reads must work in scheduled runs" }
-            if (!R.loggedIn(cookieVault.all())) throw SkipCheck("no Reddit login saved (Settings → Tools → Logged-in sites → Log in to Reddit); Reddit falls back to web search")
+            if (!R.loggedIn(cookieVault.all())) throw SkipCheck("no Reddit login saved (Settings → Tools → Web & logins → Log in to a site → reddit.com); Reddit falls back to web search")
             requireTermux()
             val out = termuxEcho("python -c 'import selenium; print(\"selenium-ok\")' 2>&1 || echo noselenium")
             if ("selenium-ok" !in out) throw SkipCheck("chromium-selenium add-on not installed; Reddit falls back to web search")
@@ -469,6 +469,18 @@ class SelfTestRunner @Inject constructor(
                 "clone → Repos/<name>, reuse, workspace_write seen by status/commit, empty commit refused"
             } finally { base.deleteRecursively() }
         },
+        "tools_layout" to {
+            val B = com.verdroid.app.ui.cookies.CookieLoginBridge
+            check(B.loginUrlFor("reddit.com") == B.REDDIT_URL && B.loginUrlFor("https://www.reddit.com") == B.REDDIT_URL &&
+                B.loginUrlFor("old.reddit.com") == B.REDDIT_OLD_URL && B.loginUrlFor("x.com") == B.DEFAULT_URL && B.isReddit(B.loginUrlFor("reddit.com")!!)) { "universal login → Reddit/X login pages" }
+            val L = com.verdroid.app.ui.tools.ToolsLayout
+            check(L.SECTIONS == listOf("File safety", "Shared folder", "Tools", "Web & logins", "X (Twitter)", "Terminal (Termux)", "Advanced")) { "sections" }
+            val env = com.verdroid.app.data.tools.ToolEnv(termuxReady = true)
+            val texts = registry.tools.map { com.verdroid.app.data.tools.ToolStatus.of(it.name, env).text + " " + it.description }
+            check(texts.none { "Logged-in sites" in it || "Log in to Reddit" in it || "Available to install" in it || "reddit_search" in it }) { "stale section names in tool texts" }
+            check(com.verdroid.app.data.tools.ToolGroups.needsTosWarning("twitter", wasOn = false, turningOn = true)) { "X ToS gate" }
+            "Tools tab sections, universal login, no stale names"
+        },
         "shared_deletes" to {
             val S = com.verdroid.app.agent.tools.SharedFolderDeletes
             val d = "/storage/emulated/0/Documents/Verdroid"
@@ -491,7 +503,7 @@ class SelfTestRunner @Inject constructor(
             val r = termux.runAndWait(com.verdroid.app.agent.tools.CryptoHistoryTools.PREFLIGHT, "st-btdeps-${System.nanoTime()}", 25_000, label = "Verdroid self-test")
                 ?: throw IllegalStateException("Termux did not answer")
             if (!com.verdroid.app.agent.tools.CryptoHistoryTools.preflightOk(r.stdout))
-                throw SkipCheck("pandas/numpy/matplotlib not installed (Settings → Tools → crypto-backtest)")
+                throw SkipCheck("pandas/numpy/matplotlib not installed (Settings → Tools → Terminal → Verdroid add-ons → crypto-backtest)")
             "pandas, numpy, matplotlib importable"
         },
         "crypto_history" to {

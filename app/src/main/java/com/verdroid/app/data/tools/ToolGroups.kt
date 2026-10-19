@@ -8,12 +8,12 @@ object ToolGroups {
 
     val ORDER = listOf(
         Group("files", "Files", "Documents/Verdroid (workspace_*), private scratch files"),
-        Group("web", "Web", "web_search, web_fetch, headless Chromium (selenium_*); beta: logged-in pages with your own cookies (cookie_*, stored encrypted), incl. Reddit search/threads via cookie_open"),
-        Group("twitter", "Twitter", "Beta: read your X timeline, profiles and search (x_timeline, x_user_posts, x_search) and post with confirmation (x_post), using your saved X login. Against X's Terms of Service: the account may be limited or banned"),
+        Group("web", "Web", "Search, fetch, headless Chromium (web_*, selenium_*); beta: logged-in pages (cookie_*, stored encrypted), incl. Reddit via cookie_open"),
+        Group("twitter", "X (Twitter)", "Beta: read your X timeline, profiles and search (x_timeline, x_user_posts, x_search) and post with confirmation (x_post), using your saved X login. Against X's Terms of Service: the account may be limited or banned"),
         Group("termux", "Termux & Python", "termux_run, termux_python"),
         Group("pdf", "PDF & documents", "PDF read/edit (pdf_*), ebook translation"),
         Group("system", "Shizuku & phone screen", "Shizuku shell, rish, screen control (accessibility)"),
-        Group("git", "Git", "git_* (JGit)"),
+        Group("git", "Git", "Repos in Documents/Verdroid/Repos (git_*, built-in JGit)"),
         Group("crypto", "Crypto backtesting", "Backtesting: history download, backtests, scripts"),
         Group("scheduling", "Scheduling", "Reminders and scheduled agent runs (schedule_*): once, daily or every N minutes; manage in Settings → Schedules"),
         Group("memory", "Memory & skills", "memory_*, skill_*"),

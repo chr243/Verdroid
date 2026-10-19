@@ -103,6 +103,6 @@ class XPostPolicyTest {
         val many = List(30) { now - it * 1_000L }
         assertNotNull(XPostLimits.blockReason(many, now, 5, 20))                 // default: enabled
         assertNull(XPostLimits.blockReason(many, now, 5, 20, enabled = false))   // "Limit X posts" off
-        assertTrue(XPostLimits.blockReason(many, now, 5, 20)!!.contains("Limit X posts"))
+        assertTrue(XPostLimits.blockReason(many, now, 5, 20)!!.contains("Limit posts"))
     }
 }

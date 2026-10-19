@@ -37,10 +37,10 @@ object XPostLimits {
         return when {
             perHour > 0 && hour.size >= perHour -> "RATE_LIMITED: x_post cap reached ($perHour posts per hour). Nothing was posted. " +
                 "Next post possible in about ${wait(hour[hour.size - perHour] + HOUR - now)}. Don't retry now; tell the user " +
-                "(they can change or turn off the limit in Settings → Tools → Twitter → Limit X posts)."
+                "(they can change or turn off the limit in Settings → Tools → X (Twitter) → Limit posts)."
             perDay > 0 && day.size >= perDay -> "RATE_LIMITED: x_post cap reached ($perDay posts per day). Nothing was posted. " +
                 "Next post possible in about ${wait(day[day.size - perDay] + DAY - now)}. Don't retry now; tell the user " +
-                "(they can change or turn off the limit in Settings → Tools → Twitter → Limit X posts)."
+                "(they can change or turn off the limit in Settings → Tools → X (Twitter) → Limit posts)."
             else -> null
         }
     }

@@ -76,7 +76,7 @@ class CookieToolsTest {
             assertEquals(ToolPreset.TWITTER, ToolPreset.of(it))
             assertTrue(ToolPreset.effective(it, false, mapOf(ToolPreset.TWITTER to true)))
         }
-        assertEquals("Twitter", ToolGroups.ORDER.first { it.id == "twitter" }.title)
+        assertEquals("X (Twitter)", ToolGroups.ORDER.first { it.id == "twitter" }.title)
         assertTrue(ToolGroups.ORDER.none { it.id == "cookies" })
         assertTrue(ToolGroups.ORDER.first { it.id == "twitter" }.description.contains("Terms of Service"))
         assertTrue(ToolGroups.needsTosWarning("twitter", wasOn = false, turningOn = true))

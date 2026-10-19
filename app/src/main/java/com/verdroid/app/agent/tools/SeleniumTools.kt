@@ -8,7 +8,7 @@ import java.io.File
 import java.util.Base64
 
 /**
- * Headless Chromium + Selenium running inside Termux (installed from Settings > Tools > Available to install).
+ * Headless Chromium + Selenium running inside Termux (installed from Settings > Tools > Terminal > Verdroid add-ons).
  * Every call starts a fresh headless browser through `~/.verdroid/verdroid_selenium.py`, so there is no session state.
  * Files are written by Termux straight into Documents/Verdroid/Output, which needs `termux-setup-storage` once in Termux.
  */
@@ -173,7 +173,7 @@ class TermuxPythonTool(
         val cookies = if (sites.isEmpty()) emptyList() else {
             val v = vault ?: return errorJson("cookies_for is not available")
             val all = v.all()
-            sites.flatMap { s -> cookiesForHost(all, s).ifEmpty { return errorJson("No saved login cookies for $s (Settings → Tools → Logged-in sites).") } }
+            sites.flatMap { s -> cookiesForHost(all, s).ifEmpty { return errorJson("No saved login cookies for $s (Settings → Tools → Web & logins).") } }
                 .distinctBy { Triple(it.host, it.path, it.name) }
         }
         val r = termux.runAndWait(command(f.name, bytes, argv, timeout, cookies), "py-${System.nanoTime()}", (timeout + 20) * 1_000L, label = "Verdroid: termux_python")

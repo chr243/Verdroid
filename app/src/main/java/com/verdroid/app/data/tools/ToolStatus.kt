@@ -29,24 +29,21 @@ data class ToolStatus(val ready: Boolean, val text: String) {
                 if (env.termuxReady) ToolStatus(true, "Ready (PDF library installs on first use, or via the pdf-tools add-on); needs termux-setup-storage + All files access")
                 else ToolStatus(false, "Needs Termux (Settings > Tools); the PDF library is installed on first use after you agree")
             name == "cookie_open" ->
-                if (env.termuxReady) ToolStatus(true, "Beta: ready if chromium-selenium is installed and cookies were imported (cookie_import)")
+                if (env.termuxReady) ToolStatus(true, "Beta: ready if chromium-selenium is installed and you logged in to the site (Settings > Tools > Web & logins)")
                 else ToolStatus(false, "Needs Termux + the chromium-selenium add-on (Settings > Tools)")
-            name.startsWith("reddit_") ->
-                if (env.termuxReady) ToolStatus(true, "Best with chromium-selenium and a Reddit login (Logged-in sites → Log in to Reddit); otherwise web search")
-                else ToolStatus(true, "Falls back to web search; Termux + chromium-selenium and a Reddit login make it reliable")
             name in setOf("x_timeline", "x_user_posts", "x_search") ->
-                if (env.termuxReady) ToolStatus(true, "Beta: needs chromium-selenium and an X login (Logged-in sites / cookie_login)")
+                if (env.termuxReady) ToolStatus(true, "Beta: needs chromium-selenium and an X login (Settings > Tools > Web & logins)")
                 else ToolStatus(false, "Needs Termux + the chromium-selenium add-on (Settings > Tools)")
             name == "x_post" -> if (env.termuxReady) ToolStatus(true, "Beta, posts as you: asks Post / Cancel first (unless allowed)")
                 else ToolStatus(false, "Needs Termux + the chromium-selenium add-on (Settings > Tools)")
             name == "cookie_login" -> ToolStatus(true, "Beta: opens an in-app login screen; the user taps Done")
             name.startsWith("cookie_") -> ToolStatus(true, "Beta: cookies stored encrypted in the app; import from a file in Documents/Verdroid")
             name.startsWith("selenium_") || name == "termux_python" ->
-                if (env.termuxReady) ToolStatus(true, "Ready if chromium-selenium is installed (Available to install)" +
+                if (env.termuxReady) ToolStatus(true, "Ready if chromium-selenium is installed (Settings > Tools > Terminal > Verdroid add-ons)" +
                     if (name == "termux_python") "" else "; saving files needs termux-setup-storage in Termux")
                 else ToolStatus(false, "Needs Termux + the chromium-selenium add-on (Settings > Tools)")
             name == "termux_run" -> if (env.termuxReady) ToolStatus(true, "Ready if allow-external-apps is on in Termux")
-                else ToolStatus(false, "Needs Termux and the Run commands permission (Settings > Tools > Termux)")
+                else ToolStatus(false, "Needs Termux and the Run commands permission (Settings > Tools > Terminal)")
             name == "rish_run" -> when {
                 !env.rishReady -> ToolStatus(false, "Needs Find/Pick rish in Settings > Shizuku & Git (deploys to /data/local/tmp/verdroid_rish)")
                 !env.shizukuReady -> ToolStatus(false, "rish is staged; needs Shizuku running with permission to deploy/run")

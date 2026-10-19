@@ -24,7 +24,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 /** Settings > Tools: built-in agent tools (status + persisted on/off), Termux setup and optional Termux add-ons. MCP has its own screen. Text only. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ToolsScreen(onBack: () -> Unit, vm: ToolsViewModel = hiltViewModel()) {
+fun ToolsScreen(onBack: () -> Unit, onOpenShizuku: () -> Unit = {}, onOpenPermissions: () -> Unit = {}, vm: ToolsViewModel = hiltViewModel()) {
     val state by vm.state.collectAsStateWithLifecycle()
     val disabled by vm.prefs.disabled.collectAsStateWithLifecycle()
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -63,12 +63,23 @@ fun ToolsScreen(onBack: () -> Unit, vm: ToolsViewModel = hiltViewModel()) {
             actions = { TextButton(onClick = vm::refresh, enabled = !state.checking) { Text(if (state.checking) "Checking…" else "Check again") } })
     }) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding)) {
-            item {
-                Text("Turned-off tools are hidden from the model and refused if it calls them anyway.",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
+            // 1. File safety
+            item(key = "file-safety") {
+                SectionTitle("File safety")
                 com.verdroid.app.ui.consent.OverwriteSetting()
                 com.verdroid.app.ui.consent.SharedDeleteSetting()
+                Hint("The Yes/No dialog's This chat / Always allow buttons set these too.")
+            }
+            // 2. Shared folder
+            item(key = "shared-folder") {
+                SectionTitle("Shared folder")
+                SharedFolderCard(state.storage,
+                    onGrant = { runCatching { storageLauncher.launch(com.verdroid.app.data.storage.SharedFolder.accessIntent(context)) } })
+            }
+            // 3. Tools (groups keep their ids; the X ToS warning still gates turning X tools on)
+            item(key = "tools-title") {
+                SectionTitle("Tools")
+                Hint("Off = hidden from the model (and refused if it calls them anyway).")
             }
             ToolGroups.group(state.tools) { it.name }.forEach { (g, tools) ->
                 val names = tools.map { it.name }
@@ -119,76 +130,137 @@ fun ToolsScreen(onBack: () -> Unit, vm: ToolsViewModel = hiltViewModel()) {
                     )
                 }
             }
-            val groupsNow = ToolGroups.group(state.tools) { it.name }
-            // Logged-in sites: with the Web group's cookie tools; "Post to X without asking": with the Twitter group.
-            if ("web" in expanded || groupsNow.any { (g, t) -> g.id == "web" && t.any { it.name.startsWith("cookie_") && it.name !in disabled } })
-                item(key = "logged-in-sites") { com.verdroid.app.ui.cookies.LoggedInSitesSection() }
-            if ("twitter" in expanded || groupsNow.any { (g, t) -> g.id == "twitter" && t.any { it.name !in disabled } })
-                item(key = "twitter-settings") {
-                    Column {
-                        Text("Twitter", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = 16.dp, top = 20.dp, end = 16.dp))
-                        com.verdroid.app.ui.consent.XPostSetting()
-                        com.verdroid.app.ui.consent.XPostLimitsSetting()
-                    }
-                }
-            item {
-                Text("Shared folder", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = 16.dp, top = 20.dp, end = 16.dp))
-                SharedFolderCard(state.storage,
-                    onGrant = { runCatching { storageLauncher.launch(com.verdroid.app.data.storage.SharedFolder.accessIntent(context)) } })
+            val names = state.tools.map { it.name }
+            // 4. Web & logins (always visible)
+            item(key = "web-logins") {
+                SectionTitle("Web & logins")
+                com.verdroid.app.ui.cookies.LoggedInSitesSection(toolsOff = ToolsLayout.allOff(names, disabled) { it.startsWith("cookie_") })
             }
-            item {
-                Text("Termux", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = 16.dp, top = 20.dp, end = 16.dp))
+            // 5. X (Twitter) (always visible; these switches never turn X tools on, so no ToS gate is needed here)
+            item(key = "x-twitter") {
+                SectionTitle("X (Twitter)")
+                Hint(ToolGroups.TWITTER_TOS_WARNING)
+                if (ToolsLayout.allOff(names, disabled) { ToolGroups.groupOf(it) == "twitter" })
+                    Hint("X tools are off: turn them on under Tools → X (Twitter).")
+                com.verdroid.app.ui.consent.XPostSetting()
+                com.verdroid.app.ui.consent.XPostLimitsSetting()
+            }
+            // 6. Terminal (Termux): setup + Packages / Verdroid add-ons (expandable)
+            item(key = "terminal") {
+                SectionTitle("Terminal (Termux)")
                 TermuxSetupCard(state.termux, state,
                     onSetup = vm::setupTermux, onCancel = vm::cancelSetup,
                     onInstall = { runCatching { context.startActivity(vm.termux.installIntent()) } },
                     onGrant = { permissionLauncher.launch(com.verdroid.app.data.termux.TermuxManager.PERMISSION_RUN_COMMAND) })
+                Hint("Installed in the background with pkg (no Termux window); termux_run and the tools above use them.")
+                state.packagesNote?.let { Hint(it) }
             }
-            item {
-                Text("Available to install", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = 16.dp, top = 20.dp, end = 16.dp))
-                Text("Termux packages the agent can use with termux_run. Installed in the background with pkg (no Termux window).",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
-                state.packagesNote?.let {
-                    Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+            for ((key, title, rows) in listOf(
+                Triple(ToolsLayout.PACKAGES, "Packages", state.packages.filterNot { com.verdroid.app.data.tools.TermuxPackages.isAddon(it.pkg.pkg) }),
+                Triple(ToolsLayout.ADDONS, "Verdroid add-ons", state.packages.filter { com.verdroid.app.data.tools.TermuxPackages.isAddon(it.pkg.pkg) }),
+            )) {
+                val open = key in expanded
+                item(key = "h-$key") {
+                    ExpandRow(title, ToolsLayout.installedLabel(rows.count { it.state == PkgState.INSTALLED }, rows.size), open) {
+                        expanded = if (open) expanded - key else expanded + key
+                    }
                 }
+                if (open) itemsIndexed(rows, key = { _, p -> "p-" + p.pkg.pkg }) { i, p -> PackageRow(p, i, rows.size, state.packagesNote == null) { vm.install(p.pkg) } }
             }
-            itemsIndexed(state.packages, key = { _, p -> "p-" + p.pkg.pkg }) { i, p ->
-                ListItem(
-                    modifier = Modifier.groupedRow(i, state.packages.size),
-                    colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
-                    headlineContent = { Text(p.pkg.pkg, fontFamily = FontFamily.Monospace) },
-                    supportingContent = {
-                        Column {
-                            Text(p.pkg.description)
-                            val s = when (p.state) {
-                                PkgState.INSTALLED -> "Installed (${p.pkg.binary})"
-                                PkgState.NOT_INSTALLED -> "Not installed"
-                                PkgState.INSTALLING -> "Installing…"
-                                PkgState.FAILED -> "Install failed"
-                                PkgState.UNKNOWN -> "Unknown"
-                            }
-                            Text(s, style = MaterialTheme.typography.labelMedium,
-                                color = if (p.state == PkgState.FAILED) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
-                            p.detail?.let { d ->
-                                Text(d, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace, maxLines = 6)
-                                if (p.state == PkgState.FAILED) com.verdroid.app.ui.components.CopyButton(d)
-                            }
-                        }
-                    },
-                    trailingContent = {
-                        when (p.state) {
-                            PkgState.INSTALLED -> Text("Installed", style = MaterialTheme.typography.labelLarge)
-                            PkgState.INSTALLING -> CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
-                            else -> OutlinedButton(onClick = { vm.install(p.pkg) }, enabled = state.packagesNote == null) {
-                                Text(if (p.state == PkgState.FAILED) "Retry" else "Install")
-                            }
-                        }
-                    },
-                )
+            // 7. Advanced (collapsed): links to the other setup screens
+            val advOpen = ToolsLayout.ADVANCED in expanded
+            item(key = "advanced") {
+                SectionTitle("Advanced")
+                ExpandRow("Shizuku, rish, Git token, permissions", null, advOpen) {
+                    expanded = if (advOpen) expanded - ToolsLayout.ADVANCED else expanded + ToolsLayout.ADVANCED
+                }
+                if (advOpen) Column {
+                    ListItem(modifier = Modifier.clickable(onClick = onOpenShizuku),
+                        colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
+                        headlineContent = { Text("Shizuku & Git") }, supportingContent = { Text("run_shell, rish, Git token") })
+                    ListItem(modifier = Modifier.clickable(onClick = onOpenPermissions),
+                        colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
+                        headlineContent = { Text("Permissions") }, supportingContent = { Text("All files, notifications, Termux, Shizuku, accessibility, overlay") })
+                }
             }
             item { Spacer(Modifier.height(24.dp)) }
         }
     }
+}
+
+/** Pure helpers for the Tools tab layout (unit-tested). */
+object ToolsLayout {
+    const val PACKAGES = "pkgs"
+    const val ADDONS = "addons"
+    const val ADVANCED = "advanced"
+    /** Section titles, top to bottom (status/help texts point at these names). */
+    val SECTIONS = listOf("File safety", "Shared folder", "Tools", "Web & logins", "X (Twitter)", "Terminal (Termux)", "Advanced")
+
+    /** true when there are tools matching [which] and every one of them is off. */
+    fun allOff(names: List<String>, disabled: Set<String>, which: (String) -> Boolean): Boolean =
+        names.filter(which).let { it.isNotEmpty() && it.all { n -> n in disabled } }
+
+    fun installedLabel(installed: Int, total: Int): String = "$installed of $total installed"
+}
+
+@Composable
+private fun SectionTitle(text: String) {
+    Text(text, style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(start = 16.dp, top = 20.dp, end = 16.dp, bottom = 4.dp))
+}
+
+@Composable
+private fun Hint(text: String) {
+    Text(text, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp))
+}
+
+@Composable
+private fun ExpandRow(title: String, subtitle: String?, open: Boolean, onToggle: () -> Unit) {
+    Row(Modifier.fillMaxWidth().clickable(onClick = onToggle)
+        .semantics { contentDescription = "$title, ${if (open) "expanded" else "collapsed"}" }
+        .padding(horizontal = 16.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
+            subtitle?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        }
+        Icon(if (open) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun PackageRow(p: PkgRow, i: Int, size: Int, enabled: Boolean, onInstall: () -> Unit) {
+    ListItem(
+        modifier = Modifier.groupedRow(i, size),
+        colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
+        headlineContent = { Text(p.pkg.pkg, fontFamily = FontFamily.Monospace) },
+        supportingContent = {
+            Column {
+                Text(p.pkg.description)
+                val s = when (p.state) {
+                    PkgState.INSTALLED -> "Installed (${p.pkg.binary})"
+                    PkgState.NOT_INSTALLED -> "Not installed"
+                    PkgState.INSTALLING -> "Installing…"
+                    PkgState.FAILED -> "Install failed"
+                    PkgState.UNKNOWN -> "Unknown"
+                }
+                Text(s, style = MaterialTheme.typography.labelMedium,
+                    color = if (p.state == PkgState.FAILED) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant)
+                p.detail?.let { d ->
+                    Text(d, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace, maxLines = 6)
+                    if (p.state == PkgState.FAILED) com.verdroid.app.ui.components.CopyButton(d)
+                }
+            }
+        },
+        trailingContent = {
+            when (p.state) {
+                PkgState.INSTALLED -> Text("Installed", style = MaterialTheme.typography.labelLarge)
+                PkgState.INSTALLING -> CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                else -> OutlinedButton(onClick = onInstall, enabled = enabled) {
+                    Text(if (p.state == PkgState.FAILED) "Retry" else "Install")
+                }
+            }
+        },
+    )
 }
 
 
@@ -224,10 +296,8 @@ private fun SharedFolderCard(s: StorageSetup, onGrant: () -> Unit) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(com.verdroid.app.data.storage.SharedFolder.DISPLAY_PATH, fontFamily = FontFamily.Monospace,
                 style = MaterialTheme.typography.bodyMedium)
-            Text("A folder you can open in any file manager. Put files for Verdroid in Input/; Verdroid saves its results in " +
-                "Output/. The agent creates, edits and deletes files only inside this folder (workspace_list, workspace_read, " +
-                "workspace_write, workspace_delete). Android 11+ needs All files access for this; the folders are created " +
-                "automatically at launch once it is granted.",
+            Text("Input/ = files for Verdroid, Output/ = results, Repos/ = git clones, Internal/ = scratch. Needs All files " +
+                "access (Android 11+); the folders are created once it is granted.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             SetupLine("1. All files access", s.access) {
                 if (!s.access) OutlinedButton(onClick = onGrant) { Text("Grant") }
@@ -242,7 +312,7 @@ private fun SharedFolderCard(s: StorageSetup, onGrant: () -> Unit) {
 private fun TermuxSetupCard(t: TermuxSetup, s: ToolsState, onSetup: () -> Unit, onCancel: () -> Unit, onInstall: () -> Unit, onGrant: () -> Unit) {
     ElevatedCard(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("termux_run and the add-ons below run in the Termux app (in the background, no Termux window).",
+            Text("termux_run and the add-ons run in the Termux app (in the background, no Termux window).",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             val allDone = com.verdroid.app.data.termux.TermuxSetupFlow.next(t.installed, t.permission, t.answering, t.storage) ==
                 com.verdroid.app.data.termux.TermuxSetupStep.DONE
@@ -276,7 +346,7 @@ private fun TermuxSetupCard(t: TermuxSetup, s: ToolsState, onSetup: () -> Unit, 
                 }
                 com.verdroid.app.ui.components.CopyButton(com.verdroid.app.data.termux.TermuxManager.ALLOW_EXTERNAL_APPS_CMD)
             }
-            SetupLine("4. Storage access for Termux (optional)", t.storage == true) {}
+            SetupLine("4. Storage access (needed to save into Documents/Verdroid)", t.storage == true) {}
             if (t.answering == true && t.storage != true) {
                 Text("For selenium_* and your scrapers to save into Documents/Verdroid/Output, run this once in Termux and allow storage:",
                     style = MaterialTheme.typography.bodySmall)

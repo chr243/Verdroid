@@ -13,7 +13,7 @@ import java.net.URI
 import java.util.Base64
 
 /**
- * Beta (Settings → Tools → Web, cookie_* off by default; Logged-in sites section): inject the user's own cookies into the headless
+ * Beta (Settings → Tools → Web, cookie_* off by default; Web & logins section): inject the user's own cookies into the headless
  * Chromium to read logged-in pages. Values live only in [CookieVault] (encrypted, app-private); tool results show
  * names and redacted values only, and any value that shows up in helper output is scrubbed.
  */
@@ -177,7 +177,7 @@ class CookieOpenTool(termux: TermuxRunner, folder: SharedFolder, private val vau
 }
 
 /**
- * Opens the in-app WebView login screen (Settings → Tools → Logged-in sites) and waits until the user taps Done or Cancel.
+ * Opens the in-app WebView login screen (Settings → Tools → Web & logins) and waits until the user taps Done or Cancel.
  * [launch] starts the screen and completes the returned deferred with (saved, sites, count); values never come back.
  */
 class CookieLoginTool(
@@ -196,7 +196,7 @@ class CookieLoginTool(
 
     override suspend fun execute(args: JsonObject): String {
         val url = args.str("url")?.trim()?.takeIf { it.startsWith("https://") || it.startsWith("http://") } ?: com.verdroid.app.ui.cookies.CookieLoginBridge.DEFAULT_URL
-        val d = launch(url) ?: return errorJson("Could not open the login screen. Ask the user to use Settings → Tools → Logged-in sites → Log in.")
+        val d = launch(url) ?: return errorJson("Could not open the login screen. Ask the user to use Settings → Tools → Web & logins → Log in to a site.")
         val r = kotlinx.coroutines.withTimeoutOrNull(timeoutMs) { d.await() }
             ?: return buildJsonObject {
                 put("ok", false); put("logged_in", false); put("reason", "timeout"); put("closed_by", "timeout")

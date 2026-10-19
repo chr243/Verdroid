@@ -197,7 +197,7 @@ fun VerdroidRoot(
                     onOpenKeepAlive = { nav.navigate(Routes.KEEP_ALIVE) })
             }
             composable(Routes.MCP) { com.verdroid.app.ui.tools.McpServersScreen(onBack = { nav.popBackStack() }) }
-            composable(Routes.TOOLS) { com.verdroid.app.ui.tools.ToolsScreen(onBack = { nav.popBackStack() }) }
+            composable(Routes.TOOLS) { com.verdroid.app.ui.tools.ToolsScreen(onBack = { nav.popBackStack() }, onOpenShizuku = { nav.navigate(Routes.SHIZUKU) }, onOpenPermissions = { nav.navigate(Routes.PERMISSIONS) }) }
             composable(Routes.PERMISSIONS) {
                 com.verdroid.app.ui.permissions.PermissionsScreen(onBack = { nav.popBackStack() }, onTermuxSetup = { nav.navigate(Routes.TOOLS) })
             }

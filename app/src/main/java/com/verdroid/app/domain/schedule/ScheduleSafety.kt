@@ -50,9 +50,9 @@ object ScheduleSafety {
         fun str(k: String) = (args[k] as? kotlinx.serialization.json.JsonPrimitive)?.content.orEmpty()
         return when {
             tool == "x_post" -> if (alwaysAllowed(tool)) null else "x_post needs the user's Post tap. (Turning on Always allow for X posts — " +
-                "Settings → Tools → Twitter → Post to X without asking — permits posting from scheduled runs, within the hourly/daily limit if Limit X posts is on)"
+                "Settings → Tools → X (Twitter) → Post without asking — permits posting from scheduled runs, within the hourly/daily limit if Limit X posts is on)"
             tool == "cookie_login" -> "logging in needs the user. Assume the saved X/site login works; if a tool says NOT_LOGGED_IN, " +
-                "say in your summary that the user should open Verdroid and log in again (Settings → Tools → Logged-in sites)"
+                "say in your summary that the user should open Verdroid and log in again (Settings → Tools → Web & logins)"
             tool in BLOCKED -> "$tool needs the user (confirmation, posting/sending, phone control, deleting or scheduling)"
             tool.startsWith("mcp__") && MCP_WRITE.containsMatchIn(tool) -> "MCP tool $tool may change or send something"
             bool("confirm_install") -> "installing packages needs the user's yes"

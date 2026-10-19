@@ -103,12 +103,12 @@ object RedditJson {
 object RedditHints {
     private val told = java.util.Collections.synchronizedSet(mutableSetOf<Pair<Long, String>>())
     /** No Reddit session cookies saved (a Reddit account is not required: a saved session is what gets past the bot wall). */
-    const val LOGIN = "Save a Reddit session once in Verdroid (Settings → Tools → Logged-in sites → Log in to Reddit) so Reddit searches and threads are read reliably."
+    const val LOGIN = "Save a Reddit session once in Verdroid (Settings → Tools → Web & logins → Log in to a site → reddit.com) so Reddit searches and threads are read reliably."
     /** Cookies missing, refused or cleared by Reddit: re-saving the session helps. */
-    const val RESAVE = "Reddit didn't keep the saved Reddit session cookies. Saving the Reddit session again in Verdroid (Settings → Tools → Logged-in sites → Log in to Reddit) should help."
+    const val RESAVE = "Reddit didn't keep the saved Reddit session cookies. Saving the Reddit session again in Verdroid (Settings → Tools → Web & logins → Log in to a site → reddit.com) should help."
     /** Bot check although the cookies were accepted: the network/session is refused, not the saved cookies. */
     const val BOT_WALL = "Reddit's bot check is refusing this network or session right now (the saved Reddit cookies were accepted, so saving them again won't help). Wait a bit or try a different network (e.g. Wi-Fi instead of mobile data); I used web search meanwhile."
-    const val CHROMIUM = "Install Termux and the chromium-selenium add-on (Settings → Tools → Available to install) so Verdroid can read Reddit with your saved session."
+    const val CHROMIUM = "Install Termux and the chromium-selenium add-on (Settings → Tools → Terminal → Verdroid add-ons) so Verdroid can read Reddit with your saved session."
 
     /** [text] for chat [taskId] the first time (once per chat and hint; 0 = always), else null. */
     fun once(taskId: Long, text: String): String? = if (taskId == 0L || told.add(taskId to text)) text else null

@@ -55,7 +55,7 @@ class CookieOpenRedditTest {
             assertTrue(r["fallback"]!!.jsonPrimitive.content.contains("web_search")); assertNull(r["text"])
             val tell = r["tell_user"]!!.jsonPrimitive.content
             assertTrue(tell, tell.contains("bot check") && tell.contains("network") && tell.contains("won't help"))
-            assertFalse(tell, tell.contains("again in Verdroid") || tell.contains("didn't keep") || tell.contains("Log in to Reddit"))
+            assertFalse(tell, tell.contains("again in Verdroid") || tell.contains("didn't keep") || tell.contains("Log in to a site"))
             assertFalse(r["error"]!!.jsonPrimitive.content.contains("rejected"))
             assertNull(open(T(reply), loggedIn(), "https://www.reddit.com/search/?q=y&type=posts", 5)["tell_user"])  // once per chat
         }
@@ -90,7 +90,7 @@ class CookieOpenRedditTest {
 
     @Test fun hintsNeverRequireAnAccount() {
         for (h in listOf(RedditHints.LOGIN, RedditHints.RESAVE, RedditHints.BOT_WALL, RedditHints.CHROMIUM))
-            assertFalse(h, Regex("account|sign in|log in to your", RegexOption.IGNORE_CASE).containsMatchIn(h.replace("Log in to Reddit)", "")))
+            assertFalse(h, Regex("account|sign in|log in to your", RegexOption.IGNORE_CASE).containsMatchIn(h))
         assertEquals(com.verdroid.app.data.cookies.RedditBlock.Kind.BOT_WALL, com.verdroid.app.data.cookies.RedditBlock.classify(8, 8, 8))
         assertEquals(com.verdroid.app.data.cookies.RedditBlock.Kind.BOT_WALL, com.verdroid.app.data.cookies.RedditBlock.classify(null, null, null))
         assertEquals(com.verdroid.app.data.cookies.RedditBlock.Kind.COOKIES_REJECTED, com.verdroid.app.data.cookies.RedditBlock.classify(8, 0, null))
@@ -102,7 +102,7 @@ class CookieOpenRedditTest {
         val t = T(null)
         val a = open(t, guest, "https://www.reddit.com/search/?q=x", 9)
         assertEquals("NOT_LOGGED_IN", a["code"]!!.jsonPrimitive.content)
-        assertTrue(a["tell_user"]!!.jsonPrimitive.content.contains("Log in to Reddit")); assertTrue(a["fallback"]!!.jsonPrimitive.content.contains("site:reddit.com"))
+        assertTrue(a["tell_user"]!!.jsonPrimitive.content.contains("Log in to a site")); assertTrue(a["fallback"]!!.jsonPrimitive.content.contains("site:reddit.com"))
         assertNull(open(t, guest, "https://www.reddit.com/search/?q=y", 9)["tell_user"])
         val b = open(T(null, installed = false), loggedIn(), "https://www.reddit.com/r/Android/new/", 10)
         assertEquals("NO_CHROMIUM", b["code"]!!.jsonPrimitive.content); assertTrue(b["tell_user"]!!.jsonPrimitive.content.contains("chromium-selenium"))

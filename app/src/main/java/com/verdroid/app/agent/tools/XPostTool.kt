@@ -53,7 +53,7 @@ class XPostTool(termux: TermuxRunner, folder: SharedFolder, private val vault: C
         "repeatedly or in a loop unless the user explicitly asked for several. The user sees the exact text and must tap Post (unless they " +
         "allowed posting without asking). Max 280 characters (URLs count 23). Assume the X login is saved; only if the result says " +
         "NOT_LOGGED_IN call cookie_login once and retry. If the result says posted=uncertain, do NOT retry: ask the user to check X. Posts are limited " +
-        "per hour/day while the user's \"Limit X posts\" setting is on (default); on RATE_LIMITED stop and tell the user."
+        "per hour/day while the user's \"Limit posts\" setting (Settings → Tools → X (Twitter)) is on (default); on RATE_LIMITED stop and tell the user."
     override val parameters = schema(listOf("text"),
         "text" to prop("string", "Exact post text"),
         "reply_to_url" to prop("string", "Optional x.com/<user>/status/<id> URL to reply to"))

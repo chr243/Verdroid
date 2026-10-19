@@ -25,25 +25,24 @@ class LoggedInSitesViewModel @Inject constructor(private val vault: CookieVault)
     fun clear(site: String) { vault.save(vault.all().filter { BrowserCookies.siteOf(it.host) != site }); refresh() }
 }
 
-/** Settings → Tools: "Logged-in sites (beta)" — log in through an in-app WebView, list saved sites, per-site Clear. */
+/**
+ * Settings → Tools → "Web & logins": log in through the in-app WebView ("Log in to a site", with reddit.com / x.com quick
+ * picks), list saved sites, per-site Clear. Always visible; [toolsOff] = the cookie_* tools are off (a hint is shown).
+ */
 @Composable
-fun LoggedInSitesSection(vm: LoggedInSitesViewModel = hiltViewModel()) {
+fun LoggedInSitesSection(toolsOff: Boolean = false, vm: LoggedInSitesViewModel = hiltViewModel()) {
     val sites by vm.sites.collectAsState()
     val context = LocalContext.current
     var ask by remember { mutableStateOf(false) }
     LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) { vm.refresh() }
     Column(Modifier.padding(horizontal = 16.dp)) {
-        Text("Logged-in sites (beta)", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 20.dp))
-        Text("For the cookie_* tools (Web), the Twitter tools and the Reddit tools: log in once in an in-app browser and cookie_open can read those pages. " +
-            "Cookies are stored encrypted on this phone. Some sites (e.g. Google) block this kind of login; " +
-            "you can also import a cookie export file with cookie_import.",
+        Text("Log in once in the in-app browser; cookie_open (including Reddit) and the X tools use that login. Use your username " +
+            "and password: Google sign-in doesn't work in in-app browsers. Cookies stay encrypted on this phone; importing a cookie " +
+            "file with cookie_import is the fallback.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = { ask = true }, modifier = Modifier.padding(vertical = 8.dp)) { Text("Log in to a site") }
-            // cookie_open reads Reddit (search, threads) with this login.
-            OutlinedButton(onClick = { runCatching { context.startActivity(CookieLoginBridge.intent(context, CookieLoginBridge.REDDIT_URL)) } },
-                modifier = Modifier.padding(vertical = 8.dp)) { Text("Log in to Reddit") }
-        }
+        if (toolsOff) Text("Web login tools (cookie_*) are off: turn them on under Tools → Web.",
+            style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
+        OutlinedButton(onClick = { ask = true }, modifier = Modifier.padding(vertical = 8.dp)) { Text("Log in to a site") }
         if (sites.isEmpty()) Text("No saved sites", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         sites.forEach { (site, n) ->
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -56,15 +55,23 @@ fun LoggedInSitesSection(vm: LoggedInSitesViewModel = hiltViewModel()) {
         }
     }
     if (ask) {
-        var url by remember { mutableStateOf(CookieLoginBridge.DEFAULT_URL) }
+        var url by remember { mutableStateOf("") }
+        val target = CookieLoginBridge.loginUrlFor(url)
         AlertDialog(onDismissRequest = { ask = false },
             title = { Text("Log in to a site") },
-            text = { OutlinedTextField(url, { url = it }, singleLine = true, label = { Text("Login page URL") }) },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(url, { url = it }, singleLine = true, label = { Text("Site or login page URL") },
+                        placeholder = { Text("reddit.com") })
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        CookieLoginBridge.SUGGESTIONS.forEach { sug -> SuggestionChip(onClick = { url = sug }, label = { Text(sug) }) }
+                    }
+                }
+            },
             confirmButton = {
-                TextButton(onClick = {
+                TextButton(enabled = target != null, onClick = {
                     ask = false
-                    val u = url.trim().let { if (it.startsWith("http")) it else "https://$it" }
-                    runCatching { context.startActivity(CookieLoginBridge.intent(context, u)) }
+                    target?.let { u -> runCatching { context.startActivity(CookieLoginBridge.intent(context, u)) } }
                 }) { Text("Open") }
             },
             dismissButton = { TextButton(onClick = { ask = false }) { Text("Cancel") } })

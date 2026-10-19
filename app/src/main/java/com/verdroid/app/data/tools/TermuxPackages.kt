@@ -12,6 +12,10 @@ data class TermuxPackage(
 )
 
 object TermuxPackages {
+    /** Verdroid's own bundles (several packages + setup); the rest of [ALL] are plain Termux packages. */
+    val ADDONS: Set<String> = setOf("chromium-selenium", "ebook-translate", "pdf-tools", "crypto-backtest")
+    fun isAddon(pkg: String): Boolean = pkg in ADDONS
+
     val ALL = listOf(
         TermuxPackage("ffmpeg", "ffmpeg", "Convert, cut and compress audio/video (ffmpeg, ffprobe)"),
         TermuxPackage("imagemagick", "magick", "Resize, convert and edit images (magick)"),

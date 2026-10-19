@@ -72,6 +72,26 @@ object CookieLoginBridge {
         else -> null
     }
     const val REDDIT_URL = "https://www.reddit.com/login/"
+    /** Quick picks in "Log in to a site". */
+    val SUGGESTIONS = listOf("reddit.com", "x.com")
+
+    /**
+     * "Log in to a site" input → the URL to open (null = not a usable URL). A bare reddit.com / x.com / twitter.com goes to
+     * that site's login page; anything else opens as typed (https:// added). The login screen then treats Reddit and X the
+     * same however it was opened (no X-Requested-With, "Try old Reddit login", real login check on Done).
+     */
+    fun loginUrlFor(input: String): String? {
+        val t = input.trim().ifEmpty { return null }
+        val u = if (t.startsWith("https://") || t.startsWith("http://")) t else "https://$t"
+        val uri = runCatching { java.net.URI(u) }.getOrNull() ?: return null
+        val host = uri.host?.lowercase()?.takeIf { '.' in it } ?: return null
+        val bare = uri.path.isNullOrEmpty() || uri.path == "/"
+        return when (BrowserCookies.siteOf(host)) {
+            "reddit.com" -> if (bare) (if (host.startsWith("old.")) REDDIT_OLD_URL else REDDIT_URL) else u
+            "x.com", "twitter.com" -> if (bare) DEFAULT_URL else u
+            else -> u
+        }
+    }
     const val REDDIT_OLD_URL = "https://old.reddit.com/login"
     /** Empty X-Requested-With allow-list = the header is never sent. False when this WebView can't do it (update WebView). */
     @SuppressLint("RequiresFeature")

@@ -53,7 +53,7 @@ class TermuxRunTool(private val termux: TermuxRunner) : AgentTool {
             }
         /** Termux plugin API: err == Activity.RESULT_OK (-1) means the command ran. */
         private const val RESULT_OK = -1
-        private const val SETUP = "Set it up in Settings > Tools > Termux."
+        private const val SETUP = "Set it up in Settings > Tools > Terminal."
 
         /**
          * cd into ~/verdroid-work and run [command] under coreutils `timeout` (exit 124 on timeout); the timeout is only a cap.

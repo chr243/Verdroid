@@ -22,7 +22,7 @@ class ScheduleSafetyTest {
         assertNotNull(ScheduleSafety.blockReason("mcp__gmail__send_email", args()))
         assertNull(ScheduleSafety.blockReason("mcp__docs__search", args()))
         // x_post: only with its own Always allow; the block message says how to allow it. Other tools can't be always-allowed.
-        assertTrue(ScheduleSafety.blockReason("x_post", args())!!.contains("Post to X without asking"))
+        assertTrue(ScheduleSafety.blockReason("x_post", args())!!.contains("X (Twitter) → Post without asking"))
         assertNull(ScheduleSafety.blockReason("x_post", args()) { it == "x_post" })
         assertNotNull(ScheduleSafety.blockReason("git_push", args()) { true })
         assertTrue(ScheduleSafety.blockReason("cookie_login", args())!!.contains("NOT_LOGGED_IN"))

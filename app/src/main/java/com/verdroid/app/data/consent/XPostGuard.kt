@@ -13,7 +13,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * x_post rate cap (Settings → Tools → Twitter → "Limit X posts", ON by default: 5/hour, 20/day; 0 = no cap for that
+ * x_post rate cap (Settings → Tools → X (Twitter) → "Limit posts", ON by default: 5/hour, 20/day; 0 = no cap for that
  * window; switch off = no cap at all) and the audit log Documents/Verdroid/Internal/x_post_log.txt (always written;
  * app-private files/ fallback without storage access). While on, the cap applies even with "Always allow" and in
  * scheduled runs. Post times are kept in prefs (last 24 h only).

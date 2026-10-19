@@ -92,8 +92,8 @@ fun OverwriteSetting(modifier: Modifier = Modifier) {
     val on by prefs.always.collectAsState()
     Row(modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            Text("Allow overwriting files without asking", style = MaterialTheme.typography.bodyLarge)
-            Text("The agent may replace existing files outside Internal/ without a Yes/No. Deleting, moving and renaming ask (see below).",
+            Text("Overwrite without asking", style = MaterialTheme.typography.bodyLarge)
+            Text("Replace existing files outside Internal/ without a Yes/No.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Switch(checked = on, onCheckedChange = { prefs.setAlways(it) })
@@ -108,9 +108,8 @@ fun SharedDeleteSetting(modifier: Modifier = Modifier) {
     val on by prefs.always.collectAsState()
     Row(modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            Text("Always allow delete/move/rename in Documents/Verdroid", style = MaterialTheme.typography.bodyLarge)
-            Text("No Yes/No when every affected file is provably inside Documents/Verdroid (Internal, Repos, Output, …). " +
-                "Anything outside, or that can't be proven, still asks. Scheduled runs still can't delete.",
+            Text("Delete/move in Documents/Verdroid without asking", style = MaterialTheme.typography.bodyLarge)
+            Text("Only when every file is provably inside. Outside, or not provable, still asks. Never in scheduled runs.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Switch(checked = on, onCheckedChange = { prefs.setAlways(it) })
@@ -149,7 +148,7 @@ fun XPostSetting(modifier: Modifier = Modifier) {
     val on by consent.always.collectAsState()
     Row(modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            Text("Post to X without asking", style = MaterialTheme.typography.bodyLarge)
+            Text("Post without asking", style = MaterialTheme.typography.bodyLarge)
             Text("x_post publishes immediately, without showing you the text first. Posts are public and can't be unsent.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -157,7 +156,7 @@ fun XPostSetting(modifier: Modifier = Modifier) {
     }
 }
 
-/** Settings → Tools → Twitter: "Limit X posts" (on by default; per hour / per day, 0 = no cap for that window) and the audit log viewer. */
+/** Settings → Tools → X (Twitter): "Limit posts" (on by default; per hour / per day, 0 = no cap for that window) and the audit log viewer. */
 @Composable
 fun XPostLimitsSetting(modifier: Modifier = Modifier) {
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -170,7 +169,7 @@ fun XPostLimitsSetting(modifier: Modifier = Modifier) {
     Column(modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("Limit X posts", style = MaterialTheme.typography.bodyLarge)
+                Text("Limit posts", style = MaterialTheme.typography.bodyLarge)
                 Text((if (limitOn) "On: x_post stops at the limits below, in chats and scheduled runs, even with \"Always allow\". 0 = no limit for that window."
                     else "Off: no limit on x_post (chats and scheduled runs). Every post is still logged.") +
                     " Used: $h in the last hour, $d in the last 24 h.",
