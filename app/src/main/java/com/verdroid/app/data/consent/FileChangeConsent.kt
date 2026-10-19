@@ -14,13 +14,15 @@ import javax.inject.Singleton
 /**
  * Per-action Allow/Deny for file deletes/moves/renames/overwrites. The tool call suspends until the user answers in the
  * dialog (main app or bubble) — a notification brings them there. No answer within [TIMEOUT_MS] = Deny. "Always allow" /
- * "This chat" exist for OVERWRITES only ([OverwritePrefs]); deletes/moves/renames are asked every time.
+ * "This chat" exist for OVERWRITES ([OverwritePrefs]) and for deletes/moves/renames proven inside Documents/Verdroid
+ * ([SharedDeletePrefs]); every other delete/move/rename is asked every time.
  */
 @Singleton
 class FileChangeConsent @Inject constructor(
     private val notifier: com.verdroid.app.data.notify.AlertNotifier,
     private val tasks: com.verdroid.app.domain.repository.TaskRepository,
     val overwrite: OverwritePrefs,
+    val deletes: SharedDeletePrefs,
 ) : FileChangeConfirmer {
     data class Pending(val req: FileChangeRequest, val chatTitle: String?, internal val answer: CompletableDeferred<Boolean>)
 
@@ -42,6 +44,14 @@ class FileChangeConsent @Inject constructor(
         val p = _pending.value.firstOrNull { it.req.id == id } ?: return
         if (!p.req.overwriteOnly) return
         if (thisChatOnly) overwrite.allowChat(p.req.taskId) else overwrite.setAlways(true)
+        p.answer.complete(true)
+    }
+
+    /** Requests whose deletes/moves/renames are all proven inside Documents/Verdroid: allow now and stop asking for those. */
+    fun allowSharedDeletes(id: Long, thisChatOnly: Boolean) {
+        val p = _pending.value.firstOrNull { it.req.id == id } ?: return
+        if (!p.req.sharedDeletesOnly) return
+        if (thisChatOnly) deletes.allowChat(p.req.taskId) else deletes.setAlways(true)
         p.answer.complete(true)
     }
 

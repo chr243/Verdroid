@@ -32,14 +32,22 @@ object TermuxHomeDeletes {
     private class Fail : Exception()
 
     /** true = at least one rm/rmdir/unlink/mv and every one of them only touches paths inside Termux home. */
-    fun allInTermuxHome(command: String): Boolean = try { check(command) } catch (_: Fail) { false }
+    fun allInTermuxHome(command: String): Boolean = allInside(command, HOME, ::inHome)
 
-    private fun check(command: String): Boolean {
+    /**
+     * The same proof for any area: true = at least one rm/rmdir/unlink/mv and every path they touch satisfies [inside]
+     * (absolute, normalized). [home]: what ~ and $HOME mean in that shell (null = unknown → any ~ / $HOME use fails).
+     */
+    fun allInside(command: String, home: String?, inside: (String) -> Boolean): Boolean =
+        try { check(command, home, inside) } catch (_: Fail) { false }
+
+    private fun check(command: String, home: String?, inside: (String) -> Boolean): Boolean {
         val c = command.replace(Regex("""(?m)^\s*#.*$"""), " ")
         val probe = c.replace(Regex("""\$\{[A-Za-z_][A-Za-z0-9_]*\}"""), "V")   // ${NAME} is fine; other braces are not
         if (FORBIDDEN.any { it in probe }) return false
+        if (Regex("""(^|\s)-(delete|exec|execdir|ok)\b|\b(rsync|shred|git)\b""").containsMatchIn(c)) return false   // other deleters: not modeled
         val (cmds, seps) = split(c)
-        val vars = mutableMapOf("HOME" to HOME)
+        val vars = if (home != null) mutableMapOf("HOME" to home) else mutableMapOf()
         var cwd: String? = null          // termux_run starts in Documents/Verdroid/Internal (shared storage): relative = unknown
         var cwdSticky = false             // cd guarded by `|| exit` / set -e: stays valid after ; / newline
         var errexit = false
@@ -59,7 +67,7 @@ object TermuxHomeDeletes {
             if (assigns.isNotEmpty() && assigns.size < words.size) return false   // W=x cmd …: per-command env, not modeled
             if (assigns.isNotEmpty()) {
                 if (inPipe) return false
-                assigns.forEach { a -> assign(vars, a) }
+                assigns.forEach { a -> assign(vars, a, home) }
                 continue
             }
             val verb = words[0].text
@@ -68,19 +76,19 @@ object TermuxHomeDeletes {
             when (verb) {
                 "export" -> {
                     if (inPipe) return false
-                    args.forEach { a -> if (a.assignOk) assign(vars, a) else if (!NAME.matches(a.text) || a.text in RESERVED) return false }
+                    args.forEach { a -> if (a.assignOk) assign(vars, a, home) else if (!NAME.matches(a.text) || a.text in RESERVED) return false }
                 }
                 "cd" -> {
                     if (inPipe) return false
                     val target = args.filterNot { it.text == "--" }.singleOrNull() ?: return false
                     if (target.text.startsWith("-")) return false
-                    cwd = resolve(target, cwd)
+                    cwd = resolve(target, cwd, home)
                     cwdSticky = errexit || (after == "||" && cmds.getOrNull(i + 1)?.trim()?.let { it == "exit" || it.startsWith("exit ") || it == "return" } == true)
                     if (after == "||" && !cwdSticky) return false
                 }
                 "set" -> args.forEach { a -> if (a.text.startsWith("-") && 'e' in a.text.drop(1)) errexit = true; if (a.text.startsWith("+") && 'e' in a.text) errexit = false }
                 "printf" -> if (args.any { it.text == "-v" }) return false
-                in VERBS -> { if (!targetsInHome(verb, args, cwd)) return false; validated++ }
+                in VERBS -> { if (!targetsInside(verb, args, cwd, home, inside)) return false; validated++ }
             }
         }
         // Every delete word anywhere in the command must be one of the commands proven above (no xargs rm, sudo rm, bash -c "rm …").
@@ -88,16 +96,16 @@ object TermuxHomeDeletes {
         return validated > 0 && rawCount == validated
     }
 
-    private fun assign(vars: MutableMap<String, String>, a: Word) {
+    private fun assign(vars: MutableMap<String, String>, a: Word, home: String?) {
         val name = a.text.substringBefore('=')
         if (name.endsWith("+") || name in RESERVED) throw Fail()
         val value = a.text.substringAfter('=')
         // Only absolute paths (after ~ / $VAR expansion) are kept; anything else makes the variable unknown.
-        val v = if (a.tildeOk && (value == "~" || value.startsWith("~/"))) HOME + value.drop(1) else value
+        val v = if (a.tildeOk && (value == "~" || value.startsWith("~/"))) (home ?: throw Fail()) + value.drop(1) else value
         if (v.startsWith("/") && !a.globbed) vars[name] = v else vars.remove(name)
     }
 
-    private fun targetsInHome(verb: String, args: List<Word>, cwd: String?): Boolean {
+    private fun targetsInside(verb: String, args: List<Word>, cwd: String?, home: String?, inside: (String) -> Boolean): Boolean {
         var endOpts = false
         var paths = 0
         for (a in args) {
@@ -114,8 +122,8 @@ object TermuxHomeDeletes {
                 continue
             }
             if (Regex("""^\d*>>?""").matches(t) || Regex("""^\d*>>?.+""").matches(t) || Regex("""^\d*>&\d$""").matches(t)) continue
-            val p = resolve(a, cwd) ?: return false
-            if (!inHome(p)) return false
+            val p = resolve(a, cwd, home) ?: return false
+            if (!inside(p)) return false
             paths++
         }
         return paths > 0
@@ -124,10 +132,10 @@ object TermuxHomeDeletes {
     fun inHome(p: String) = p == HOME || p.startsWith("$HOME/")
 
     /** Absolute normalized path, or null when it can't be known. `..` is resolved (and so caught when it climbs out). */
-    private fun resolve(w: Word, cwd: String?): String? {
+    private fun resolve(w: Word, cwd: String?, home: String?): String? {
         var t = w.text
         if (t.isEmpty()) return null
-        if (w.tildeOk && (t == "~" || t.startsWith("~/"))) t = HOME + t.drop(1)   // HOME can't be reassigned (RESERVED)
+        if (w.tildeOk && (t == "~" || t.startsWith("~/"))) t = (home ?: return null) + t.drop(1)   // HOME can't be reassigned (RESERVED)
         else if (t.startsWith("~")) return null
         val abs = if (t.startsWith("/")) t else (cwd ?: return null) + "/" + t
         val out = ArrayDeque<String>()

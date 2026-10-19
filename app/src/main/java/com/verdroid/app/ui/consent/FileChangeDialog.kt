@@ -44,6 +44,14 @@ fun FileChangeDialog() {
                     OutlinedButton(onClick = { consent.allowOverwrites(p.req.id, thisChatOnly = true) }) { Text("This chat") }
                     OutlinedButton(onClick = { consent.allowOverwrites(p.req.id, thisChatOnly = false) }) { Text("Always allow") }
                 }
+                if (p.req.sharedDeletesOnly) {
+                    Text("Everything affected is inside Documents/Verdroid. Skip this question for deletes/moves/renames there:",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { consent.allowSharedDeletes(p.req.id, thisChatOnly = true) }) { Text("This chat") }
+                        OutlinedButton(onClick = { consent.allowSharedDeletes(p.req.id, thisChatOnly = false) }) { Text("Always allow") }
+                    }
+                }
                 if (pending.size > 1) Text("${pending.size - 1} more waiting", style = MaterialTheme.typography.labelSmall)
             }
         },
@@ -85,7 +93,24 @@ fun OverwriteSetting(modifier: Modifier = Modifier) {
     Row(modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text("Allow overwriting files without asking", style = MaterialTheme.typography.bodyLarge)
-            Text("The agent may replace existing files outside Internal/ without a Yes/No. Deleting, moving and renaming always ask.",
+            Text("The agent may replace existing files outside Internal/ without a Yes/No. Deleting, moving and renaming ask (see below).",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Switch(checked = on, onCheckedChange = { prefs.setAlways(it) })
+    }
+}
+
+/** Settings → Tools: "Always allow delete/move/rename in Documents/Verdroid" (off by default; never in scheduled runs). */
+@Composable
+fun SharedDeleteSetting(modifier: Modifier = Modifier) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val prefs = remember { EntryPointAccessors.fromApplication(context.applicationContext, FileChangeConsentEntryPoint::class.java).consent().deletes }
+    val on by prefs.always.collectAsState()
+    Row(modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text("Always allow delete/move/rename in Documents/Verdroid", style = MaterialTheme.typography.bodyLarge)
+            Text("No Yes/No when every affected file is provably inside Documents/Verdroid (Internal, Repos, Output, …). " +
+                "Anything outside, or that can't be proven, still asks. Scheduled runs still can't delete.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Switch(checked = on, onCheckedChange = { prefs.setAlways(it) })

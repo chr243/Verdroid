@@ -102,10 +102,21 @@ fun interface OverwritePolicy {
     companion object { val NEVER = OverwritePolicy { false } }
 }
 
+/**
+ * "Always allow delete/move/rename in Documents/Verdroid" (Settings → Tools, off by default) or "this chat only". Covers only
+ * deletes/moves/renames PROVEN to stay inside Documents/Verdroid ([SharedFolderDeletes]); never in scheduled runs.
+ */
+fun interface SharedDeletePolicy {
+    fun allowsSharedDeletes(taskId: Long): Boolean
+    companion object { val NEVER = SharedDeletePolicy { false } }
+}
+
 /** One pending Yes/No question shown to the user. */
 data class FileChangeRequest(val id: Long, val taskId: Long, val tool: String, val summary: String, val details: List<String>, val command: String?,
     /** Only overwrites: the dialog may offer "Always allow" / "This chat". */
-    val overwriteOnly: Boolean = false)
+    val overwriteOnly: Boolean = false,
+    /** Only deletes/moves/renames, all proven inside Documents/Verdroid: the dialog may offer the Documents/Verdroid "This chat" / "Always allow". */
+    val sharedDeletesOnly: Boolean = false)
 
 /** Asks the user (dialog / notification). true = Allow. Implementations must default to false (deny) on timeout. */
 fun interface FileChangeConfirmer {
@@ -129,6 +140,7 @@ class FileChangeGuard(
     private val overwritePolicy: OverwritePolicy = OverwritePolicy.NEVER,
     /** filesDir/workspace: write_file paths that name the shared tree (Repos/…) are checked like workspace_write. */
     private val privateRoot: File? = null,
+    private val deletePolicy: SharedDeletePolicy = SharedDeletePolicy.NEVER,
     private val readScript: (tool: String, args: JsonObject) -> String? = { _, _ -> null },
 ) {
     /** Documents/Verdroid-relative path for [p] with the same rules as [SharedFolderSandbox] (absolute prefixes, repo shorthand). */
@@ -179,6 +191,28 @@ class FileChangeGuard(
         return if (reasons.isEmpty()) null else reasons to shown
     }
 
+    /**
+     * true when every delete/move/rename reason of this call is proven to touch only paths inside Documents/Verdroid
+     * (Termux home also counts for termux_run, where it never asks anyway). Overwrite reasons are judged separately.
+     */
+    fun deletesInShared(tool: String, args: JsonObject, reasons: List<String>): Boolean {
+        fun s(k: String) = (args[k] as? JsonPrimitive)?.contentOrNull
+        val deletes = reasons.filterNot(DestructiveDetector::isOverwriteReason)
+        if (deletes.isEmpty()) return false
+        fun verbsOnly() = deletes.all { r -> r.endsWith(" (delete/move/rename)") && r.substringBefore(' ') in TermuxHomeDeletes.VERBS }
+        return when (tool) {
+            "workspace_delete" -> {
+                val root = shared ?: return false
+                val rel = sharedRel(root, s("path").orEmpty()).trim('/')
+                rel.isNotEmpty() && rel != "." && SharedFolderDeletes.normalize("/$rel")?.let { it != "/" && it == "/$rel" } == true
+            }
+            "termux_run" -> verbsOnly() && SharedFolderDeletes.termuxCommand(s("command").orEmpty())
+            "run_shell", "rish_run" -> verbsOnly() && SharedFolderDeletes.shellCommand(s("command").orEmpty())
+            "termux_python", "crypto_backtest_script" -> (s("code") ?: readScript(tool, args))?.let(SharedFolderDeletes::python) == true
+            else -> false
+        }
+    }
+
     /** Scheduled (unattended) run: null = no confirmation would be needed (or overwrites are always allowed); else why it's refused. */
     fun headlessReason(taskId: Long, tool: String, args: JsonObject): String? {
         val (reasons, _) = inspect(tool, args) ?: return null
@@ -191,9 +225,13 @@ class FileChangeGuard(
         val (reasons, shown) = inspect(tool, args) ?: return null
         val overwriteOnly = DestructiveDetector.overwriteOnly(reasons)
         if (overwriteOnly && overwritePolicy.allowsOverwrite(taskId)) return null
+        // Deletes/moves/renames proven inside Documents/Verdroid: skipped when the user allowed that (overwrites still need theirs).
+        val inShared = !overwriteOnly && deletesInShared(tool, args, reasons)
+        val hasOverwrites = reasons.any(DestructiveDetector::isOverwriteReason)
+        if (inShared && deletePolicy.allowsSharedDeletes(taskId) && (!hasOverwrites || overwritePolicy.allowsOverwrite(taskId))) return null
         val req = FileChangeRequest(synchronized(this) { nextId++ }, taskId, tool,
             if (reasons.any { "overwrite" in it || "append" in it } && reasons.none { "delete" in it || "move" in it }) "Overwrite existing file(s)" else "Delete / move / rename files",
-            reasons, shown?.take(4000), overwriteOnly)
+            reasons, shown?.take(4000), overwriteOnly, sharedDeletesOnly = inShared && !hasOverwrites)
         return if (confirmer.confirm(req)) null else denied(tool, reasons)
     }
 

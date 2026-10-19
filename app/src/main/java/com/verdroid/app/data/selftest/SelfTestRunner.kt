@@ -469,6 +469,23 @@ class SelfTestRunner @Inject constructor(
                 "clone → Repos/<name>, reuse, workspace_write seen by status/commit, empty commit refused"
             } finally { base.deleteRecursively() }
         },
+        "shared_deletes" to {
+            val S = com.verdroid.app.agent.tools.SharedFolderDeletes
+            val d = "/storage/emulated/0/Documents/Verdroid"
+            check(S.termuxCommand("rm -rf $d/Internal/tmp") && S.termuxCommand("mv $d/Output/a $d/Output/b")) { "inside must be provable" }
+            check(!S.termuxCommand("rm $d/Output/a /sdcard/b") && !S.termuxCommand("rm -rf $d/../x") && !S.termuxCommand("rm -rf $d") &&
+                !S.termuxCommand("rm -rf \"\$X\"") && !S.termuxCommand("echo $d/a | xargs rm")) { "outside/mixed/escape must ask" }
+            var asked = 0
+            var allow = false
+            val g = com.verdroid.app.agent.tools.FileChangeGuard({ asked++; false }, deletePolicy = { allow })
+            val a = buildJsonObject { put("command", "rm $d/Internal/x") }
+            check(g.check(1, "termux_run", a) != null && asked == 1) { "switch off must ask" }
+            allow = true
+            check(g.check(1, "termux_run", a) == null && asked == 1) { "switch on must skip" }
+            check(g.check(1, "termux_run", buildJsonObject { put("command", "rm /sdcard/Download/x") }) != null && asked == 2) { "outside must still ask" }
+            check(g.headlessReason(1, "termux_run", a) != null) { "scheduled runs must not delete" }
+            "Documents/Verdroid always-allow: off asks, on skips proven-inside, outside/scheduled still refused"
+        },
         "backtest_python" to {
             requireTermux()
             val r = termux.runAndWait(com.verdroid.app.agent.tools.CryptoHistoryTools.PREFLIGHT, "st-btdeps-${System.nanoTime()}", 25_000, label = "Verdroid self-test")

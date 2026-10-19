@@ -1,0 +1,29 @@
+package com.verdroid.app.data.consent
+
+import android.content.Context
+import com.verdroid.app.agent.tools.SharedDeletePolicy
+import dagger.hilt.android.qualifiers.ApplicationContext
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import javax.inject.Inject
+import javax.inject.Singleton
+
+/**
+ * "Always allow delete/move/rename in Documents/Verdroid" (Settings → Tools, off by default) + per-chat "This chat"
+ * allowances (kept until the app restarts). Only deletes proven inside Documents/Verdroid; never scheduled runs.
+ */
+@Singleton
+class SharedDeletePrefs @Inject constructor(@ApplicationContext context: Context) : SharedDeletePolicy {
+    private val prefs = context.getSharedPreferences("file_consent", Context.MODE_PRIVATE)
+    private val _always = MutableStateFlow(prefs.getBoolean(KEY, false))
+    val always: StateFlow<Boolean> = _always.asStateFlow()
+    private val chats = java.util.concurrent.ConcurrentHashMap.newKeySet<Long>()
+
+    fun setAlways(on: Boolean) { prefs.edit().putBoolean(KEY, on).apply(); _always.value = on }
+    fun allowChat(taskId: Long) { chats += taskId }
+
+    override fun allowsSharedDeletes(taskId: Long): Boolean = _always.value || taskId in chats
+
+    private companion object { const val KEY = "always_allow_shared_deletes" }
+}

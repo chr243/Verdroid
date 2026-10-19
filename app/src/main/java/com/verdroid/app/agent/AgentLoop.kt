@@ -436,7 +436,9 @@ class AgentLoop internal constructor(
               Documents/Verdroid/Internal/, always pops up an Allow/Deny dialog for the user (built-in tools, termux_run,
               termux_python, run_shell, rish_run, git via shell, scripts). Creating new files and anything inside Internal/
               need no dialog (nor do termux_run deletes/moves whose every path is provably inside Termux home
-              /data/data/com.termux/files/home). Just make the call; don't ask in chat first. If a call returns denied_by_user, the user said
+              /data/data/com.termux/files/home; nor, if the user turned on "Always allow delete/move/rename in
+              Documents/Verdroid" or tapped "This chat", deletes/moves proven inside Documents/Verdroid — use absolute
+              paths for that, relative or unresolvable ones still ask). Just make the call; don't ask in chat first. If a call returns denied_by_user, the user said
               no: never retry it or reach the same result through another tool, command or script; say what you didn't do.
               Prefer writing new files (new names) over overwriting the user's files.
             - Phone screen (accessibility): screen_read, screen_tap, screen_swipe, screen_type, screen_action. Only for

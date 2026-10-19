@@ -68,6 +68,7 @@ fun ToolsScreen(onBack: () -> Unit, vm: ToolsViewModel = hiltViewModel()) {
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
                 com.verdroid.app.ui.consent.OverwriteSetting()
+                com.verdroid.app.ui.consent.SharedDeleteSetting()
             }
             ToolGroups.group(state.tools) { it.name }.forEach { (g, tools) ->
                 val names = tools.map { it.name }
