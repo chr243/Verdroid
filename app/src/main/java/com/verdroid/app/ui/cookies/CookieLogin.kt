@@ -32,7 +32,18 @@ data class CookieLoginResult(
     val loggedIn: Boolean = false,
     /** saved | cancelled | timeout | not_logged_in (guest cookies only, nothing saved) | no_cookies | unchecked (site without a known login cookie). */
     val reason: String = if (saved) "saved" else "cancelled",
-)
+    /** What closed the screen: done | cancel | back | timeout | self_close (anything else, e.g. the system destroyed it). */
+    val closedBy: String = CLOSED_SELF,
+) {
+    companion object {
+        const val CLOSED_DONE = "done"; const val CLOSED_CANCEL = "cancel"; const val CLOSED_BACK = "back"
+        const val CLOSED_TIMEOUT = "timeout"; const val CLOSED_SELF = "self_close"
+
+        /** A result that cannot be a login: anything but Done never saves and is never logged in. */
+        fun closed(by: String) = CookieLoginResult(false, emptyList(), 0, loggedIn = false,
+            reason = if (by == CLOSED_TIMEOUT) "timeout" else if (by == CLOSED_SELF) "self_close" else "cancelled", closedBy = by)
+    }
+}
 
 /** Lets cookie_login wait for the login screen (one at a time). */
 object CookieLoginBridge {
@@ -141,7 +152,10 @@ class CookieLoginActivity : ComponentActivity() {
         val url = intent.getStringExtra(CookieLoginBridge.EXTRA_URL)?.takeIf { it.startsWith("https://") || it.startsWith("http://") }
             ?: CookieLoginBridge.DEFAULT_URL
         CookieManager.getInstance().setAcceptCookie(true)
-        timeout.postDelayed({ if (!finished) finish(url, CookieLoginResult(false, emptyList(), 0, reason = "timeout"), "Login screen closed after 10 minutes; nothing saved") },
+        onBackPressedDispatcher.addCallback(this, object : androidx.activity.OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() { if (!finished) finish(url, CookieLoginResult.closed(CookieLoginResult.CLOSED_BACK), "Cancelled") }
+        })
+        timeout.postDelayed({ if (!finished) finish(url, CookieLoginResult.closed(CookieLoginResult.CLOSED_TIMEOUT), "Login screen closed after 10 minutes; nothing saved") },
             CookieLoginBridge.TIMEOUT_MS)
         setContent {
             VerdroidTheme {
@@ -241,7 +255,7 @@ class CookieLoginActivity : ComponentActivity() {
     private fun done(url: String, save: Boolean, attempt: Int = 0) {
         if (finished) return
         handler.removeCallbacksAndMessages(null)
-        if (!save) { finish(url, CookieLoginResult(false, emptyList(), 0), "Cancelled"); return }
+        if (!save) { finish(url, CookieLoginResult.closed(CookieLoginResult.CLOSED_CANCEL), "Cancelled"); return }
         val cm = CookieManager.getInstance()
         cm.flush()
         val site = runCatching { BrowserCookies.siteOf(java.net.URI(url).host) }.getOrDefault("")
@@ -263,7 +277,7 @@ class CookieLoginActivity : ComponentActivity() {
             return
         }
         android.util.Log.i("CookieLogin", "saved cookie names for ${result.sites}: ${result.names}") // names only, never values
-        finish(url, result, if (result.saved) "Saved ${result.count} cookies for ${result.sites.joinToString()}" +
+        finish(url, result.copy(closedBy = CookieLoginResult.CLOSED_DONE), if (result.saved) "Saved ${result.count} cookies for ${result.sites.joinToString()}" +
             (if (result.loggedIn) " (logged in)" else "") else "No cookies found — are you logged in?")
     }
 
@@ -271,6 +285,7 @@ class CookieLoginActivity : ComponentActivity() {
         finished = true
         timeout.removeCallbacksAndMessages(null)
         android.widget.Toast.makeText(this, toast, android.widget.Toast.LENGTH_LONG).show()
+        android.util.Log.i("CookieLogin", "closed_by=${result.closedBy} saved=${result.saved} logged_in=${result.loggedIn} reason=${result.reason}")
         CookieLoginBridge.pending?.complete(result)
         finish()
     }
@@ -278,7 +293,11 @@ class CookieLoginActivity : ComponentActivity() {
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
         timeout.removeCallbacksAndMessages(null)
-        if (!finished && isFinishing) CookieLoginBridge.pending?.complete(CookieLoginResult(false, emptyList(), 0))
+        if (!finished && !isChangingConfigurations) {
+            finished = true
+            android.util.Log.i("CookieLogin", "closed_by=${CookieLoginResult.CLOSED_SELF} saved=false logged_in=false")
+            CookieLoginBridge.pending?.complete(CookieLoginResult.closed(CookieLoginResult.CLOSED_SELF))
+        }
         super.onDestroy()
     }
 }

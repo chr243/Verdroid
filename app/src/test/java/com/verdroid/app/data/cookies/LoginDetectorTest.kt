@@ -16,6 +16,8 @@ class LoginDetectorTest {
             assertFalse(body.contains("autoCheck") || body.contains("doUpdateVisitedHistory"))
             assertTrue(body.contains("done(url, save = true)"))
             assertTrue(body.contains("CookieLoginBridge.TIMEOUT_MS"))
+            for (by in listOf("CLOSED_DONE", "CLOSED_CANCEL", "CLOSED_BACK", "CLOSED_TIMEOUT", "CLOSED_SELF")) assertTrue(by, body.contains("CookieLoginResult.$by"))
+            assertTrue(body.contains("closed_by="))
         }
     }
 }

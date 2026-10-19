@@ -199,17 +199,20 @@ class CookieLoginTool(
         val d = launch(url) ?: return errorJson("Could not open the login screen. Ask the user to use Settings → Tools → Logged-in sites → Log in.")
         val r = kotlinx.coroutines.withTimeoutOrNull(timeoutMs) { d.await() }
             ?: return buildJsonObject {
-                put("ok", false); put("logged_in", false); put("reason", "timeout")
+                put("ok", false); put("logged_in", false); put("reason", "timeout"); put("closed_by", "timeout")
                 put("error", "Login screen still open after ${timeoutMs / 60_000} min; nothing was saved. Ask the user to finish logging in and tap Done, then call cookie_list.")
             }.toString()
         return buildJsonObject {
             // logged_in only from a real login check (X auth_token; Reddit reddit_session or a user token_v2), never assumed.
-            put("ok", r.saved); put("logged_in", r.saved && r.loggedIn); put("reason", r.reason)
+            // Only Done can be a login: any other close (cancel/back/timeout/self_close) is never reported as one.
+            val done = r.closedBy == com.verdroid.app.ui.cookies.CookieLoginResult.CLOSED_DONE
+            put("ok", done && r.saved); put("logged_in", done && r.saved && r.loggedIn); put("reason", r.reason); put("closed_by", r.closedBy)
             put("sites", JsonArray(r.sites.map(::JsonPrimitive))); put("cookies_saved", r.count)
             if (r.saved) put("cookie_names", JsonArray(r.names.map(::JsonPrimitive)))
             when (r.reason) {
                 "cancelled" -> put("note", "The user cancelled; nothing was saved and the stored cookies are unchanged.")
                 "timeout" -> put("note", "The login screen was left open for 10 minutes and closed; nothing was saved.")
+                "self_close" -> put("note", "The login screen closed without Done (e.g. Android closed it); nothing was saved. Ask the user to try again and tap Done.")
                 "not_logged_in" -> put("note", "Only guest cookies were found (the user didn't log in); nothing was saved and the stored cookies are unchanged.")
                 "no_cookies" -> put("note", "No cookies were found; nothing was saved.")
                 "unchecked" -> put("note", "Cookies saved, but this site has no known login cookie, so the login could not be verified.")

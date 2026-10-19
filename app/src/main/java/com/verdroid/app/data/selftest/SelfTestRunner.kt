@@ -327,6 +327,9 @@ class SelfTestRunner @Inject constructor(
                 val r = com.verdroid.app.ui.cookies.CookieLoginBridge.capture("https://www.reddit.com/login/", v) { u ->
                     if ("reddit.com" in u) "token_v2=" + jwt("{\"sub\":\"loid\",\"lid\":\"t2_g\"}") + "; loid=g" else null }
                 check(!r.saved && !r.loggedIn && v.all().single().value == "keep") { "guest-only login must not overwrite stored cookies" }
+                val C = com.verdroid.app.ui.cookies.CookieLoginResult
+                check(listOf(C.CLOSED_CANCEL, C.CLOSED_BACK, C.CLOSED_TIMEOUT, C.CLOSED_SELF).all { by -> C.closed(by).let { !it.saved && !it.loggedIn && it.closedBy == by } } &&
+                    com.verdroid.app.ui.cookies.CookieLoginResult(true, emptyList(), 1).closedBy == C.CLOSED_SELF) { "only Done may report a login (closed_by)" }
             }
             check(com.verdroid.app.domain.schedule.ScheduleSafety.blockReason("cookie_open", kotlinx.serialization.json.buildJsonObject {}) == null) { "Reddit reads must work in scheduled runs" }
             if (!R.loggedIn(cookieVault.all())) throw SkipCheck("no Reddit login saved (Settings → Tools → Logged-in sites → Log in to Reddit); Reddit falls back to web search")

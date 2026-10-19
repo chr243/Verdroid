@@ -95,7 +95,7 @@ class CookieToolsTest {
 class CookieLoginToolTest {
     @Test fun returnsCountsWhenDone() = runTest {
         var opened: String? = null
-        val t = CookieLoginTool({ u -> opened = u; kotlinx.coroutines.CompletableDeferred(com.verdroid.app.ui.cookies.CookieLoginResult(true, listOf("x.com"), 5, listOf("auth_token", "ct0"), true)) })
+        val t = CookieLoginTool({ u -> opened = u; kotlinx.coroutines.CompletableDeferred(com.verdroid.app.ui.cookies.CookieLoginResult(true, listOf("x.com"), 5, listOf("auth_token", "ct0"), true, closedBy = "done")) })
         val r = t.execute(buildJsonObject {})
         assertEquals("https://x.com/i/flow/login", opened)
         assertTrue(r.contains("\"cookies_saved\":5")); assertTrue(r.contains("\"logged_in\":true")); assertTrue(r.contains("auth_token"))
@@ -105,13 +105,32 @@ class CookieLoginToolTest {
         fun tool(r: com.verdroid.app.ui.cookies.CookieLoginResult) = CookieLoginTool({ kotlinx.coroutines.CompletableDeferred(r) })
         val cancelled = tool(com.verdroid.app.ui.cookies.CookieLoginResult(false, emptyList(), 0)).execute(buildJsonObject {})
         assertTrue(cancelled, cancelled.contains("\"logged_in\":false") && cancelled.contains("cancelled"))
-        val guest = tool(com.verdroid.app.ui.cookies.CookieLoginResult(false, listOf("reddit.com"), 0, listOf("loid", "token_v2"), false, "not_logged_in"))
+        val guest = tool(com.verdroid.app.ui.cookies.CookieLoginResult(false, listOf("reddit.com"), 0, listOf("loid", "token_v2"), false, "not_logged_in", closedBy = "done"))
             .execute(buildJsonObject { put("url", "https://www.reddit.com/login/") })
         assertTrue(guest, guest.contains("\"logged_in\":false") && guest.contains("guest cookies") && guest.contains("unchanged"))
-        val unchecked = tool(com.verdroid.app.ui.cookies.CookieLoginResult(true, listOf("example.org"), 1, listOf("sid"), false, "unchecked")).execute(buildJsonObject {})
+        val unchecked = tool(com.verdroid.app.ui.cookies.CookieLoginResult(true, listOf("example.org"), 1, listOf("sid"), false, "unchecked", closedBy = "done")).execute(buildJsonObject {})
         assertTrue(unchecked, unchecked.contains("\"logged_in\":false") && unchecked.contains("could not be verified"))
         val timeout = CookieLoginTool({ kotlinx.coroutines.CompletableDeferred() }, timeoutMs = 10).execute(buildJsonObject {})
         assertTrue(timeout, timeout.contains("\"logged_in\":false") && timeout.contains("\"reason\":\"timeout\""))
+    }
+
+    @Test fun reportsWhatClosedTheScreenAndOnlyDoneCanBeALogin() = runTest {
+        val R = com.verdroid.app.ui.cookies.CookieLoginResult
+        suspend fun run(r: com.verdroid.app.ui.cookies.CookieLoginResult) = Json.parseToJsonElement(
+            CookieLoginTool({ kotlinx.coroutines.CompletableDeferred(r) }).execute(buildJsonObject {})).jsonObject
+        for (by in listOf(R.CLOSED_CANCEL, R.CLOSED_BACK, R.CLOSED_TIMEOUT, R.CLOSED_SELF)) {
+            val o = run(R.closed(by))
+            assertEquals(by, o["closed_by"]!!.jsonPrimitive.content)
+            assertEquals(false, o["logged_in"]!!.jsonPrimitive.boolean); assertEquals(false, o["ok"]!!.jsonPrimitive.boolean)
+        }
+        assertTrue(run(R.closed(R.CLOSED_SELF))["note"]!!.jsonPrimitive.content.contains("without Done"))
+        // Even a result claiming saved + logged in is not a login unless it came from Done.
+        val forged = com.verdroid.app.ui.cookies.CookieLoginResult(true, listOf("reddit.com"), 8, listOf("loid"), true, "saved", closedBy = R.CLOSED_SELF)
+        assertEquals(false, run(forged)["logged_in"]!!.jsonPrimitive.boolean)
+        val done = run(forged.copy(closedBy = R.CLOSED_DONE))
+        assertEquals(true, done["logged_in"]!!.jsonPrimitive.boolean); assertEquals("done", done["closed_by"]!!.jsonPrimitive.content)
+        // The default (no path recorded) is a self-close.
+        assertEquals(R.CLOSED_SELF, com.verdroid.app.ui.cookies.CookieLoginResult(true, emptyList(), 1).closedBy)
     }
 
     @Test fun timesOutWithHint() = runTest {
