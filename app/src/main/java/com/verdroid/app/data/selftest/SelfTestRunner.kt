@@ -481,6 +481,12 @@ class SelfTestRunner @Inject constructor(
             check(com.verdroid.app.data.tools.ToolGroups.needsTosWarning("twitter", wasOn = false, turningOn = true)) { "X ToS gate" }
             "Tools tab sections, universal login, no stale names"
         },
+        "ideas_prompt" to {
+            val C = com.verdroid.app.ui.Campaigns
+            check(C.shouldShow(C.IDEAS, null, true, false) && !C.shouldShow(C.IDEAS, C.IDEAS, true, false)) { "show-once rule" }
+            check(!C.shouldShow(C.IDEAS, null, false, false) && !C.shouldShow(C.IDEAS, null, true, true)) { "deferred off the main screen / behind other dialogs" }
+            "ideas pop-up: shows once per install (${if (C.lastSeen(context) == C.IDEAS) "already seen" else "not seen yet"})"
+        },
         "show_image" to {
             val S = com.verdroid.app.agent.tools.ShownImages
             check(S.sniff(byteArrayOf(0x89.toByte(), 'P'.code.toByte(), 'N'.code.toByte(), 'G'.code.toByte(), 13, 10, 26, 10)) == "png" && S.sniff("<html>".toByteArray()) == null) { "type sniff" }

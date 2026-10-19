@@ -1,5 +1,7 @@
 package com.verdroid.app.ui
 
+import androidx.navigation.compose.currentBackStackEntryAsState
+
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExperimentalSharedTransitionApi
@@ -142,6 +144,8 @@ fun VerdroidRoot(
 
     // No bottom bar (v0.9.18): the chat list is home; Settings opens from its gear.
     StartupUpdatePrompt(vm.updater)
+    val currentRoute = nav.currentBackStackEntryAsState().value?.destination?.route
+    IdeasPrompt(onMainScreen = currentRoute == Routes.CHATS, updater = vm.updater)
     val px = NavMotion.slidePx(LocalDensity.current)
     LaunchedEffect(Unit) {
         // Compose honours the system animator scale: 0 (HyperOS "remove animations", dev options, some battery
