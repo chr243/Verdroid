@@ -94,6 +94,12 @@ object RedditHtml {
         return null
     }
 
+    /** Reddit's challenge page (reCAPTCHA Enterprise interstitial), also when the helper's own check missed it. */
+    fun isChallenge(html: String?, title: String? = null): Boolean {
+        val h = html.orEmpty().lowercase(); val t = title.orEmpty().lowercase()
+        return "prove your humanity" in t || "prove your humanity" in h || "recaptcha/enterprise.js" in h || "grecaptcha-badge" in h
+    }
+
     /** "1.2k" → 1200, "48" → 48, "" → 0. */
     fun num(s: String?): Int {
         val t = s?.trim()?.replace(",", "")?.replace(" ", "")?.lowercase().orEmpty()
@@ -110,6 +116,7 @@ object RedditHtml {
         "ip_blocked" -> "IP_BLOCKED" to "Reddit blocked this network (\"blocked by network security\"). Retrying won't help; another network may."
         "rate_limited" -> "RATE_LIMITED" to "Reddit is rate-limiting (too many requests), even after one back-off. Wait a minute or two before trying again."
         "login_gated" -> "LOGIN_GATED" to "Reddit redirected to its login page: the saved login isn't valid. The user should log in again."
+        "no_cookies" -> "COOKIES_NOT_SET" to "The headless browser refused the saved Reddit cookies (none were set). The user should log in to Reddit again."
         "timeout" -> "TIMEOUT" to "The Reddit page didn't render any posts in time."
         else -> "FAILED" to "Unexpected Reddit page state: $state"
     }

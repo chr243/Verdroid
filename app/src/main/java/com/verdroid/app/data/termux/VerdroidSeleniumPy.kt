@@ -159,8 +159,11 @@ REDDIT_STATE_JS = r'''
 var sel = arguments[0], b = document.body, t = (document.title || '');
 var txt = b ? (b.innerText || '').slice(0, 1500) : '';
 var n = 0; try { n = document.querySelectorAll(sel).length; } catch (e) {}
-return {found: n, title: t, text: txt, path: location.pathname};
+var cap = !!document.querySelector('.grecaptcha-badge, script[src*="recaptcha/enterprise.js"], iframe[src*="recaptcha"]');
+return {found: n, title: t, text: txt, path: location.pathname, captcha: cap};
 '''
+
+REDDIT_CHALLENGE_MARKERS = ("prove your humanity", "recaptcha/enterprise.js", "grecaptcha-badge")
 
 
 def reddit_state(st):
@@ -169,7 +172,7 @@ def reddit_state(st):
     text = (st.get("text") or "").lower()
     if st.get("found"):
         return "ready"
-    if "prove your humanity" in title or "prove your humanity" in text:
+    if "prove your humanity" in title or "prove your humanity" in text or st.get("captcha"):
         return "challenge"
     if "blocked by network security" in text or "blocked by network security" in title:
         return "ip_blocked"
@@ -177,15 +180,52 @@ def reddit_state(st):
         return "rate_limited"
     if (st.get("path") or "").startswith("/login"):
         return "login_gated"
-    if "find any results" in text or "no results" in text:
+    # A genuine zero-match search: the real search page rendered and says so (never a challenge page).
+    if ("find any results" in text or "no results" in text) and "search" in (st.get("path") or "") + title:
         return "empty"
     return None
 
 
+def reddit_cookies(drv, cookies):
+    # CDP, before the first navigation, in this driver's own browser context: one Network.setCookie per stored cookie on
+    # .reddit.com (secure, path /, httpOnly/sameSite/expiry as stored). Returns names only, never values.
+    drv.execute_cdp_cmd("Network.enable", {})
+    ok, failed = [], []
+    for c in cookies or []:
+        d = cdp_cookie(dict(c, domain=".reddit.com", path="/", secure=True))
+        d["url"] = "https://www.reddit.com/"
+        try:
+            r = drv.execute_cdp_cmd("Network.setCookie", d) or {}
+            (ok if r.get("success", True) else failed).append(c["name"])
+        except Exception as e:
+            failed.append(c.get("name", "?") + ":" + type(e).__name__)
+    present = []
+    try:
+        got = drv.execute_cdp_cmd("Network.getCookies", {"urls": ["https://www.reddit.com/"]}) or {}
+        present = sorted({x.get("name") for x in got.get("cookies", [])})
+    except Exception:
+        pass
+    return {"added": len(ok), "failed": failed, "present": len(present), "names": present, "method": "cdp-before-nav"}
+
+
+def reddit_fetch(drv, url, cookies, selector, settle_for, cap, count, max_chars):
+    out = {"cookies": reddit_cookies(drv, cookies)}
+    if cookies and out["cookies"]["present"] == 0:
+        return dict(out, state="no_cookies", html="", html_chars=0)
+    drv.get(url)
+    out.update(reddit_page(drv, selector, settle_for, cap, count, max_chars))
+    try:
+        out["cookies"]["present_after_nav"] = len(drv.get_cookies())
+    except Exception:
+        pass
+    return out
+
+
 def reddit_page(drv, selector, settle_for, cap, count, max_chars):
-    # One navigation: poll every 250 ms (cap = --wait seconds) for the content selector, then return the rendered HTML.
+    # Poll every 250 ms (cap = --wait seconds) for the content selector, then return the rendered HTML. A challenge page
+    # can clear itself with a valid session, so it only counts if it is still there at the end.
     cap = max(5.0, min(float(cap or 20), 30.0))
-    end, state, retried = time.time() + cap, None, False
+    end, state, retried, last = time.time() + cap, None, False, None
     while time.time() < end:
         try:
             st = drv.execute_script(REDDIT_STATE_JS, selector) or {}
@@ -199,11 +239,14 @@ def reddit_page(drv, selector, settle_for, cap, count, max_chars):
             end = max(end, time.time() + 8)
             state = None
             continue
-        if state is not None:
+        if state == "challenge":
+            last = state
+            state = None
+        elif state is not None:
             break
         time.sleep(0.25)
     if state is None:
-        state = "timeout"
+        state = last or "timeout"
     if state == "ready":
         if settle_for:  # e.g. comments render after the post
             end2 = time.time() + 4
@@ -228,8 +271,14 @@ def reddit_page(drv, selector, settle_for, cap, count, max_chars):
         html = drv.execute_script("return document.documentElement.outerHTML;") or ""
     except Exception:
         pass
-    return {"state": state, "html_chars": len(html), "truncated": len(html) > max_chars, "html": html[:max_chars],
-            "text_head": (drv.execute_script("return document.body ? document.body.innerText.slice(0, 400) : '';") or "") if state != "ready" else ""}
+    if state in ("empty", "timeout") and any(m in html.lower() for m in REDDIT_CHALLENGE_MARKERS):
+        state = "challenge"
+    title = ""
+    try:
+        title = drv.title or ""
+    except Exception:
+        pass
+    return {"state": state, "title": title, "html_chars": len(html), "truncated": len(html) > max_chars, "html": html[:max_chars]}
 
 
 def _status_id(url):
@@ -456,12 +505,14 @@ def main(argv=None):
     try:
         cookies = _read_cookies(a.cookies)
         drv = make_driver(a.width, a.height)
+        if a.cmd == "rhtml":
+            # Reddit: cookies via CDP on .reddit.com before the first navigation, verified, then one navigation.
+            out.update(reddit_fetch(drv, a.url, cookies or [], a.wait_for or "shreddit-post", a.settle_for, a.wait, a.count, a.max_chars))
+            print("$MARKER" + json.dumps(out, ensure_ascii=False))
+            return 0
         if cookies is not None:
             out["cookies"] = inject_cookies(drv, a.url, cookies)
-        if a.cmd == "rhtml":
-            drv.get(a.url)
-        else:
-            load(drv, a.url, a.wait, a.wait_for)
+        load(drv, a.url, a.wait, a.wait_for)
         out["url"] = drv.current_url
         out["title"] = drv.title
         if a.cmd == "open":
@@ -484,8 +535,6 @@ def main(argv=None):
         elif a.cmd == "xpost":
             import base64
             out.update(post_x(drv, base64.b64decode(a.text_b64 or "").decode("utf-8"), a.url))
-        elif a.cmd == "rhtml":
-            out.update(reddit_page(drv, a.wait_for or "shreddit-post", a.settle_for, a.wait, a.count, a.max_chars))
         elif a.cmd == "xposts":
             out.update(scrape_x(drv, max(1, min(a.count, 100)), a.max_idle))
         elif a.cmd == "source":

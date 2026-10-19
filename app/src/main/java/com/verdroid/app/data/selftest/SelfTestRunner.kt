@@ -302,6 +302,10 @@ class SelfTestRunner @Inject constructor(
             check(R.formatPosts(posts).startsWith("Post 1: r/s · u/a · 5 points · 2 comments")) { "reddit parser/formatter" }
             check(R.readUrl("https://old.reddit.com/r/s/comments/abc/t/") == "https://www.reddit.com/r/s/comments/abc/t/") { "reddit url" }
             check(H.triage("challenge", null)?.first == "CHALLENGE" && H.triage("ip_blocked", null)?.first == "IP_BLOCKED") { "reddit error triage" }
+            check(H.isChallenge("<div class=\"grecaptcha-badge\"></div>") && !H.isChallenge("<shreddit-post></shreddit-post>")) { "reddit challenge detection" }
+            val py = com.verdroid.app.data.termux.VerdroidSeleniumPy.SOURCE
+            val fetch = py.substringAfter("def reddit_fetch(").substringBefore("\ndef ")
+            check(fetch.indexOf("reddit_cookies(drv") in 0 until fetch.indexOf("drv.get(url)")) { "Reddit cookies must be set before the first navigation" }
             check(com.verdroid.app.ui.cookies.CookieLoginBridge.markerFor("reddit.com") == "reddit_session") { "reddit login marker" }
             check("rhtml" in com.verdroid.app.data.termux.VerdroidSeleniumPy.SOURCE) { "helper lacks rhtml" }
             check(com.verdroid.app.domain.schedule.ScheduleSafety.blockReason("reddit_search", kotlinx.serialization.json.buildJsonObject {}) == null) { "reddit reads must work in scheduled runs" }

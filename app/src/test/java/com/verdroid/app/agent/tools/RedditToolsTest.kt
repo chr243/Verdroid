@@ -104,4 +104,30 @@ class RedditToolsTest {
         assertFalse(ToolGroups.needsTosWarning("reddit", false, true))
         assertTrue("rhtml" in VerdroidSeleniumPy.SOURCE)
     }
+
+    @Test fun challengeHtmlIsNeverReportedAsEmpty() = runTest {
+        val html = "<html><head><title>Reddit - Prove your humanity</title><script src=\"https://www.google.com/recaptcha/enterprise.js\"></script></head><body><div class=\"grecaptcha-badge\"></div></body></html>"
+        for (state in listOf("empty", "ready", "timeout")) {
+            val t = T(buildJsonObject { put("ok", true); put("state", state); put("html", html)
+                putJsonObject("cookies") { put("added", 8); put("present", 8); putJsonArray("names") { add("token_v2") } } }.toString())
+            val r = o(RedditSearchTool(t, folder, loggedIn()).execute(buildJsonObject { put("query", "x") }, ToolContext((40 + state.length).toLong())))
+            assertEquals(state, "CHALLENGE", r["code"]!!.jsonPrimitive.content)
+            assertEquals(8, r["cookies"]!!.jsonObject["present"]!!.jsonPrimitive.int)
+        }
+        val n = o(RedditSearchTool(T(buildJsonObject { put("ok", true); put("state", "no_cookies"); put("html", "") }.toString()), folder, loggedIn())
+            .execute(buildJsonObject { put("query", "x") }, ToolContext(50)))
+        assertEquals("COOKIES_NOT_SET", n["code"]!!.jsonPrimitive.content)
+    }
+
+    @Test fun everyStoredRedditCookieGoesToTheHelper() = runTest {
+        val names = listOf("edgebucket", "loid", "csrf_token", "csv", "token_v2", "session_tracker", "eu_cookie_opted", "g_state")
+        val v = CookieVault.InMemory(names.map { BrowserCookie(it, if (it == "token_v2") "h." + java.util.Base64.getUrlEncoder().withoutPadding()
+            .encodeToString("""{"sub":"user"}""".toByteArray()) + ".s" else "v$it", ".reddit.com") } + BrowserCookie("auth_token", "x", ".x.com"))
+        val t = T(buildJsonObject { put("ok", true); put("state", "ready"); put("html", page) }.toString())
+        RedditSearchTool(t, folder, v).execute(buildJsonObject { put("query", "x") }, ToolContext(60))
+        val b64 = Regex("echo ([A-Za-z0-9+/=]+) \\| base64 -d > \\S*ck-").find(t.cmds.single())!!.groupValues[1]
+        val json = Json.parseToJsonElement(String(java.util.Base64.getDecoder().decode(b64))).jsonArray
+        assertEquals(names.sorted(), json.map { it.jsonObject["name"]!!.jsonPrimitive.content }.sorted())
+        assertTrue(json.all { it.jsonObject["domain"]!!.jsonPrimitive.content == ".reddit.com" })
+    }
 }
