@@ -465,7 +465,7 @@ class AgentLoop internal constructor(
               search https://www.reddit.com/search/?q=<urlencoded>&type=posts (optional &sort=new|top|comments&t=day|week|…),
               one subreddit https://www.reddit.com/r/<sub>/search/?q=<urlencoded>&restrict_sr=1&type=posts, a listing
               https://www.reddit.com/r/<sub>/<hot|new|top|rising>/, or the thread URL. Code CHALLENGE ("Prove your humanity")
-              means blocked, not empty. On CHALLENGE, COOKIES_NOT_SET, NOT_LOGGED_IN or NO_CHROMIUM use the fallback
+              means blocked, not empty. On CHALLENGE, COOKIES_REJECTED, COOKIES_NOT_SET, NOT_LOGGED_IN or NO_CHROMIUM use the fallback
               (web_search "site:reddit.com …"; don't web_fetch reddit .json / old.reddit, they're blocked), say briefly why,
               and if the result has tell_user, pass that hint on in your reply. Many queries at once: a termux_python script with
               cookies_for=["reddit.com"] (see above). Don't call cookie_login for Reddit unless the user wants to log in.

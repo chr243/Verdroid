@@ -92,7 +92,7 @@ class RedditHelperPyTest {
             assert "Network.setUserAgentOverride" in cdp and cdp.index("Network.enable") < cdp.index("Network.setCookies")
             g = next(i for i, e in enumerate(LOG) if e[0] == "get")
             assert LOG[g + 1] == ("sleep", 15.0, None), LOG[g:g + 3]   # plain wait, nothing touches the page first
-            assert o["ok"] and o["cookies"]["added"] == 8 and o["cookies"]["present"] == 8, o
+            assert o["ok"] and o["cookies"]["added"] == 8 and o["cookies"]["present"] == 8 and o["cookies"]["kept_after_load"] == 8, o
             assert "SECRET" not in json.dumps(o)
             # make_driver(cookies_for=...) launches the browser exactly like cookie_open
             os.environ["VERDROID_COOKIES"] = ckfile(); del LOG[:]; v._APP_COOKIES = None

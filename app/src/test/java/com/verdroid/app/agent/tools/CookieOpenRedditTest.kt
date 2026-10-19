@@ -46,20 +46,46 @@ class CookieOpenRedditTest {
         assertFalse(r.toString().contains(secret))
     }
 
-    @Test fun challengeIsBlockedNotEmptyWithFallbackAndHintOnce() {
-        for (reply in listOf("""{"ok":false,"code":"CHALLENGE","title":"Reddit - Prove your humanity","error":"bot check","cookies":{"present":2}}""",
-                             """{"ok":true,"title":"Reddit - Prove your humanity","text":""}""")) {
+    @Test fun challengeWithAcceptedCookiesBlamesTheBotCheckNotTheSession() {
+        for (reply in listOf("""{"ok":false,"code":"CHALLENGE","title":"Reddit - Prove your humanity","error":"bot check","cookies":{"added":8,"present":8,"present_after":9,"kept_after_load":8}}""",
+                             """{"ok":true,"title":"Reddit - Prove your humanity","text":""}""")) {   // no cookie report: never claim rejected
             RedditHints.resetForTest()
             val r = open(T(reply), loggedIn(), "https://www.reddit.com/search/?q=x&type=posts", 5)
             assertEquals("CHALLENGE", r["code"]!!.jsonPrimitive.content); assertEquals(false, r["ok"]!!.jsonPrimitive.boolean)
-            assertTrue(r["fallback"]!!.jsonPrimitive.content.contains("web_search")); assertNotNull(r["tell_user"]); assertNull(r["text"])
+            assertTrue(r["fallback"]!!.jsonPrimitive.content.contains("web_search")); assertNull(r["text"])
+            val tell = r["tell_user"]!!.jsonPrimitive.content
+            assertTrue(tell, tell.contains("bot check") && tell.contains("network") && tell.contains("won't help"))
+            assertFalse(tell, tell.contains("again in Verdroid") || tell.contains("didn't keep") || tell.contains("Log in to Reddit"))
+            assertFalse(r["error"]!!.jsonPrimitive.content.contains("rejected"))
             assertNull(open(T(reply), loggedIn(), "https://www.reddit.com/search/?q=y&type=posts", 5)["tell_user"])  // once per chat
         }
-        val n = open(T("""{"ok":false,"code":"COOKIES_NOT_SET","error":"refused"}"""), loggedIn(), "https://www.reddit.com/", 6)
-        assertEquals("COOKIES_NOT_SET", n["code"]!!.jsonPrimitive.content); assertNotNull(n["fallback"])
+    }
+
+    @Test fun missingOrRejectedCookiesSuggestSavingTheSessionAgain() {
+        RedditHints.resetForTest()
+        val dropped = open(T("""{"ok":false,"code":"CHALLENGE","title":"Reddit - Prove your humanity","cookies":{"added":8,"present":8,"present_after":2,"kept_after_load":1}}"""),
+            loggedIn(), "https://www.reddit.com/search/?q=x", 6)
+        assertEquals("COOKIES_REJECTED", dropped["code"]!!.jsonPrimitive.content)
+        assertTrue(dropped["tell_user"]!!.jsonPrimitive.content.contains("Saving the Reddit session again"))
+        val notSet = open(T("""{"ok":false,"code":"COOKIES_NOT_SET","error":"refused","cookies":{"added":8,"present":0}}"""), loggedIn(), "https://www.reddit.com/", 7)
+        assertEquals("COOKIES_NOT_SET", notSet["code"]!!.jsonPrimitive.content); assertNotNull(notSet["fallback"])
+        assertTrue(notSet["tell_user"]!!.jsonPrimitive.content.contains("again"))
+        // Once per chat and hint type: the re-save tip doesn't repeat, but a later bot-wall block in that chat still explains itself.
+        assertNull(open(T("""{"ok":false,"code":"COOKIES_NOT_SET","cookies":{"added":8,"present":0}}"""), loggedIn(), "https://www.reddit.com/", 7)["tell_user"])
+        val wall = open(T("""{"ok":false,"code":"CHALLENGE","cookies":{"added":8,"present":8,"kept_after_load":8}}"""), loggedIn(), "https://www.reddit.com/", 7)
+        assertTrue(wall["tell_user"]!!.jsonPrimitive.content.contains("bot check"))
         // A genuine empty search stays ok.
-        val e = open(T("""{"ok":true,"title":"zzqx - Reddit Search!","text":"Hm... we couldn't find any results for zzqx"}"""), loggedIn(), "https://www.reddit.com/search/?q=zzqx", 7)
+        val e = open(T("""{"ok":true,"title":"zzqx - Reddit Search!","text":"Hm... we couldn't find any results for zzqx"}"""), loggedIn(), "https://www.reddit.com/search/?q=zzqx", 8)
         assertEquals(true, e["ok"]!!.jsonPrimitive.boolean); assertNull(e["code"])
+    }
+
+    @Test fun hintsNeverRequireAnAccount() {
+        for (h in listOf(RedditHints.LOGIN, RedditHints.RESAVE, RedditHints.BOT_WALL, RedditHints.CHROMIUM))
+            assertFalse(h, Regex("account|sign in|log in to your", RegexOption.IGNORE_CASE).containsMatchIn(h.replace("Log in to Reddit)", "")))
+        assertEquals(com.verdroid.app.data.cookies.RedditBlock.Kind.BOT_WALL, com.verdroid.app.data.cookies.RedditBlock.classify(8, 8, 8))
+        assertEquals(com.verdroid.app.data.cookies.RedditBlock.Kind.BOT_WALL, com.verdroid.app.data.cookies.RedditBlock.classify(null, null, null))
+        assertEquals(com.verdroid.app.data.cookies.RedditBlock.Kind.COOKIES_REJECTED, com.verdroid.app.data.cookies.RedditBlock.classify(8, 0, null))
+        assertEquals(com.verdroid.app.data.cookies.RedditBlock.Kind.COOKIES_REJECTED, com.verdroid.app.data.cookies.RedditBlock.classify(8, 8, 3))
     }
 
     @Test fun noLoginOrNoChromiumFallsBackToWebSearchAndTellsTheUserOnce() {

@@ -2,6 +2,7 @@ package com.verdroid.app.agent.tools
 
 import com.verdroid.app.data.cookies.RedditThrottle
 import com.verdroid.app.data.cookies.RedditHints
+import com.verdroid.app.data.cookies.RedditBlock
 import com.verdroid.app.data.cookies.RedditJson
 import com.verdroid.app.data.cookies.BrowserCookies
 import com.verdroid.app.data.cookies.CookieVault
@@ -132,19 +133,29 @@ class CookieOpenTool(termux: TermuxRunner, folder: SharedFolder, private val vau
                 return redditFallback("NO_CHROMIUM", false, true, url, ctx, err)
         }
         if (code == null) return out
+        val ck = o["cookies"] as? JsonObject
+        fun n(k: String) = (ck?.get(k) as? JsonPrimitive)?.intOrNull
+        // Rejected cookies (none / few kept) → re-saving helps; bot check with the cookies accepted → the network/session is refused.
+        val kind = if (code == "COOKIES_NOT_SET") RedditBlock.Kind.COOKIES_REJECTED else RedditBlock.classify(n("added"), n("present"), n("kept_after_load"))
+        val rejected = kind == RedditBlock.Kind.COOKIES_REJECTED
+        if (code == "CHALLENGE" && rejected) code = "COOKIES_REJECTED"
+        val error = when (code) {
+            "CHALLENGE" -> "Reddit's bot check (\"Prove your humanity\") refused this network/session; the saved Reddit cookies were accepted. Blocked, not empty."
+            "COOKIES_REJECTED" -> "Reddit showed its bot check and did not keep the saved Reddit session cookies. Blocked, not empty."
+            else -> o["error"]?.jsonPrimitive?.contentOrNull ?: "The browser refused the saved Reddit cookies."
+        }
+        val hint = if (rejected) RedditHints.RESAVE else RedditHints.BOT_WALL
         return JsonObject(o.filterKeys { it != "text" && it != "links" } + mapOf(
-            "ok" to JsonPrimitive(false), "code" to JsonPrimitive(code),
-            "error" to JsonPrimitive(if (code == "CHALLENGE") "Reddit showed its \"Prove your humanity\" bot check instead of the page: blocked, not empty."
-                else o["error"]?.jsonPrimitive?.contentOrNull ?: "The browser refused the saved Reddit cookies."),
+            "ok" to JsonPrimitive(false), "code" to JsonPrimitive(code), "error" to JsonPrimitive(error),
             "fallback" to JsonPrimitive(RedditJson.fallbackHint(null, url)),
-        ) + (RedditHints.once(ctx.taskId, RedditHints.RELOGIN)?.let { mapOf("tell_user" to JsonPrimitive("In your reply, tell the user briefly (once): $it")) } ?: emptyMap())).toString()
+        ) + (RedditHints.once(ctx.taskId, hint)?.let { mapOf("tell_user" to JsonPrimitive("In your reply, tell the user briefly (once): $it")) } ?: emptyMap())).toString()
     }
 
     private fun redditFallback(code: String, noLogin: Boolean, noChromium: Boolean, url: String, ctx: ToolContext, detail: String? = null): String {
         val hint = listOfNotNull(RedditHints.LOGIN.takeIf { noLogin }, RedditHints.CHROMIUM.takeIf { noChromium }).joinToString(" ")
         return buildJsonObject {
             put("ok", false); put("code", code)
-            put("error", if (code == "NOT_LOGGED_IN") "No Reddit login saved (no reddit_session / user token_v2 cookie)."
+            put("error", if (code == "NOT_LOGGED_IN") "No Reddit session saved."
                 else "Headless Chromium isn't available (Termux / chromium-selenium add-on)." + (detail?.let { " $it".take(200) } ?: ""))
             put("fallback", RedditJson.fallbackHint(null, url))
             RedditHints.once(ctx.taskId, hint)?.let { put("tell_user", "In your reply, tell the user briefly (once): $it") }
@@ -158,7 +169,7 @@ class CookieOpenTool(termux: TermuxRunner, folder: SharedFolder, private val vau
             "wait_seconds 15–20 (default 15 for reddit.com): search https://www.reddit.com/search/?q=<urlencoded>&type=posts " +
             "(optional &sort=new|top|comments&t=hour|day|week|month|year|all), one subreddit https://www.reddit.com/r/<sub>/search/?q=<urlencoded>&restrict_sr=1&type=posts, " +
             "a listing https://www.reddit.com/r/<sub>/<hot|new|top|rising>/, or the thread URL (old.reddit/redd.it links are converted). " +
-            "On code CHALLENGE, COOKIES_NOT_SET, NOT_LOGGED_IN or NO_CHROMIUM use the fallback (web_search \"site:reddit.com …\"), say briefly why, " +
+            "On code CHALLENGE, COOKIES_REJECTED, COOKIES_NOT_SET, NOT_LOGGED_IN or NO_CHROMIUM use the fallback (web_search \"site:reddit.com …\"), say briefly why, " +
             "and pass on tell_user if present. Don't web_fetch reddit .json / old.reddit (blocked). No posting, voting or commenting. " +
             "For many queries in one go: termux_python with cookies_for=[\"reddit.com\"], one make_driver(cookies_for=\"reddit.com\") and " +
             "verdroid_selenium.reddit_posts(drv, url) per page (~1 page/s, driver.quit() at the end)."

@@ -82,6 +82,9 @@ def open_session(drv, url, cookies, wait=0.0, wait_for=None):
         info["state"] = "no_cookies"
         return info
     load(drv, url, wait, wait_for)
+    after = cookie_report(drv, url)["names"]
+    info["present_after"] = len(after)
+    info["kept_after_load"] = len(set(info["names"]) & set(after))  # injected cookies the site did not clear
     return info
 
 
@@ -558,7 +561,7 @@ def main(argv=None):
         drv = make_driver(a.width, a.height)
         info = open_session(drv, a.url, cookies, a.wait, a.wait_for)
         if info is not None:
-            out["cookies"] = {k: info[k] for k in ("added", "present", "names", "method", "failed") if k in info}
+            out["cookies"] = {k: info[k] for k in ("added", "present", "present_after", "kept_after_load", "names", "method", "failed") if k in info}
             if info.get("state") == "no_cookies":
                 out.update(ok=False, code="COOKIES_NOT_SET", error="The browser kept none of the stored cookies, so the page was not loaded.")
                 print("$MARKER" + json.dumps(out, ensure_ascii=False))
