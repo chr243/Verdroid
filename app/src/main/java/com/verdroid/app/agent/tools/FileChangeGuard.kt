@@ -127,8 +127,17 @@ class FileChangeGuard(
     private val confirmer: FileChangeConfirmer,
     private val shared: File? = null,
     private val overwritePolicy: OverwritePolicy = OverwritePolicy.NEVER,
+    /** filesDir/workspace: write_file paths that name the shared tree (Repos/…) are checked like workspace_write. */
+    private val privateRoot: File? = null,
     private val readScript: (tool: String, args: JsonObject) -> String? = { _, _ -> null },
 ) {
+    /** Documents/Verdroid-relative path for [p] with the same rules as [SharedFolderSandbox] (absolute prefixes, repo shorthand). */
+    private fun sharedRel(root: File, p: String): String {
+        val q = p.trim().replace('\\', '/')
+        if (q.startsWith("/")) SharedFolderSandbox.prefixes(root).firstOrNull { q == it || q.startsWith("$it/") }?.let { return q.removePrefix(it).trimStart('/') }
+        return SharedFolderSandbox.repoShorthand(root, q)
+    }
+
     private var nextId = 1L
 
     /** Reasons + the command/code to show, or null when no confirmation is needed. Pure apart from file existence. */
@@ -138,8 +147,10 @@ class FileChangeGuard(
         when {
             tool == "workspace_delete" -> { reasons = listOf("delete ${s("path")}" + if ((args["recursive"] as? JsonPrimitive)?.booleanOrNull == true) " (and everything in it)" else "") }
             tool == "skill_delete" -> reasons = listOf("delete skill ${s("id")}")
-            tool == "workspace_write" -> {
-                val p = s("path").orEmpty(); val mode = s("mode") ?: "overwrite"
+            tool == "workspace_write" || (tool == "write_file" && shared != null && privateRoot != null &&
+                SharedFolderSandbox.claimsShared(s("path").orEmpty(), shared, privateRoot)) -> {
+                val mode = if (tool == "write_file") (if ((args["append"] as? JsonPrimitive)?.booleanOrNull == true) "append" else "overwrite") else s("mode") ?: "overwrite"
+                val p = shared?.let { sharedRel(it, s("path").orEmpty()) } ?: s("path").orEmpty()
                 val f = shared?.let { File(it, p) }
                 reasons = if (mode != "create" && (args["directory"] as? JsonPrimitive)?.booleanOrNull != true && f?.isFile == true && !isInternal(p))
                     listOf("${if (mode == "append") "append to" else "overwrite"} existing $p") else emptyList()

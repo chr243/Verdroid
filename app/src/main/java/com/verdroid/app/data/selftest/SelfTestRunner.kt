@@ -438,6 +438,37 @@ class SelfTestRunner @Inject constructor(
             check(R.script("git status", 10).startsWith(R.GIT_WORKDIR) && R.script("ls", 10).startsWith(R.WORKDIR)) { "git cwd must be Termux home" }
             "git 401/403/404 mapping, web_fetch note, git cwd in Termux home"
         },
+        "git_repos" to {
+            // Temp copies of the real layout (shared Documents/Verdroid + private workspace) in the cache dir; nothing real is touched.
+            val base = File(context.cacheDir, "selftest-repos-${System.nanoTime()}")
+            try {
+                val shared = com.verdroid.app.data.storage.SharedFolder(File(base, "shared")) { true }
+                val priv = com.verdroid.app.agent.tools.WorkspaceSandbox(File(base, "private"))
+                val auth = object : com.verdroid.app.data.git.GitAuth {
+                    override val token: String? = null; override val username = "x-access-token"; override val authorName = "Verdroid"; override val authorEmail = "selftest@localhost"
+                }
+                val gm = com.verdroid.app.data.git.GitManager(priv, shared, auth).also { it.allowFileRemotes = true }
+                val src = File(base, "src/demo").apply { mkdirs() }
+                org.eclipse.jgit.api.Git.init().setDirectory(src).call().use { g ->
+                    File(src, "a.txt").writeText("a"); g.add().addFilepattern(".").call()
+                    g.commit().setMessage("init").setAuthor(org.eclipse.jgit.lib.PersonIdent("v", "v@x")).setCommitter(org.eclipse.jgit.lib.PersonIdent("v", "v@x")).call()
+                }
+                fun j(x: String) = Json.parseToJsonElement(x).jsonObject
+                val cl = j(com.verdroid.app.agent.tools.GitCloneTool(gm).execute(buildJsonObject { put("url", src.toURI().toString()) }))
+                check(cl["repo_path"]?.jsonPrimitive?.content == "Repos/demo") { "clone default: $cl" }
+                check(j(com.verdroid.app.agent.tools.GitCloneTool(gm).execute(buildJsonObject { put("url", src.toURI().toString()) }))["reused"]?.jsonPrimitive?.boolean == true) { "re-clone must reuse" }
+                com.verdroid.app.agent.tools.WorkspaceWriteTool(shared).execute(buildJsonObject { put("path", "Repos/demo/new.txt"); put("content", "n") })
+                val st = j(com.verdroid.app.agent.tools.GitStatusTool(gm).execute(JsonObject(emptyMap())))
+                check("new.txt" in st["untracked"].toString() && st["absolute_path"]?.jsonPrimitive?.content?.endsWith("Repos/demo") == true) { "status must see workspace_write: $st" }
+                check(j(com.verdroid.app.agent.tools.GitCommitTool(gm).execute(buildJsonObject { put("message", "add") }))["files"]?.jsonPrimitive?.int == 1) { "commit must contain the file" }
+                check(j(com.verdroid.app.agent.tools.GitCommitTool(gm).execute(buildJsonObject { put("message", "x") }))["code"]?.jsonPrimitive?.content == "NOTHING_TO_COMMIT") { "empty commit must be refused" }
+                org.eclipse.jgit.api.Git.open(File(shared.root, "Repos/demo")).use { g ->
+                    check(!g.repository.config.getBoolean("core", "filemode", true) && !g.repository.config.getBoolean("core", "symlinks", true)) { "shared-storage config" }
+                }
+                check(j(com.verdroid.app.agent.tools.GitReposTool(gm).execute(JsonObject(emptyMap())))["count"]?.jsonPrimitive?.int == 1) { "git_repos" }
+                "clone → Repos/<name>, reuse, workspace_write seen by status/commit, empty commit refused"
+            } finally { base.deleteRecursively() }
+        },
         "backtest_python" to {
             requireTermux()
             val r = termux.runAndWait(com.verdroid.app.agent.tools.CryptoHistoryTools.PREFLIGHT, "st-btdeps-${System.nanoTime()}", 25_000, label = "Verdroid self-test")

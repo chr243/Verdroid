@@ -10,8 +10,9 @@ import kotlinx.serialization.json.*
 class TermuxRunTool(private val termux: TermuxRunner) : AgentTool {
     override val name = "termux_run"
     override val description = "Run a bash command inside Termux (cwd Documents/Verdroid/Internal; commands that run git start in Termux home " +
-        "~/verdroid-work instead, because Termux git crashes with any cwd or -C under /storage/emulated: keep git repos under ~ / \$HOME, or use " +
-        "git --git-dir=<abs>/.git --work-tree=<abs> from \$HOME) to use Termux packages such as ffmpeg, " +
+        "~/verdroid-work instead, because Termux git crashes with any cwd or -C under /storage/emulated. For repos in " +
+        "Documents/Verdroid/Repos prefer the app's git_* tools, or run git --git-dir=/storage/emulated/0/Documents/Verdroid/Repos/<name>/.git " +
+        "--work-tree=/storage/emulated/0/Documents/Verdroid/Repos/<name> from there) to use Termux packages such as ffmpeg, " +
         "magick (imagemagick), yt-dlp, git, node, jq, curl, pandoc — whichever the user installed in Settings > Tools. " +
         "Returns exit_code, stdout, stderr as soon as the command finishes (timeout_seconds is only a cap, max 600 s; " +
         "background jobs left running are stopped when the command ends). Installing packages (pip/apt/pkg/npm install, " +

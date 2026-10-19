@@ -34,22 +34,24 @@ internal fun JsonObject.str(key: String): String? = (this[key] as? JsonPrimitive
 internal fun JsonObject.bool(key: String): Boolean? = (this[key] as? JsonPrimitive)?.booleanOrNull
 internal fun JsonObject.int(key: String): Int? = (this[key] as? JsonPrimitive)?.intOrNull
 
-class ReadFileTool(private val sandbox: WorkspaceSandbox) : AgentTool {
+class ReadFileTool(private val sandbox: WorkspaceSandbox, private val shared: com.verdroid.app.data.storage.SharedFolder? = null) : AgentTool {
+    private val roots = FileRoots(sandbox, shared)
     override val name = "read_file"
-    override val description = "Read a UTF-8 text file from the agent workspace."
+    override val description = "Read a UTF-8 text file from the agent's private workspace. " + FileRoots.NOTE
     override val parameters = schema(listOf("path"),
-        "path" to prop("string", "File path relative to the workspace root"),
+        "path" to prop("string", "File path relative to the private workspace root (Repos/… or a repo name → Documents/Verdroid/Repos)"),
         "max_bytes" to prop("integer", "Maximum bytes to return (default 65536)"))
 
     override suspend fun execute(args: JsonObject): String {
-        val f = sandbox.resolve(args.str("path") ?: return errorJson("path is required"))
-        if (!f.exists()) return errorJson("File not found: ${sandbox.relativePath(f)}")
-        if (f.isDirectory) return errorJson("Is a directory: ${sandbox.relativePath(f)}")
+        val t = roots.resolve(args.str("path") ?: return errorJson("path is required")) ?: return errorJson(FileRoots.NO_ACCESS)
+        val f = t.file
+        if (!f.exists()) return errorJson("File not found: ${t.rel} (${t.rootLabel})")
+        if (f.isDirectory) return errorJson("Is a directory: ${t.rel}")
         val max = (args.int("max_bytes") ?: 65_536).coerceIn(1, 1_000_000)
         val size = f.length()
         val head = readHead(f, max)
         return buildJsonObject {
-            put("path", sandbox.relativePath(f))
+            put("path", t.rel); put("root", t.rootLabel); put("absolute_path", f.path)
             put("size", size)
             put("truncated", size > head.size)
             put("content", String(head, Charsets.UTF_8))
@@ -71,38 +73,73 @@ class ReadFileTool(private val sandbox: WorkspaceSandbox) : AgentTool {
     }
 }
 
-class WriteFileTool(private val sandbox: WorkspaceSandbox) : AgentTool {
+class WriteFileTool(private val sandbox: WorkspaceSandbox, private val shared: com.verdroid.app.data.storage.SharedFolder? = null) : AgentTool {
+    private val roots = FileRoots(sandbox, shared)
     override val name = "write_file"
-    override val description = "Create or overwrite (or append to) a text file in the agent workspace. Parent folders are created."
+    override val description = "Create or overwrite (or append to) a text file in the agent's private workspace (scratch; the user can't see it). " +
+        "Parent folders are created. " + FileRoots.NOTE
     override val parameters = schema(listOf("path", "content"),
-        "path" to prop("string", "File path relative to the workspace root"),
+        "path" to prop("string", "File path relative to the private workspace root (Repos/… or a repo name → Documents/Verdroid/Repos)"),
         "content" to prop("string", "Text content to write"),
         "append" to prop("boolean", "Append instead of overwrite (default false)"))
 
     override suspend fun execute(args: JsonObject): String {
-        val f = sandbox.resolve(args.str("path") ?: return errorJson("path is required"))
-        if (f == sandbox.root || f.isDirectory) return errorJson("Path is a directory")
+        val t = roots.resolve(args.str("path") ?: return errorJson("path is required")) ?: return errorJson(FileRoots.NO_ACCESS)
+        val f = t.file
+        if (f == sandbox.root || f.isDirectory || (t.shared && f == shared?.root?.canonicalFile)) return errorJson("Path is a directory")
         val content = args.str("content") ?: return errorJson("content is required")
         f.parentFile?.mkdirs()
         if (args.bool("append") == true) f.appendText(content) else f.writeText(content)
         return buildJsonObject {
-            put("ok", true); put("path", sandbox.relativePath(f)); put("bytes", f.length())
+            put("ok", true); put("path", t.rel); put("root", t.rootLabel); put("absolute_path", f.path); put("bytes", f.length())
         }.toString()
     }
 }
 
-class ListDirTool(private val sandbox: WorkspaceSandbox) : AgentTool {
+/**
+ * One rule for read_file/write_file/list_dir: paths are in the private workspace (filesDir/workspace) unless they name the
+ * shared tree ([SharedFolderSandbox.claimsShared]: absolute Documents/Verdroid path, Repos/…, or "<repo>/…" for a repo in
+ * Documents/Verdroid/Repos). So "Repos/x/a.txt" and "x/a.txt" are the same file for write_file, workspace_write and git_*.
+ */
+internal class FileRoots(private val sandbox: WorkspaceSandbox, private val shared: com.verdroid.app.data.storage.SharedFolder?) {
+    class Target(val file: java.io.File, val rel: String, val shared: Boolean) {
+        val rootLabel get() = if (shared) com.verdroid.app.data.storage.SharedFolder.DISPLAY_PATH else "private workspace"
+    }
+
+    /** null: the path names the shared tree but All files access is missing. */
+    fun resolve(path: String): Target? {
+        val sh = shared
+        if (sh != null && SharedFolderSandbox.claimsShared(path, sh.root, sandbox.root)) {
+            if (!sh.hasAccess()) return null
+            val sb = SharedFolderSandbox(sh)
+            val f = sb.resolve(path)
+            return Target(f, sb.relativePath(f), true)
+        }
+        val f = sandbox.resolve(path)
+        return Target(f, sandbox.relativePath(f), false)
+    }
+
+    companion object {
+        const val NOTE = "Paths starting with Repos/ (or <repo-name>/ for a repo cloned into Documents/Verdroid/Repos) and absolute " +
+            "Documents/Verdroid paths go to the shared folder instead, the same files workspace_* and git_* tools see."
+        const val NO_ACCESS = "That path is in Documents/Verdroid, but All files access is not granted (Settings > Tools > Shared folder)."
+    }
+}
+
+class ListDirTool(private val sandbox: WorkspaceSandbox, private val shared: com.verdroid.app.data.storage.SharedFolder? = null) : AgentTool {
+    private val roots = FileRoots(sandbox, shared)
     override val name = "list_dir"
-    override val description = "List files and folders in a workspace directory."
+    override val description = "List files and folders in a private-workspace directory. " + FileRoots.NOTE
     override val parameters = schema(emptyList(), "path" to prop("string", "Directory relative to the workspace root (default '.')"))
 
     override suspend fun execute(args: JsonObject): String {
-        val dir = sandbox.resolve(args.str("path") ?: ".")
-        if (!dir.exists()) return errorJson("Directory not found: ${sandbox.relativePath(dir)}")
-        if (!dir.isDirectory) return errorJson("Not a directory: ${sandbox.relativePath(dir)}")
+        val t = roots.resolve(args.str("path") ?: ".") ?: return errorJson(FileRoots.NO_ACCESS)
+        val dir = t.file
+        if (!dir.exists()) return errorJson("Directory not found: ${t.rel}")
+        if (!dir.isDirectory) return errorJson("Not a directory: ${t.rel}")
         val entries = dir.listFiles().orEmpty().sortedWith(compareBy({ !it.isDirectory }, { it.name })).take(500)
         return buildJsonObject {
-            put("path", sandbox.relativePath(dir))
+            put("path", t.rel); put("root", t.rootLabel); put("absolute_path", dir.path)
             put("entries", JsonArray(entries.map { e ->
                 buildJsonObject {
                     put("name", e.name)

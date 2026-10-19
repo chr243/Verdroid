@@ -18,12 +18,10 @@ class SharedFolderSandbox(private val folder: SharedFolder) {
         var p = (path ?: ".").trim().replace('\\', '/').ifEmpty { "." }
         if (p.contains('\u0000')) throw SecurityException("Invalid path")
         if (p.startsWith("/")) {
-            val prefixes = listOf(folder.root.absolutePath, root.path, SharedFolder.DISPLAY_PATH, "/sdcard/Documents/Verdroid")
-                .map { it.trimEnd('/') }.distinct()
-            val hit = prefixes.firstOrNull { p == it || p.startsWith("$it/") }
+            val hit = prefixes(folder.root).firstOrNull { p == it || p.startsWith("$it/") }
                 ?: throw SecurityException("Path is outside Documents/Verdroid: $path")
             p = p.removePrefix(hit).trimStart('/').ifEmpty { "." }
-        }
+        } else p = repoShorthand(root, p)
         val r = root
         val candidate = File(r, p).canonicalFile
         if (candidate != r && !candidate.path.startsWith(r.path + File.separator)) {
@@ -33,9 +31,45 @@ class SharedFolderSandbox(private val folder: SharedFolder) {
     }
 
     fun relativePath(file: File): String = file.canonicalFile.relativeTo(root).path.ifEmpty { "." }
+
+    companion object {
+        /** Cloned repos live in Documents/Verdroid/Repos/<name>. */
+        const val REPOS = "Repos"
+
+        /** Absolute spellings of Documents/Verdroid (real path, /storage/emulated/0/…, /sdcard/…). */
+        fun prefixes(root: File): List<String> =
+            listOf(root.absolutePath, runCatching { root.canonicalPath }.getOrDefault(root.absolutePath), SharedFolder.DISPLAY_PATH, "/sdcard/Documents/Verdroid")
+                .map { it.trimEnd('/') }.distinct()
+
+        /**
+         * Repo shorthand, the same for every tool: "agent-bridge/x.txt" means Repos/agent-bridge/x.txt when Repos/agent-bridge
+         * is a git repo and Documents/Verdroid has no top-level "agent-bridge" of its own. Everything else is unchanged.
+         */
+        fun repoShorthand(root: File, rel: String): String {
+            val first = rel.trimStart('/').substringBefore('/')
+            if (first.isEmpty() || first == "." || first == ".." || first == REPOS) return rel
+            if (File(root, first).exists()) return rel
+            return if (File(File(File(root, REPOS), first), ".git").exists()) "$REPOS/${rel.trimStart('/')}" else rel
+        }
+
+        /**
+         * Whether a path given to the private-workspace tools (read_file/write_file/list_dir) really names the shared tree:
+         * an absolute Documents/Verdroid path, "Repos/…", or the repo shorthand above (when the private workspace has no such
+         * top-level entry). Keeps every tool resolving "Repos/x/a.txt" / "x/a.txt" to the same file git sees.
+         */
+        fun claimsShared(path: String, sharedRoot: File, privateRoot: File): Boolean {
+            val p = path.trim().replace('\\', '/')
+            if (p.startsWith("/")) return prefixes(sharedRoot).any { p == it || p.startsWith("$it/") }
+            val first = p.substringBefore('/')
+            if (first == REPOS) return true
+            if (first.isEmpty() || File(privateRoot, first).exists()) return false
+            return repoShorthand(sharedRoot, p) != p
+        }
+    }
 }
 
-private const val SHARED = "Shared folder ${SharedFolder.DISPLAY_PATH} (Input/ = files from the user, Output/ = put results here). "
+private const val SHARED = "Shared folder ${SharedFolder.DISPLAY_PATH} (Input/ = files from the user, Output/ = put results here, " +
+    "Repos/<name> = git repos cloned by git_clone; '<name>/file' is shorthand for Repos/<name>/file). "
 
 /** Common guard: all-files access + folder present; turns sandbox violations into error JSON. */
 private suspend fun SharedFolder.guarded(block: suspend () -> String): String {

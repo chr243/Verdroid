@@ -10,7 +10,7 @@ import javax.inject.Singleton
 
 /** Git token + author identity in EncryptedSharedPreferences (same scheme as the OpenRouter keys). */
 @Singleton
-class GitCredentialStore @Inject constructor(@ApplicationContext private val context: Context) {
+class GitCredentialStore @Inject constructor(@ApplicationContext private val context: Context) : GitAuth {
 
     private val prefs: SharedPreferences by lazy {
         try { create() } catch (e: Exception) { context.deleteSharedPreferences(FILE); create() }
@@ -23,20 +23,20 @@ class GitCredentialStore @Inject constructor(@ApplicationContext private val con
             EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM)
     }
 
-    var token: String?
+    override var token: String?
         get() = prefs.getString(KEY_TOKEN, null)?.takeIf { it.isNotBlank() }
         set(value) { prefs.edit().apply { if (value.isNullOrBlank()) remove(KEY_TOKEN) else putString(KEY_TOKEN, value.trim()) }.apply() }
 
     /** Username used with the token for HTTPS auth (GitHub accepts any non-empty user with a PAT). */
-    var username: String
+    override var username: String
         get() = prefs.getString(KEY_USER, null) ?: "x-access-token"
         set(value) { prefs.edit().putString(KEY_USER, value.trim()).apply() }
 
-    var authorName: String
+    override var authorName: String
         get() = prefs.getString(KEY_NAME, null) ?: "Verdroid"
         set(value) { prefs.edit().putString(KEY_NAME, value.trim()).apply() }
 
-    var authorEmail: String
+    override var authorEmail: String
         get() = prefs.getString(KEY_EMAIL, null) ?: "verdroid@localhost"
         set(value) { prefs.edit().putString(KEY_EMAIL, value.trim()).apply() }
 

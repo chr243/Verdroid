@@ -147,7 +147,7 @@ object AppModule {
         messageDao: com.verdroid.app.data.local.MessageDao,
     ): ToolRegistry = ToolRegistry(
         listOf(
-            ReadFileTool(sandbox), WriteFileTool(sandbox), ListDirTool(sandbox),
+            ReadFileTool(sandbox, sharedFolder), WriteFileTool(sandbox, sharedFolder), ListDirTool(sandbox, sharedFolder),
             // Shared Documents/Verdroid folder (Input/, Output/) the user sees in their file manager
             WorkspaceListTool(sharedFolder), WorkspaceReadTool(sharedFolder),
             WorkspaceWriteTool(sharedFolder), WorkspaceDeleteTool(sharedFolder),
@@ -176,7 +176,8 @@ object AppModule {
                 // PDF read/edit in Termux Python (PyMuPDF, pypdf fallback; installed on first use after the user agrees)
                 PdfInfoTool(termux, sharedFolder), PdfExtractTextTool(termux, sharedFolder),
                 PdfExtractPagesTool(termux, sharedFolder), PdfMergeTool(termux, sharedFolder), PdfAnnotateTool(termux, sharedFolder),
-                GitStatusTool(git), GitCommitTool(git), GitCloneTool(git), GitPushTool(git),
+                GitReposTool(git), GitStatusTool(git), GitCommitTool(git), GitCloneTool(git), GitPushTool(git),
+                GitPullTool(git), GitLogTool(git), GitDiffTool(git), GitBranchTool(git),
                 ScreenReadTool(), ScreenTapTool(), ScreenSwipeTool(), ScreenTypeTool(), ScreenGlobalActionTool(),
                 // v0.9.16: persistent memory
                 MemorySaveTool(memory), MemorySearchTool(memory), MemoryDeleteTool(memory),
@@ -208,7 +209,7 @@ object AppModule {
         dynamic = mcp::agentTools,
         chatFilter = chatPresets,
         // Yes/No dialog before agent-driven deletes/moves/renames and overwrites outside Internal/
-        fileGuard = com.verdroid.app.agent.tools.FileChangeGuard(fileConsent, shared = sharedFolder.root, overwritePolicy = fileConsent.overwrite) { tool, a ->
+        fileGuard = com.verdroid.app.agent.tools.FileChangeGuard(fileConsent, shared = sharedFolder.root, overwritePolicy = fileConsent.overwrite, privateRoot = sandbox.root) { tool, a ->
             val p = (a["path"] as? kotlinx.serialization.json.JsonPrimitive)?.content
             val st = (a["strategy"] as? kotlinx.serialization.json.JsonPrimitive)?.content
             runCatching {

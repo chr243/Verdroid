@@ -34,7 +34,7 @@ object ScheduleSafety {
         "x_post",                                                               // posts publicly as the user
         "screen_tap", "screen_swipe", "screen_type", "screen_action",           // phone control (Accessibility)
         "run_shell", "rish_run",                                                // Shizuku shell = device control
-        "git_push", "git_commit",                                               // sends / changes repos
+        "git_push", "git_commit", "git_pull",                                   // sends / changes repos
         "workspace_delete", "skill_delete", "memory_delete",                    // deletes
         "cookie_login", "cookie_clear", "cookie_import",                        // login UI / credential changes
         "schedule_reminder", "schedule_task", "schedule_cancel", "schedule_pause", "schedule_resume", // no self-scheduling

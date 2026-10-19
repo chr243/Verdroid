@@ -11,7 +11,7 @@ object SelfTestCoverage {
         "tool_registry", "json", "room", "settings", "agents_md", "memory", "skills", "sandbox", "shared_folder",
         "network", "providers", "web_fetch", "web_search", "termux", "python", "pdf", "shizuku", "rish", "accessibility",
         "overlay", "git", "updater", "notifications", "font_scale", "feedback", "internal_folder", "crypto_history", "backtest_python", "file_guard", "share_target", "chat_ui", "cookies", "cookie_webview", "x_posts", "reddit", "chat_seen", "overwrite_policy", "x_post_guard", "crash_log", "twitter_tos", "model_pins",
-        "oom_hardening", "install_prompt", "x_post_limits", "ebook_resume", "update_hint", "chat_links", "assistant", "scheduling",
+        "oom_hardening", "install_prompt", "x_post_limits", "ebook_resume", "update_hint", "chat_links", "assistant", "scheduling", "git_access", "git_repos",
     )
 
     val TOOL_CHECKS: Map<String, String> = mapOf(
@@ -26,6 +26,7 @@ object SelfTestCoverage {
         "ebook_translate" to "python",
         "pdf_info" to "pdf", "pdf_extract_text" to "pdf", "pdf_extract_pages" to "pdf", "pdf_merge" to "pdf", "pdf_annotate" to "pdf",
         "git_status" to "git", "git_commit" to "git", "git_clone" to "git", "git_push" to "git",
+        "git_repos" to "git_repos", "git_pull" to "git_repos", "git_log" to "git_repos", "git_diff" to "git_repos", "git_branch" to "git_repos",
         "screen_read" to "accessibility", "screen_tap" to "accessibility", "screen_swipe" to "accessibility",
         "screen_type" to "accessibility", "screen_action" to "accessibility",
         "memory_save" to "room", "memory_search" to "memory", "memory_delete" to "room",

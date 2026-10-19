@@ -105,7 +105,8 @@ fun DeviceControlScreen(onBack: () -> Unit, vm: DeviceControlViewModel = hiltVie
                     }) { Text("About rish (GitHub)") }
                 }
 
-                Section("Git (git_clone / git_status / git_commit / git_push)") {
+                Section("Git (git_clone / git_repos / git_status / git_commit / git_push …)") {
+                    Text("Repos are cloned into Documents/Verdroid/Repos/<name>.", style = MaterialTheme.typography.bodySmall)
                     Text("Token: ${ui.gitTokenMasked ?: "not set"} · stored with EncryptedSharedPreferences", style = MaterialTheme.typography.bodySmall)
                     OutlinedTextField(token, { token = it }, label = { Text("Personal access token (repo scope)") }, singleLine = true,
                         visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())

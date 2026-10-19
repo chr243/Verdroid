@@ -39,13 +39,40 @@ class RunShellTool(private val shell: ShellExecutor, private val sandbox: Worksp
 
 private fun JsonObjectBuilder.putSet(key: String, set: Set<String>) { put(key, JsonArray(set.sorted().take(300).map { JsonPrimitive(it) })) }
 
+private const val REPO_PATH = "Repo: a name from git_repos (→ Documents/Verdroid/Repos/<name>), a path in Documents/Verdroid, or legacy:<name>. " +
+    "Omit when there's exactly one repo in Repos/."
+private fun repoProp() = "repo_path" to prop("string", REPO_PATH)
+private const val REPO_NOTE = " Works on repos in Documents/Verdroid/Repos (the folder workspace_read/workspace_write use)."
+
+/** Runs a git action; [GitAccessException]s (clear codes, no token) and other failures become JSON errors. */
+private suspend fun gitCall(block: suspend () -> String): String = try { block() }
+    catch (e: com.verdroid.app.data.git.GitAccessException) { e.json.toString() }
+    catch (e: IllegalStateException) { errorJson(e.message ?: "git failed") }
+    catch (e: IllegalArgumentException) { errorJson(e.message ?: "git failed") }
+
+private fun JsonObjectBuilder.repo(r: com.verdroid.app.data.git.RepoRef) {
+    put("repo_path", r.path); put("absolute_path", r.dir.path); put("root", r.root); if (r.legacy) put("legacy", true)
+}
+
+class GitReposTool(private val git: GitManager) : AgentTool {
+    override val name = "git_repos"
+    override val description = "List the git repos: Documents/Verdroid/Repos/<name> (where git_clone puts them) with remote URL (token removed), " +
+        "branch and last commit; plus legacy repos from the old private workspace (marked legacy). Check here before cloning again."
+    override val parameters = schema(emptyList())
+    override suspend fun execute(args: JsonObject): String = gitCall {
+        val list = git.describeRepos()
+        buildJsonObject { put("repos_dir", "${com.verdroid.app.data.storage.SharedFolder.DISPLAY_PATH}/Repos"); put("count", list.size); put("repos", list) }.toString()
+    }
+}
+
 class GitStatusTool(private val git: GitManager) : AgentTool {
     override val name = "git_status"
-    override val description = "Show git status of a repository in the workspace."
-    override val parameters = schema(emptyList(), "repo_path" to prop("string", "Repository path relative to the workspace"))
-    override suspend fun execute(args: JsonObject): String {
+    override val description = "Show git status of a repository (prints its absolute path)." + REPO_NOTE
+    override val parameters = schema(emptyList(), repoProp())
+    override suspend fun execute(args: JsonObject): String = gitCall {
         val s = git.status(args.str("repo_path"))
-        return buildJsonObject {
+        buildJsonObject {
+            put("repo_path", s.path); put("absolute_path", s.absolutePath); put("root", s.root)
             put("branch", s.branch); put("clean", s.clean)
             putSet("added", s.added); putSet("changed", s.changed); putSet("modified", s.modified)
             putSet("removed", s.removed); putSet("missing", s.missing); putSet("untracked", s.untracked); putSet("conflicting", s.conflicting)
@@ -55,46 +82,92 @@ class GitStatusTool(private val git: GitManager) : AgentTool {
 
 class GitCommitTool(private val git: GitManager) : AgentTool {
     override val name = "git_commit"
-    override val description = "Stage all changes (including deletions) and commit in a workspace repository."
-    override val parameters = schema(listOf("message"),
-        "repo_path" to prop("string", "Repository path relative to the workspace"),
-        "message" to prop("string", "Commit message"))
-    override suspend fun execute(args: JsonObject): String {
-        val msg = args.str("message")?.takeIf { it.isNotBlank() } ?: return errorJson("message is required")
-        val id = git.commit(args.str("repo_path"), msg)
-        return buildJsonObject { put("ok", true); put("commit", id) }.toString()
+    override val description = "Stage all changes (including deletions) and commit." + REPO_NOTE +
+        " With nothing to commit it fails with NOTHING_TO_COMMIT (no empty commits unless allow_empty=true)."
+    override val parameters = schema(listOf("message"), repoProp(),
+        "message" to prop("string", "Commit message"),
+        "allow_empty" to prop("boolean", "Allow a commit with no changes (default false)"))
+    override suspend fun execute(args: JsonObject): String = gitCall {
+        val msg = args.str("message")?.takeIf { it.isNotBlank() } ?: return@gitCall errorJson("message is required")
+        val r = git.commit(args.str("repo_path"), msg, args.bool("allow_empty") == true)
+        buildJsonObject { put("ok", true); put("commit", r.id); put("files", r.files); repo(r.ref) }.toString()
     }
 }
 
 class GitCloneTool(private val git: GitManager) : AgentTool {
     override val name = "git_clone"
-    override val description = "Clone an https:// git repository into the workspace (uses the Git token from settings for private repos). " +
-        "Failures carry code AUTH_FAILED (401), PERMISSION_DENIED (403: token lacks Contents permission), REPO_NOT_FOUND (404) with http_status, the server's remote text and a hint."
+    override val description = "Clone an https:// git repository into Documents/Verdroid/Repos/<repo-name> (uses the Git token from settings for " +
+        "private repos). Already cloned there → reused and pulled; that folder holding something else → <name>-2. Run git_repos first to " +
+        "find existing clones. Failures carry code AUTH_FAILED (401), PERMISSION_DENIED (403: token lacks Contents permission), " +
+        "REPO_NOT_FOUND (404) with http_status, the server's remote text and a hint."
     override val parameters = schema(listOf("url"),
         "url" to prop("string", "https:// clone URL"),
-        "path" to prop("string", "Target folder relative to the workspace (default: repo name)"),
+        "path" to prop("string", "Target folder: a name (→ Repos/<name>) or a path in Documents/Verdroid (default Repos/<repo-name>)"),
         "branch" to prop("string", "Branch to check out"))
-    override suspend fun execute(args: JsonObject): String {
-        val url = args.str("url") ?: return errorJson("url is required")
-        val path = try { git.clone(url, args.str("path"), args.str("branch"), null) }
-            catch (e: com.verdroid.app.data.git.GitAccessException) { return e.json.toString() }
-        return buildJsonObject { put("ok", true); put("path", path) }.toString()
+    override suspend fun execute(args: JsonObject): String = gitCall {
+        val url = args.str("url") ?: return@gitCall errorJson("url is required")
+        val r = git.clone(url, args.str("path"), args.str("branch"), null)
+        buildJsonObject {
+            put("ok", true); put("path", r.ref.path); repo(r.ref); r.branch?.let { put("branch", it) }
+            put("reused", r.reused); r.note?.let { put("note", it) }
+        }.toString()
     }
 }
 
 class GitPushTool(private val git: GitManager) : AgentTool {
     override val name = "git_push"
-    override val description = "Push a workspace repository to its remote using the Git token from encrypted settings. " +
-        "Failures carry code AUTH_FAILED / PERMISSION_DENIED (needs Contents: Read and write) / REPO_NOT_FOUND with http_status and the server's text."
-    override val parameters = schema(emptyList(),
-        "repo_path" to prop("string", "Repository path relative to the workspace"),
+    override val description = "Push a repository to its remote using the Git token from encrypted settings." + REPO_NOTE +
+        " Failures carry code AUTH_FAILED / PERMISSION_DENIED (needs Contents: Read and write) / REPO_NOT_FOUND with http_status and the server's text."
+    override val parameters = schema(emptyList(), repoProp(),
         "remote" to prop("string", "Remote name (default origin)"),
         "branch" to prop("string", "Branch/refspec to push (default: current branch)"))
-    override suspend fun execute(args: JsonObject): String = try {
+    override suspend fun execute(args: JsonObject): String = gitCall {
         val updates = git.push(args.str("repo_path"), args.str("remote"), args.str("branch"))
         buildJsonObject { put("ok", updates.none { "REJECTED" in it }); put("updates", JsonArray(updates.map { JsonPrimitive(it) })) }.toString()
-    } catch (e: IllegalStateException) { errorJson(e.message ?: "push failed") }
-    catch (e: com.verdroid.app.data.git.GitAccessException) { e.json.toString() }
+    }
+}
+
+class GitPullTool(private val git: GitManager) : AgentTool {
+    override val name = "git_pull"
+    override val description = "Fast-forward a repository from its remote (never overwrites local changes; diverged history → PULL_FAILED)." + REPO_NOTE
+    override val parameters = schema(emptyList(), repoProp())
+    override suspend fun execute(args: JsonObject): String = gitCall {
+        val (r, status) = git.pull(args.str("repo_path"))
+        buildJsonObject { put("ok", true); put("result", status); repo(r) }.toString()
+    }
+}
+
+class GitLogTool(private val git: GitManager) : AgentTool {
+    override val name = "git_log"
+    override val description = "Recent commits of a repository (id, author, time, message)." + REPO_NOTE
+    override val parameters = schema(emptyList(), repoProp(), "max" to prop("integer", "Number of commits (default 20, max 200)"))
+    override suspend fun execute(args: JsonObject): String = gitCall {
+        val (r, list) = git.log(args.str("repo_path"), args.int("max") ?: 20)
+        buildJsonObject {
+            repo(r)
+            putJsonArray("commits") { list.forEach { c -> addJsonObject { put("id", c.id); put("author", c.author); put("time", java.time.Instant.ofEpochMilli(c.time).toString()); put("message", c.message) } } }
+        }.toString()
+    }
+}
+
+class GitDiffTool(private val git: GitManager) : AgentTool {
+    override val name = "git_diff"
+    override val description = "Uncommitted changes of a repository vs HEAD as a unified diff." + REPO_NOTE
+    override val parameters = schema(emptyList(), repoProp(), "max_chars" to prop("integer", "Cap on diff size (default 20000, max 200000)"))
+    override suspend fun execute(args: JsonObject): String = gitCall {
+        val (r, text, cut) = git.diff(args.str("repo_path"), (args.int("max_chars") ?: 20_000).coerceIn(100, 200_000))
+        buildJsonObject { repo(r); put("truncated", cut); put("diff", text) }.toString()
+    }
+}
+
+class GitBranchTool(private val git: GitManager) : AgentTool {
+    override val name = "git_branch"
+    override val description = "List a repository's branches (local and remote-tracking) and the current one." + REPO_NOTE
+    override val parameters = schema(emptyList(), repoProp())
+    override suspend fun execute(args: JsonObject): String = gitCall {
+        val (r, current, all) = git.branches(args.str("repo_path"))
+        buildJsonObject { repo(r); current?.let { put("current", it) }; put("branches", JsonArray(all.map { JsonPrimitive(it) })) }.toString()
+    }
 }
 
 // ---------------------------------------------------------------- Accessibility
