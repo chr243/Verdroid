@@ -101,6 +101,19 @@ class CookieLoginToolTest {
         assertTrue(r.contains("\"cookies_saved\":5")); assertTrue(r.contains("\"logged_in\":true")); assertTrue(r.contains("auth_token"))
     }
 
+    @Test fun loggedInOnlyFromARealLoginCheck() = runTest {
+        fun tool(r: com.verdroid.app.ui.cookies.CookieLoginResult) = CookieLoginTool({ kotlinx.coroutines.CompletableDeferred(r) })
+        val cancelled = tool(com.verdroid.app.ui.cookies.CookieLoginResult(false, emptyList(), 0)).execute(buildJsonObject {})
+        assertTrue(cancelled, cancelled.contains("\"logged_in\":false") && cancelled.contains("cancelled"))
+        val guest = tool(com.verdroid.app.ui.cookies.CookieLoginResult(false, listOf("reddit.com"), 0, listOf("loid", "token_v2"), false, "not_logged_in"))
+            .execute(buildJsonObject { put("url", "https://www.reddit.com/login/") })
+        assertTrue(guest, guest.contains("\"logged_in\":false") && guest.contains("guest cookies") && guest.contains("unchanged"))
+        val unchecked = tool(com.verdroid.app.ui.cookies.CookieLoginResult(true, listOf("example.org"), 1, listOf("sid"), false, "unchecked")).execute(buildJsonObject {})
+        assertTrue(unchecked, unchecked.contains("\"logged_in\":false") && unchecked.contains("could not be verified"))
+        val timeout = CookieLoginTool({ kotlinx.coroutines.CompletableDeferred() }, timeoutMs = 10).execute(buildJsonObject {})
+        assertTrue(timeout, timeout.contains("\"logged_in\":false") && timeout.contains("\"reason\":\"timeout\""))
+    }
+
     @Test fun timesOutWithHint() = runTest {
         val t = CookieLoginTool({ kotlinx.coroutines.CompletableDeferred() }, timeoutMs = 10)
         assertTrue(t.execute(buildJsonObject { put("url", "https://example.org/login") }).contains("tap Done"))

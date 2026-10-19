@@ -15,12 +15,6 @@ class RedditJsonTest {
         assertEquals("reddit_session", CookieLoginBridge.markerFor("reddit.com"))
     }
 
-    @Test fun loginDetectorWaitsForRedditSession() {
-        assertEquals(LoginDetector.Verdict.NOT_YET, LoginDetector.check("reddit.com", "https://www.reddit.com/", setOf("token_v2", "loid", "csv"), 0, 0))
-        assertEquals(LoginDetector.Verdict.DONE, LoginDetector.check("reddit.com", "https://www.reddit.com/", setOf("token_v2", "reddit_session"), 0, 0))
-        assertEquals(LoginDetector.Verdict.WAIT, LoginDetector.check("reddit.com", "https://www.reddit.com/login/", setOf("reddit_session"), 0, 0))
-    }
-
     @Test fun urls() {
         assertEquals("https://www.reddit.com/search/?q=pixel+10&type=posts&sort=top&t=week", RedditJson.searchUrl("pixel 10", null, "top", "week"))
         assertEquals("https://www.reddit.com/r/Android/search/?restrict_sr=1&q=pixel&type=posts&sort=relevance",
@@ -61,8 +55,18 @@ class RedditJsonTest {
         assertFalse(RedditJson.loggedIn(listOf(BrowserCookie("token_v2", jwt("""{"sub":"loid"}"""), ".reddit.com"))))
         val names = RedditJson.loginNames(listOf("token_v2" to jwt("""{"sub":"user"}"""), "loid" to "x"))
         assertTrue(RedditJson.USER_TOKEN_MARK in names)
-        assertEquals(LoginDetector.Verdict.DONE, LoginDetector.check("reddit.com", "https://www.reddit.com/", names, 0, 0))
         assertFalse(RedditJson.isLoggedInNames(RedditJson.loginNames(listOf("token_v2" to jwt("""{"sub":"loid"}""")))))
+    }
+
+    @Test fun guestTokenWithT2LidIsNotALogin() {
+        val guest = jwt("""{"sub":"loid","lid":"t2_guest1","aid":"t2_guest1","exp":1}""")
+        assertFalse(RedditJson.isUserToken(guest))
+        assertFalse(RedditJson.isUserToken(jwt("""{"lid":"t2_x"}""")))          // no sub = guest
+        assertFalse(RedditJson.isUserToken(jwt("""{"sub":"","aid":"t2_x"}""")))
+        assertTrue(RedditJson.isUserToken(jwt("""{"sub":"user","lid":"t2_me"}""")))
+        val guestNames = RedditJson.loginNames(listOf("token_v2" to guest, "loid" to "x", "csv" to "2", "edgebucket" to "e"))
+        assertFalse(RedditJson.isLoggedInNames(guestNames))
+        assertFalse(RedditJson.loggedIn(listOf(BrowserCookie("token_v2", guest, ".reddit.com"), BrowserCookie("loid", "x", ".reddit.com"))))
     }
 
     @Test fun blankPageDetection() {

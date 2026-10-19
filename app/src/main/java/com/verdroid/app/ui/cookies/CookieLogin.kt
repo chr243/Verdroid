@@ -28,8 +28,10 @@ data class CookieLoginResult(
     val saved: Boolean, val sites: List<String>, val count: Int,
     /** Cookie NAMES saved (names are not secret; values never leave the store). */
     val names: List<String> = emptyList(),
-    /** The site's login marker was present (X: auth_token); false = probably guest cookies only. */
+    /** A real login check passed (X: auth_token; Reddit: reddit_session or a user token_v2); false = cancelled / guest only / unknown. */
     val loggedIn: Boolean = false,
+    /** saved | cancelled | timeout | not_logged_in (guest cookies only, nothing saved) | no_cookies | unchecked (site without a known login cookie). */
+    val reason: String = if (saved) "saved" else "cancelled",
 )
 
 /** Lets cookie_login wait for the login screen (one at a time). */
@@ -40,6 +42,8 @@ object CookieLoginBridge {
         .putExtra(EXTRA_URL, url).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 
     const val EXTRA_URL = "url"
+    /** The login screen and cookie_login both give up after this long (nothing saved). */
+    const val TIMEOUT_MS = 10 * 60_000L
     const val DEFAULT_URL = "https://x.com/i/flow/login"
 
     /** WebView UA → plain mobile Chrome UA (drop "; wv" and "Version/4.0"); X serves a blank page to WebView UAs. */
@@ -72,20 +76,31 @@ object CookieLoginBridge {
         val fresh = sites.flatMap { s ->
             BrowserCookies.fromCookieHeader(s, urlsFor(s).mapNotNull { runCatching { read(it) }.getOrNull() }.joinToString("; "))
         }
-        if (fresh.isEmpty()) return CookieLoginResult(false, sites, 0)
-        vault.save(BrowserCookies.replaceSites(vault.all(), sites.filter { s -> fresh.any { BrowserCookies.siteOf(it.host) == s } }, fresh))
+        if (fresh.isEmpty()) return CookieLoginResult(false, sites, 0, reason = "no_cookies")
         val names = fresh.map { it.name }.distinct().sorted()
-        val marker = markerFor(BrowserCookies.siteOf(host))
         val site = BrowserCookies.siteOf(host)
+        val marker = markerFor(site)
+        val loggedIn = loggedIn(site, fresh)
+        // Never overwrite the stored cookies with a guest-only set from a login that didn't happen.
+        if (marker != null && !loggedIn) return CookieLoginResult(false, sites, 0, names, loggedIn = false, reason = "not_logged_in")
+        vault.save(BrowserCookies.replaceSites(vault.all(), sites.filter { s -> fresh.any { BrowserCookies.siteOf(it.host) == s } }, fresh))
         return CookieLoginResult(true, fresh.map { BrowserCookies.siteOf(it.host) }.distinct(), fresh.size, names,
-            loggedIn = if (site == "reddit.com") com.verdroid.app.data.cookies.RedditJson.loggedIn(fresh) else marker == null || marker in names)
+            loggedIn = loggedIn, reason = if (marker == null) "unchecked" else "saved")
+    }
+
+    /** Real login check from cookies (values only inspected here): Reddit session / user token, else the site's marker cookie. */
+    fun loggedIn(site: String, cookies: List<com.verdroid.app.data.cookies.BrowserCookie>): Boolean {
+        if (site == "reddit.com") return com.verdroid.app.data.cookies.RedditJson.loggedIn(cookies)
+        val marker = markerFor(site) ?: return false
+        return cookies.any { BrowserCookies.siteOf(it.host) == site && it.name == marker && it.value.isNotBlank() }
     }
 }
 
-/** Decides when a WebView login has finished (pure, unit-tested). Only cookie names/counts, never values. */
+/**
+ * Login-screen helpers (pure, unit-tested). There is NO auto-close: the screen closes only on Done (with the real login
+ * check, [CookieLoginBridge.capture]), Cancel, back or the 10-minute timeout, never on a page load or cookie change.
+ */
 object LoginDetector {
-    enum class Verdict { NOT_YET, WAIT, DONE }
-    private val loginPath = Regex("login|signin|sign-in|sign_in|/flow/|/auth|oauth|session", RegexOption.IGNORE_CASE)
 
     /** [BLANK_JS] result ("\"chars,elements\"") → nothing visible. Shadow-DOM pages have little innerText, so require few elements too. */
     fun isBlank(jsResult: String?): Boolean {
@@ -103,33 +118,12 @@ object LoginDetector {
         else "The page didn't show. Update Android System WebView (Play Store) and try again, or import cookies from a browser export (cookie_import)."
     }
 
-    fun isLoginUrl(url: String?): Boolean = url != null && loginPath.containsMatchIn(runCatching { java.net.URI(url).path.orEmpty() }.getOrDefault(url))
-
-    /**
-     * [names]: cookie names now set for the site; [baseline]: cookie count when the screen opened;
-     * [markerAgeMs]: how long the login marker has been seen (0 = just now).
-     */
-    fun check(site: String, url: String?, names: Set<String>, baseline: Int, markerAgeMs: Long): Verdict {
-        if (site == "x.com" || site == "twitter.com") {
-            if ("auth_token" !in names) return Verdict.NOT_YET
-            val settled = ("ct0" in names && "twid" in names) || (url != null && !url.contains("/i/flow/")) || markerAgeMs >= 1_500
-            return if (settled) Verdict.DONE else Verdict.WAIT
-        }
-        if (site == "reddit.com") {
-            if (!com.verdroid.app.data.cookies.RedditJson.isLoggedInNames(names)) return Verdict.NOT_YET
-            return if ((url != null && !isLoginUrl(url)) || markerAgeMs >= 1_500) Verdict.DONE else Verdict.WAIT
-        }
-        if (url == null || isLoginUrl(url) || names.size <= baseline) return Verdict.NOT_YET
-        return if (markerAgeMs >= 1_000) Verdict.DONE else Verdict.WAIT
-    }
 }
 
 /** Full-screen WebView: the user logs in normally, taps Done, the cookies go into the encrypted CookieStore. */
 class CookieLoginActivity : ComponentActivity() {
     private var finished = false
     private var web: WebView? = null
-    private var baseline = -1
-    private var markerSince = 0L
     private val handler = android.os.Handler(android.os.Looper.getMainLooper())
 
     private fun names(site: String): Set<String> {
@@ -137,24 +131,8 @@ class CookieLoginActivity : ComponentActivity() {
         return if (site == "reddit.com") com.verdroid.app.data.cookies.RedditJson.loginNames(pairs) else pairs.map { it.first }.toSet()
     }
 
-    /** Auto-close: called on page start/finish/history change; saves and closes once the site shows a login cookie. */
-    private fun autoCheck(loginUrl: String, current: String?) {
-        if (finished) return
-        val host = runCatching { java.net.URI(loginUrl).host }.getOrNull() ?: return
-        val site = BrowserCookies.siteOf(host)
-        val n = names(site)
-        if (baseline < 0) baseline = n.size
-        val now = android.os.SystemClock.elapsedRealtime()
-        val v = LoginDetector.check(site, current, n, baseline, if (markerSince == 0L) 0 else now - markerSince)
-        when (v) {
-            LoginDetector.Verdict.NOT_YET -> markerSince = 0L
-            LoginDetector.Verdict.WAIT -> {
-                if (markerSince == 0L) markerSince = now
-                handler.postDelayed({ autoCheck(loginUrl, current) }, 600)
-            }
-            LoginDetector.Verdict.DONE -> done(loginUrl, save = true)
-        }
-    }
+    /** Closes the screen (nothing saved) when the user leaves it open this long; cookie_login waits the same time. */
+    private val timeout = android.os.Handler(android.os.Looper.getMainLooper())
 
     @OptIn(ExperimentalMaterial3Api::class)
     @SuppressLint("SetJavaScriptEnabled")
@@ -163,6 +141,8 @@ class CookieLoginActivity : ComponentActivity() {
         val url = intent.getStringExtra(CookieLoginBridge.EXTRA_URL)?.takeIf { it.startsWith("https://") || it.startsWith("http://") }
             ?: CookieLoginBridge.DEFAULT_URL
         CookieManager.getInstance().setAcceptCookie(true)
+        timeout.postDelayed({ if (!finished) finish(url, CookieLoginResult(false, emptyList(), 0, reason = "timeout"), "Login screen closed after 10 minutes; nothing saved") },
+            CookieLoginBridge.TIMEOUT_MS)
         setContent {
             VerdroidTheme {
                 var title by remember { mutableStateOf(url) }
@@ -223,9 +203,9 @@ class CookieLoginActivity : ComponentActivity() {
                                     }
                                 }
                                 webViewClient = object : WebViewClient() {
-                                    override fun onPageStarted(view: WebView?, u: String?, favicon: android.graphics.Bitmap?) { error = null; autoCheck(url, u) }
+                                    override fun onPageStarted(view: WebView?, u: String?, favicon: android.graphics.Bitmap?) { error = null }
                                     override fun onPageFinished(view: WebView?, u: String?) {
-                                        title = u.orEmpty(); progress = 100; autoCheck(url, u)
+                                        title = u.orEmpty(); progress = 100
                                         // A login page that is still empty after a few seconds: say why and what to try.
                                         handler.postDelayed({
                                             if (finished) return@postDelayed
@@ -236,7 +216,6 @@ class CookieLoginActivity : ComponentActivity() {
                                         if (request?.isForMainFrame == true && (response?.statusCode ?: 0) >= 400)
                                             error = "The site answered HTTP ${response?.statusCode} (blocked?). " + LoginDetector.blankHint(url)
                                     }
-                                    override fun doUpdateVisitedHistory(view: WebView?, u: String?, isReload: Boolean) { autoCheck(url, u) }
                                     override fun onReceivedError(view: WebView?, request: WebResourceRequest?, err: WebResourceError?) {
                                         if (request?.isForMainFrame == true) error = "Couldn't load page: ${err?.description ?: "error"}"
                                     }
@@ -279,13 +258,18 @@ class CookieLoginActivity : ComponentActivity() {
             return
         }
         val result = CookieLoginBridge.capture(url, CookieStore(applicationContext)) { cm.getCookie(it) }
+        if (result.reason == "not_logged_in") {  // guest cookies only: nothing saved, keep the screen open
+            android.widget.Toast.makeText(this, "Not logged in yet (no $marker cookie). Finish logging in, then tap Done.", android.widget.Toast.LENGTH_LONG).show()
+            return
+        }
         android.util.Log.i("CookieLogin", "saved cookie names for ${result.sites}: ${result.names}") // names only, never values
         finish(url, result, if (result.saved) "Saved ${result.count} cookies for ${result.sites.joinToString()}" +
-            (if (marker != null) " (logged in)" else "") else "No cookies found — are you logged in?")
+            (if (result.loggedIn) " (logged in)" else "") else "No cookies found — are you logged in?")
     }
 
     private fun finish(@Suppress("UNUSED_PARAMETER") url: String, result: CookieLoginResult, toast: String) {
         finished = true
+        timeout.removeCallbacksAndMessages(null)
         android.widget.Toast.makeText(this, toast, android.widget.Toast.LENGTH_LONG).show()
         CookieLoginBridge.pending?.complete(result)
         finish()
@@ -293,6 +277,7 @@ class CookieLoginActivity : ComponentActivity() {
 
     override fun onDestroy() {
         handler.removeCallbacksAndMessages(null)
+        timeout.removeCallbacksAndMessages(null)
         if (!finished && isFinishing) CookieLoginBridge.pending?.complete(CookieLoginResult(false, emptyList(), 0))
         super.onDestroy()
     }

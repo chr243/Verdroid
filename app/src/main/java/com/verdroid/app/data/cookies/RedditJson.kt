@@ -36,15 +36,17 @@ object RedditJson {
 
     fun isLoggedInNames(names: Set<String>): Boolean = LOGIN_COOKIE in names || USER_TOKEN_MARK in names
 
-    /** token_v2 JWT payload: sub == "user" or lid starting with t2_ (account id) = logged in; sub "loid" = guest. */
+    /**
+     * token_v2 JWT payload: sub == "user" or sub "t2_…" = logged in. Guests have sub "loid" and ALSO carry lid/aid "t2_…"
+     * (loids are t2 ids), so lid/aid alone never count; a missing sub is a guest.
+     */
     fun isUserToken(jwt: String?): Boolean {
         val part = jwt?.split('.')?.getOrNull(1)?.takeIf { it.isNotEmpty() } ?: return false
         val json = runCatching { String(java.util.Base64.getUrlDecoder().decode(part.trimEnd('=').let { it + "=".repeat((4 - it.length % 4) % 4) })) }
             .getOrNull() ?: return false
         val o = runCatching { Json.parseToJsonElement(json).jsonObject }.getOrNull() ?: return false
         val sub = (o["sub"] as? JsonPrimitive)?.contentOrNull.orEmpty()
-        val lid = (o["lid"] as? JsonPrimitive)?.contentOrNull.orEmpty()
-        return sub == "user" || sub.startsWith("t2_") || lid.startsWith("t2_")
+        return sub == "user" || sub.startsWith("t2_")
     }
 
     fun subreddit(raw: String?): String? = raw?.trim()?.removePrefix("/")?.removePrefix("r/")?.removePrefix("/")?.trimEnd('/')

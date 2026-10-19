@@ -182,12 +182,15 @@ class CookieOpenTool(termux: TermuxRunner, folder: SharedFolder, private val vau
  */
 class CookieLoginTool(
     private val launch: (String) -> kotlinx.coroutines.CompletableDeferred<com.verdroid.app.ui.cookies.CookieLoginResult>?,
-    private val timeoutMs: Long = 10 * 60_000L,
+    /** A bit longer than the screen's own 10-min timeout, which closes it and answers "timeout". */
+    private val timeoutMs: Long = com.verdroid.app.ui.cookies.CookieLoginBridge.TIMEOUT_MS + 15_000L,
 ) : AgentTool {
     override val name = "cookie_login"
     override val description = "$COOKIE_NOTE Fallback only: for X, call it only after x_timeline/x_user_posts/x_search report NOT_LOGGED_IN (never first or just in case); " +
         "for Reddit only when the user wants to log in (url=${com.verdroid.app.ui.cookies.CookieLoginBridge.REDDIT_URL}). Opens a full-screen in-app browser so the user logs in to a site themselves (default x.com), " +
-        "then taps Done; the session cookies are saved encrypted for cookie_open. Waits up to 10 min. Tell the user to log in and tap Done. " +
+        "then taps Done; the session cookies are saved encrypted for cookie_open. The screen never closes by itself: only Done, Cancel, back or after 10 min. " +
+        "Tell the user to log in and tap Done. logged_in is true only when a real login cookie was found (X auth_token, Reddit reddit_session / user token); " +
+        "guest-only cookies on X/Reddit are not saved (the stored ones stay). " +
         "Some sites (e.g. Google) block this kind of login."
     override val parameters = schema(emptyList(), "url" to prop("string", "Login page URL (default https://x.com/i/flow/login)"))
 
@@ -195,12 +198,22 @@ class CookieLoginTool(
         val url = args.str("url")?.trim()?.takeIf { it.startsWith("https://") || it.startsWith("http://") } ?: com.verdroid.app.ui.cookies.CookieLoginBridge.DEFAULT_URL
         val d = launch(url) ?: return errorJson("Could not open the login screen. Ask the user to use Settings → Tools → Logged-in sites → Log in.")
         val r = kotlinx.coroutines.withTimeoutOrNull(timeoutMs) { d.await() }
-            ?: return errorJson("Login screen still open after ${timeoutMs / 60_000} min. Ask the user to tap Done when logged in, then call cookie_list.")
+            ?: return buildJsonObject {
+                put("ok", false); put("logged_in", false); put("reason", "timeout")
+                put("error", "Login screen still open after ${timeoutMs / 60_000} min; nothing was saved. Ask the user to finish logging in and tap Done, then call cookie_list.")
+            }.toString()
         return buildJsonObject {
-            put("ok", r.saved); put("logged_in", r.loggedIn)
+            // logged_in only from a real login check (X auth_token; Reddit reddit_session or a user token_v2), never assumed.
+            put("ok", r.saved); put("logged_in", r.saved && r.loggedIn); put("reason", r.reason)
             put("sites", JsonArray(r.sites.map(::JsonPrimitive))); put("cookies_saved", r.count)
-            put("cookie_names", JsonArray(r.names.map(::JsonPrimitive)))
-            if (!r.saved) put("note", "Nothing saved (cancelled, or not logged in).")
+            if (r.saved) put("cookie_names", JsonArray(r.names.map(::JsonPrimitive)))
+            when (r.reason) {
+                "cancelled" -> put("note", "The user cancelled; nothing was saved and the stored cookies are unchanged.")
+                "timeout" -> put("note", "The login screen was left open for 10 minutes and closed; nothing was saved.")
+                "not_logged_in" -> put("note", "Only guest cookies were found (the user didn't log in); nothing was saved and the stored cookies are unchanged.")
+                "no_cookies" -> put("note", "No cookies were found; nothing was saved.")
+                "unchecked" -> put("note", "Cookies saved, but this site has no known login cookie, so the login could not be verified.")
+            }
         }.toString()
     }
 }

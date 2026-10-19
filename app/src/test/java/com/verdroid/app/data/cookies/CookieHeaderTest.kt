@@ -46,6 +46,24 @@ class CookieHeaderTest {
             when (u) { "https://x.com/" -> "guest_id=g; gt=1"; "https://api.x.com/" -> "gt=1; d_prefs=p"; else -> null }
         }
         assertEquals(listOf("d_prefs", "gt", "guest_id"), r.names)
-        assertFalse(r.loggedIn)
+        assertFalse(r.loggedIn); assertFalse(r.saved); assertEquals("not_logged_in", r.reason)
+        assertTrue(vault.all().isEmpty())
+    }
+
+    private fun jwt(p: String) = "h." + java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(p.toByteArray()) + ".s"
+
+    @Test fun guestRedditCookiesNeverOverwriteTheStoredOnes() {
+        val stored = listOf(BrowserCookie("reddit_session", "OLDSESSION", ".reddit.com"), BrowserCookie("loid", "old", ".reddit.com"))
+        val vault = CookieVault.InMemory(stored)
+        val guest = "token_v2=" + jwt("""{"sub":"loid","lid":"t2_guest","aid":"t2_guest"}""") + "; loid=g; csv=2; edgebucket=e; session_tracker=s"
+        val r = CookieLoginBridge.capture("https://www.reddit.com/login/", vault) { u -> if ("reddit.com" in u) guest else null }
+        assertFalse(r.saved); assertFalse(r.loggedIn); assertEquals("not_logged_in", r.reason)
+        assertEquals(stored, vault.all())
+        val user = "token_v2=" + jwt("""{"sub":"user"}""") + "; loid=g"
+        val ok = CookieLoginBridge.capture("https://www.reddit.com/login/", vault) { u -> if ("reddit.com" in u) user else null }
+        assertTrue(ok.saved && ok.loggedIn); assertEquals("saved", ok.reason)
+        // A site without a known login cookie saves, but is never reported as logged in.
+        val other = CookieLoginBridge.capture("https://example.org/login", CookieVault.InMemory()) { u -> if ("example.org" in u) "sid=1" else null }
+        assertTrue(other.saved); assertFalse(other.loggedIn); assertEquals("unchecked", other.reason)
     }
 }

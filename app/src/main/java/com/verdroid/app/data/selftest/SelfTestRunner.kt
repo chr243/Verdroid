@@ -318,6 +318,16 @@ class SelfTestRunner @Inject constructor(
             check(com.verdroid.app.agent.tools.TermuxPythonTool.cookieSites(kotlinx.serialization.json.buildJsonObject {
                 put("cookies_for", kotlinx.serialization.json.JsonArray(listOf(kotlinx.serialization.json.JsonPrimitive("https://www.reddit.com/r/x")))) }) == listOf("reddit.com")) { "cookies_for site parsing" }
             check(com.verdroid.app.ui.cookies.CookieLoginBridge.markerFor("reddit.com") == "reddit_session") { "reddit login marker" }
+            run {
+                fun jwt(p: String) = "h." + java.util.Base64.getUrlEncoder().withoutPadding().encodeToString(p.toByteArray()) + ".s"
+                val guest = R.loginNames(listOf("token_v2" to jwt("{\"sub\":\"loid\",\"lid\":\"t2_g\"}"), "loid" to "x"))
+                check(!R.isUserToken(jwt("{\"sub\":\"loid\",\"lid\":\"t2_g\"}")) && R.isUserToken(jwt("{\"sub\":\"user\"}"))) { "guest token_v2 counted as a login" }
+                check(!R.isLoggedInNames(guest)) { "guest Reddit cookies must not pass the login check on Done" }
+                val v = com.verdroid.app.data.cookies.CookieVault.InMemory(listOf(com.verdroid.app.data.cookies.BrowserCookie("loid", "keep", ".reddit.com")))
+                val r = com.verdroid.app.ui.cookies.CookieLoginBridge.capture("https://www.reddit.com/login/", v) { u ->
+                    if ("reddit.com" in u) "token_v2=" + jwt("{\"sub\":\"loid\",\"lid\":\"t2_g\"}") + "; loid=g" else null }
+                check(!r.saved && !r.loggedIn && v.all().single().value == "keep") { "guest-only login must not overwrite stored cookies" }
+            }
             check(com.verdroid.app.domain.schedule.ScheduleSafety.blockReason("cookie_open", kotlinx.serialization.json.buildJsonObject {}) == null) { "Reddit reads must work in scheduled runs" }
             if (!R.loggedIn(cookieVault.all())) throw SkipCheck("no Reddit login saved (Settings → Tools → Logged-in sites → Log in to Reddit); Reddit falls back to web search")
             requireTermux()
