@@ -11,6 +11,7 @@ import com.google.ai.edge.litertlm.ConversationConfig
 import com.google.ai.edge.litertlm.Engine
 import com.google.ai.edge.litertlm.EngineConfig
 import com.google.ai.edge.litertlm.Message
+import com.google.ai.edge.litertlm.MessageCallback
 import com.google.ai.edge.litertlm.OpenApiTool
 import com.google.ai.edge.litertlm.SamplerConfig
 import com.google.ai.edge.litertlm.ToolCall
@@ -21,7 +22,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.sync.Mutex
+import kotlin.coroutines.resume
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -176,20 +179,38 @@ class LiteRtLmEngine @Inject constructor(
             var chunks = 0L
             var first = 0L
             val start = System.currentTimeMillis()
-            try {
-                conversation.sendMessageAsync(toMessage(last)).collect { msg ->
-                    if (first == 0L) first = System.currentTimeMillis()
-                    chunks++
-                    msg.contents.contents.forEach { c -> if (c is Content.Text) text.append(c.text) }
-                    msg.channels["thought"]?.let(thought::append)
-                    msg.toolCalls.forEach { tc -> calls += tc.name to tc.arguments }
+            // Callback API (not the Flow wrapper): every callback is ours and catches Throwable, so nothing thrown on
+            // LiteRT's native callback thread can take the process down.
+            val err: Throwable? = try {
+                suspendCancellableCoroutine { cont ->
+                    val done = java.util.concurrent.atomic.AtomicBoolean(false)
+                    fun finish(t: Throwable?) { if (done.compareAndSet(false, true) && cont.isActive) cont.resume(t) }
+                    cont.invokeOnCancellation { runCatching { conversation.cancelProcess() } }
+                    try {
+                        conversation.sendMessageAsync(toMessage(last), object : MessageCallback {
+                            override fun onMessage(message: Message) {
+                                try {
+                                    synchronized(text) {
+                                        if (first == 0L) first = System.currentTimeMillis()
+                                        chunks++
+                                        message.contents.contents.forEach { c -> if (c is Content.Text) text.append(c.text) }
+                                        message.channels["thought"]?.let(thought::append)
+                                        message.toolCalls.forEach { tc -> calls += tc.name to tc.arguments }
+                                    }
+                                } catch (t: Throwable) { Log.w(TAG, "onMessage", t) }
+                            }
+                            override fun onDone() { try { finish(null) } catch (t: Throwable) { Log.w(TAG, "onDone", t) } }
+                            override fun onError(throwable: Throwable) { try { finish(throwable) } catch (t: Throwable) { Log.w(TAG, "onError", t) } }
+                        })
+                    } catch (t: Throwable) { finish(t) }
                 }
             } catch (c: CancellationException) {
                 runCatching { conversation.cancelProcess() }
-                // Native-side cancel arrives as a CancellationException too; only a cancelled caller rethrows.
-                kotlinx.coroutines.currentCoroutineContext().let { ctx -> if (ctx[kotlinx.coroutines.Job]?.isCancelled == true) throw c }
-                return LiteRtFormat.reply(text.toString(), thought.toString(), emptyList(), "cancelled", 0, chunks, 0, backend)
+                throw c
             }
+            if (err is CancellationException) // cancelled on the native side
+                return LiteRtFormat.reply(text.toString(), thought.toString(), emptyList(), "cancelled", 0, chunks, 0, backend)
+            if (err != null) throw err
             val end = System.currentTimeMillis()
             val genMs = (end - (if (first > 0) first else start)).coerceAtLeast(1)
             val promptTokens = runCatching { conversation.getTokenCount().toLong() - chunks }.getOrDefault(0L).coerceAtLeast(0)

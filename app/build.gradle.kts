@@ -78,12 +78,6 @@ android {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
-    kotlinOptions {
-        jvmTarget = "17"
-        // LiteRT-LM 0.16.1 is compiled with Kotlin 2.3 metadata; this project is on Kotlin 2.1. We only use its plain
-        // public API (classes, data classes, Flow), which reads fine; see AGENTS.md before bumping either side.
-        freeCompilerArgs += listOf("-Xskip-metadata-version-check")
-    }
     buildFeatures {
         compose = true
         buildConfig = true
@@ -171,4 +165,8 @@ dependencies {
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.robolectric)
     testImplementation(libs.androidx.test.core)
+}
+
+kotlin {
+    compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17) }
 }

@@ -1,11 +1,11 @@
 [versions]
 jsoup = "1.18.1"
 agp = "8.7.3"
-kotlin = "2.1.0"
-ksp = "2.1.0-1.0.29"
-hilt = "2.54"
+kotlin = "2.2.21"
+ksp = "2.2.21-2.0.5"
+hilt = "2.57.2"
 androidxHilt = "1.2.0"
-room = "2.6.1"
+room = "2.7.2"
 composeBom = "2024.12.01"
 # Material 3 tonal palettes from a seed (Kotlin port of material-color-utilities; 2.0.0 = Kotlin 2.0.20, compatible with 2.1.0)
 materialKolor = "2.0.0"
@@ -20,13 +20,14 @@ securityCrypto = "1.1.0-alpha06"
 retrofit = "2.11.0"
 okhttp = "4.12.0"
 serialization = "1.7.3"
-coroutines = "1.9.0"
+# 1.11.0: LiteRT-LM is compiled against it (its POM says 1.9.0 but it calls SendChannel.close$default, which only 1.11 has).
+coroutines = "1.11.0"
 junit = "4.13.2"
 robolectric = "4.14.1"
 androidxTestCore = "1.6.1"
 savedstate = "1.2.1"
 shizuku = "13.1.5"
-# Google LiteRT-LM (second on-device engine, .litertlm). 0.16.1 = newest built with Kotlin 2.2 metadata; 0.17+ needs Kotlin 2.4.
+# Google LiteRT-LM (second on-device engine, .litertlm). 0.16.1 has Kotlin 2.3 metadata (readable by our 2.2 compiler, n+1); 0.17+ has 2.4 metadata and needs Kotlin 2.3+ (Hilt 2.59 then needs AGP 9).
 litertlm = "0.16.1"
 jgit = "5.13.3.202401111512-r"
 
