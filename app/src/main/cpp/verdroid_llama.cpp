@@ -77,15 +77,39 @@ ggml_backend_dev_t gpu_device() {
     return nullptr;
 }
 
+// Strings cross JNI as standard UTF-8 bytes (String.getBytes / new String(bytes, UTF-8)), never via the "modified UTF-8"
+// of GetStringUTFChars/NewStringUTF: emoji and other 4-byte characters stay intact both ways, and any invalid
+// sequence (e.g. a token that splits a character) becomes U+FFFD instead of tripping CheckJNI.
 std::string jstr(JNIEnv * env, jstring s) {
     if (!s) return {};
-    const char * c = env->GetStringUTFChars(s, nullptr);
-    std::string out(c ? c : "");
-    if (c) env->ReleaseStringUTFChars(s, c);
+    jclass cls = env->GetObjectClass(s);
+    jmethodID get_bytes = env->GetMethodID(cls, "getBytes", "(Ljava/lang/String;)[B");
+    jstring cs = env->NewStringUTF("UTF-8");
+    auto arr = (jbyteArray) env->CallObjectMethod(s, get_bytes, cs);
+    std::string out;
+    if (arr && !env->ExceptionCheck()) {
+        jsize n = env->GetArrayLength(arr);
+        out.resize((size_t) n);
+        if (n > 0) env->GetByteArrayRegion(arr, 0, n, reinterpret_cast<jbyte *>(&out[0]));
+    } else env->ExceptionClear();
+    if (arr) env->DeleteLocalRef(arr);
+    env->DeleteLocalRef(cs);
+    env->DeleteLocalRef(cls);
     return out;
 }
 
-jstring to_j(JNIEnv * env, const std::string & s) { return env->NewStringUTF(s.c_str()); }
+jstring to_j(JNIEnv * env, const std::string & s) {
+    jbyteArray arr = env->NewByteArray((jsize) s.size());
+    if (!arr) { env->ExceptionClear(); return env->NewStringUTF("{\"error\":\"Out of memory\"}"); }
+    env->SetByteArrayRegion(arr, 0, (jsize) s.size(), reinterpret_cast<const jbyte *>(s.data()));
+    jclass cls = env->FindClass("java/lang/String");
+    jmethodID ctor = env->GetMethodID(cls, "<init>", "([BLjava/lang/String;)V");
+    jstring cs = env->NewStringUTF("UTF-8");
+    auto out = (jstring) env->NewObject(cls, ctor, arr, cs);
+    if (env->ExceptionCheck()) { env->ExceptionClear(); out = env->NewStringUTF("{\"error\":\"Couldn't decode the reply\"}"); }
+    env->DeleteLocalRef(cs); env->DeleteLocalRef(arr); env->DeleteLocalRef(cls);
+    return out;
+}
 
 std::string error_json(const std::string & msg) {
     common_json j = common_json::object();
@@ -366,6 +390,9 @@ Java_com_verdroid_app_data_localllm_LlamaNative_nativeLoad(JNIEnv * env, jobject
 
 JNIEXPORT jstring JNICALL
 Java_com_verdroid_app_data_localllm_LlamaNative_nativeLastError(JNIEnv * env, jobject) { return to_j(env, g_last_error); }
+
+JNIEXPORT jstring JNICALL
+Java_com_verdroid_app_data_localllm_LlamaNative_nativeEcho(JNIEnv * env, jobject, jstring s) { return to_j(env, jstr(env, s)); }
 
 JNIEXPORT void JNICALL
 Java_com_verdroid_app_data_localllm_LlamaNative_nativeFree(JNIEnv *, jobject, jlong h) {

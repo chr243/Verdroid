@@ -538,6 +538,8 @@ class SelfTestRunner @Inject constructor(
             check(G.nativeLayers(com.verdroid.app.data.localllm.GpuPolicy.Mode.CPU, -1) == 0 && G.nativeLayers(com.verdroid.app.data.localllm.GpuPolicy.Mode.GPU, -1) == -1) { "GPU layers" }
             check(com.verdroid.app.data.localllm.LlamaNative.available) { com.verdroid.app.data.localllm.LlamaNative.unavailableReason }
             check(com.verdroid.app.data.localllm.LlamaNative.nativeHasVulkan()) { "arm64 build must include the Vulkan backend" }
+            val emoji = "Grüße 😀 ✓ \uD83D\uDE80 中文"
+            check(com.verdroid.app.data.localllm.LlamaNative.nativeEcho(emoji) == emoji) { "UTF-8 (emoji) survives the JNI boundary" }
             val store = com.verdroid.app.data.localllm.LocalModelStore(context)
             val n = store.models.value.size
             // Probe runs in the throwaway :gpuprobe process; a failing GPU is not a test failure (CPU fallback).

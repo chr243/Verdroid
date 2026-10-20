@@ -22,6 +22,8 @@ object LlamaNative {
     /** JSON {ok, device, devices[], max_err, ms, error}. Only call in the probe process (see [GpuProbeService]). */
     external fun nativeGpuProbe(): String
     external fun nativeLastError(): String
+    /** Round-trips [s] through the native UTF-8 conversion (self-test: emoji must survive). */
+    external fun nativeEcho(s: String): String
     external fun nativeFree(handle: Long)
     external fun nativeCancel(handle: Long)
     /** JSON: {desc, n_ctx, n_ctx_train, size_bytes, n_params, has_template, system}. */
