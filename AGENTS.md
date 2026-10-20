@@ -4,6 +4,8 @@ Verdroid (`com.verdroid.app`) is a native Android app (Kotlin, Jetpack Compose, 
 
 ## Current state (v1.0.55, versionCode 84)
 
+- **On-device LLM (unreleased, main):** vendored llama.cpp v0.7.0 (`app/src/main/cpp/llama.cpp`, CPU backend only, see `VERDROID_VENDOR.txt`) + JNI `app/src/main/cpp/verdroid_llama.cpp` → `libverdroid_llama.so`, arm64-v8a only (NDK 27.1.12297006, CMake 3.22.1). Kotlin in `data/localllm/`: `LlamaNative`, `LocalModelStore` (imported .gguf copied to `files/models/`, ctx/threads), `LocalLlmEngine` (one loaded model, RAM pre-check), `LocalLlmClient` (`local:<id>` in `completeWith`; first if it heads Model priority, else last fallback; any failure → Unavailable → next model), `LocalPrompt` (short system prompt, ≤12 core tools, history fit), `LocalReply`. Uses `common_chat_session` (GGUF Jinja template + tool-call grammar/parser) and KV prefix reuse. UI: Settings → LLM providers → "Local (on-device)" (`ui/provider/LocalProviderPanel.kt`). Self-test `local_llm`. Native smoke test: configure the cpp dir with `-DVERDROID_NATIVE_TEST=ON` for x86_64 and run `native_smoke model.gguf`.
+
 - **x_post click:** helper dismisses overlays, scrolls the Post button into view, and on `ElementClickInterceptedException` (native click never reached the button) falls back once to a JS click only if the compose box still holds our text; existing success/uncertain detection applies. Never double-posts.
 
 

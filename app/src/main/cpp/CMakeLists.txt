@@ -1,0 +1,46 @@
+# Verdroid on-device LLM: vendored llama.cpp (CPU only, arm64-v8a) + a small JNI wrapper (verdroid_llama.cpp).
+cmake_minimum_required(VERSION 3.22.1)
+project(verdroid_llama C CXX)
+
+set(CMAKE_C_STANDARD 11)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+set(LLAMA_BUILD_COMMON ON CACHE BOOL "" FORCE)
+set(LLAMA_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(LLAMA_BUILD_TOOLS OFF CACHE BOOL "" FORCE)
+set(LLAMA_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(LLAMA_BUILD_SERVER OFF CACHE BOOL "" FORCE)
+set(LLAMA_BUILD_APP OFF CACHE BOOL "" FORCE)
+set(LLAMA_OPENSSL OFF CACHE BOOL "" FORCE)
+set(LLAMA_SUBPROCESS OFF CACHE BOOL "" FORCE)
+set(LLAMA_ALL_WARNINGS OFF CACHE BOOL "" FORCE)
+set(GGML_OPENMP OFF CACHE BOOL "" FORCE)
+set(GGML_NATIVE OFF CACHE BOOL "" FORCE)
+set(GGML_LLAMAFILE ON CACHE BOOL "" FORCE)
+set(GGML_BACKEND_DL OFF CACHE BOOL "" FORCE)
+set(GGML_CPU_KLEIDIAI OFF CACHE BOOL "" FORCE)
+# Runtime CPU feature detection: build ARM variants (dotprod/i8mm/sve) into one lib.
+set(GGML_CPU_ALL_VARIANTS OFF CACHE BOOL "" FORCE)
+# armv8.2-a + dotprod + fp16 covers every arm64 phone with Android 11+ that is fast enough to run an LLM.
+if (ANDROID_ABI STREQUAL "arm64-v8a")
+  set(GGML_CPU_ARM_ARCH "armv8.2-a+dotprod+fp16" CACHE STRING "" FORCE)
+endif()
+
+add_subdirectory(llama.cpp build-llama)
+
+add_library(verdroid_llama SHARED verdroid_llama.cpp)
+target_include_directories(verdroid_llama PRIVATE llama.cpp/common llama.cpp/include llama.cpp/ggml/include)
+target_link_libraries(verdroid_llama llama llama-common android log)
+target_compile_options(verdroid_llama PRIVATE -O2 -fvisibility=hidden -ffunction-sections -fdata-sections)
+target_link_options(verdroid_llama PRIVATE -Wl,--gc-sections -Wl,--exclude-libs,ALL -Wl,-z,max-page-size=16384)
+
+option(VERDROID_NATIVE_TEST "Build the native_smoke developer executable" OFF)
+if (VERDROID_NATIVE_TEST)
+    add_executable(native_smoke native_smoke.cpp)
+    target_include_directories(native_smoke BEFORE PRIVATE smoke-shim)
+    target_include_directories(native_smoke PRIVATE llama.cpp/common llama.cpp/include llama.cpp/ggml/include)
+    target_link_libraries(native_smoke llama llama-common)
+    target_link_options(native_smoke PRIVATE -static)
+endif()

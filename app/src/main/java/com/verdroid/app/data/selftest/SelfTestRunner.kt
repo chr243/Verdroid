@@ -487,6 +487,20 @@ class SelfTestRunner @Inject constructor(
             check(!C.shouldShow(C.IDEAS, null, false, false) && !C.shouldShow(C.IDEAS, null, true, true)) { "deferred off the main screen / behind other dialogs" }
             "ideas pop-up: shows once per install (${if (C.lastSeen(context) == C.IDEAS) "already seen" else "not seen yet"})"
         },
+        "local_llm" to {
+            val L = com.verdroid.app.data.localllm.LocalPrompt
+            val M = com.verdroid.app.data.network.ModelIds
+            check(M.isLocal("local:qwen3-4b") && M.bare("local:qwen3-4b") == "qwen3-4b" && !M.isOpenRouter("local:x")) { "local: ids" }
+            check(L.compactSystem(com.verdroid.app.agent.AgentLoop.systemPrompt() + "\n\nX").let { it.startsWith(L.SYSTEM) && it.endsWith("X") }) { "short system prompt" }
+            check(com.verdroid.app.data.localllm.LocalModels.isGguf("GGUF".toByteArray()) && !com.verdroid.app.data.localllm.LocalModels.isGguf("PK..".toByteArray())) { "gguf magic" }
+            val r = com.verdroid.app.data.localllm.LocalReply.parse("{\"error\":\"Out of memory\"}", "m")
+            check(r is com.verdroid.app.data.localllm.LocalReply.Result.Error && r.outOfMemory) { "OOM → unavailable" }
+            val abi = android.os.Build.SUPPORTED_ABIS.firstOrNull().orEmpty()
+            if (!abi.startsWith("arm64")) throw SkipCheck("on-device engine is arm64-only (this device: $abi)")
+            check(com.verdroid.app.data.localllm.LlamaNative.available) { com.verdroid.app.data.localllm.LlamaNative.unavailableReason }
+            val n = com.verdroid.app.data.localllm.LocalModelStore(context).models.value.size
+            "llama.cpp engine loads; $n local model${if (n == 1) "" else "s"} imported; prompt/tool compaction + fallback rules OK"
+        },
         "show_image" to {
             val S = com.verdroid.app.agent.tools.ShownImages
             check(S.sniff(byteArrayOf(0x89.toByte(), 'P'.code.toByte(), 'N'.code.toByte(), 'G'.code.toByte(), 13, 10, 26, 10)) == "png" && S.sniff("<html>".toByteArray()) == null) { "type sniff" }

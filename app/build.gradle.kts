@@ -41,6 +41,21 @@ android {
         versionName = "1.0.62"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
+        // On-device LLM (llama.cpp, CPU only): arm64 phones only.
+        ndk { abiFilters += "arm64-v8a" }
+        externalNativeBuild {
+            cmake {
+                arguments += listOf("-DANDROID_STL=c++_static", "-DCMAKE_BUILD_TYPE=Release")
+                cppFlags += listOf("-O2")
+            }
+        }
+    }
+    ndkVersion = "27.1.12297006"
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+            version = "3.22.1"
+        }
     }
 
     signingConfigs {

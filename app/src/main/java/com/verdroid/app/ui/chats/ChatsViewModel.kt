@@ -67,6 +67,7 @@ class ChatsViewModel @Inject constructor(
         val available: (String) -> Boolean = { m ->
             if (com.verdroid.app.data.network.ModelIds.isKilo(m)) kiloUsage.counter.canUse(now) && kilo.cooldownUntil(m) <= now
             else if (com.verdroid.app.data.network.ModelIds.isCustom(m)) customLlm.cooldownUntil(m) <= now
+            else if (com.verdroid.app.data.network.ModelIds.isLocal(m)) true
             else k.any { key -> cooldowns.keyUntil(key.id) <= now && cooldowns.modelUntil(key.id, m) <= now }
         }
         val active = QuotaIndicator.activeModel(models, available, last)
@@ -81,7 +82,8 @@ class ChatsViewModel @Inject constructor(
 
     /** True when chats can run: an OpenRouter key, or a keyless Kilo model in the priority list. */
     val hasKeys: StateFlow<Boolean> = combine(keys.keys, settings.modelPriority) { k, m ->
-        k.isNotEmpty() || m.any { com.verdroid.app.data.network.ModelIds.isKilo(it) || com.verdroid.app.data.network.ModelIds.isCustom(it) }
+        k.isNotEmpty() || m.any { com.verdroid.app.data.network.ModelIds.isKilo(it) || com.verdroid.app.data.network.ModelIds.isCustom(it) ||
+            com.verdroid.app.data.network.ModelIds.isLocal(it) }
     }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), true)
 }

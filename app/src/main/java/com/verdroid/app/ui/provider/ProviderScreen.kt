@@ -54,7 +54,9 @@ class ProviderViewModel @Inject constructor(
     private val settings: SettingsRepository,
     apiKeys: ApiKeyRepository,
     val appPrefs: com.verdroid.app.data.prefs.AppPrefs,
+    private val localModels: com.verdroid.app.data.localllm.LocalModelStore,
 ) : ViewModel() {
+    val hasLocalModel: Boolean get() = localModels.models.value.isNotEmpty()
     val priority = settings.modelPriority.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val hasOpenRouterKey = apiKeys.keys.map { it.isNotEmpty() }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     private val _available = MutableStateFlow<Map<String, List<String>>>(emptyMap())
@@ -117,6 +119,7 @@ fun ProviderScreen(onBack: () -> Unit, onOpenModels: () -> Unit = {}, initial: S
                     ProviderChip("OpenRouter", "openrouter", selected, ready = hasOrKey) { selected = it }
                     ProviderChip("Kilo", "kilo", selected, ready = true) { selected = it }
                     ProviderPresets.ALL.forEach { p -> ProviderChip(p.shortName, p.id, selected, vm.store.isConfigured(p.id)) { selected = it } }
+                    ProviderChip("Local (on-device)", "local", selected, ready = vm.hasLocalModel) { selected = it }
                 }
             }
             Text("✓ = ready to use", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -141,6 +144,7 @@ fun ProviderScreen(onBack: () -> Unit, onOpenModels: () -> Unit = {}, initial: S
                     OutlinedButton(onClick = { open("https://kilo.ai") }) { Text("About Kilo") }
                     ModelPriorityHint(onOpenModels)
                 }
+                "local" -> LocalProviderPanel(onOpenModels)
                 else -> key(selected, version) { CompatibleProviderPanel(ProviderPresets.byId(selected), vm, open, onOpenModels) }
             }
             Spacer(Modifier.height(24.dp))

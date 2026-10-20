@@ -53,6 +53,7 @@ class OpenRouterClient @Inject constructor(
     private val rateLimitLog: RateLimitRepository,
     private val kilo: KiloProvider,
     private val custom: CustomLlmClient,
+    private val local: com.verdroid.app.data.localllm.LocalLlmClient,
     private val appPrefs: com.verdroid.app.data.prefs.AppPrefs,
     private val vision: ModelCapabilities,
     private val pins: com.verdroid.app.data.settings.ChatModelPinStore,
@@ -94,9 +95,10 @@ class OpenRouterClient @Inject constructor(
     ): ChatOutcome {
         val kiloModels = models.filter(ModelIds::isKilo)
         val customModels = models.filter(ModelIds::isCustom)
+        val localModels = models.filter(ModelIds::isLocal)
         val orModels = models.filter(ModelIds::isOpenRouter)
         val keys = apiKeys.orderedForUse()
-        if (keys.isEmpty() && kiloModels.isEmpty() && customModels.isEmpty()) return ChatOutcome.NoApiKey
+        if (keys.isEmpty() && kiloModels.isEmpty() && customModels.isEmpty() && localModels.isEmpty()) return ChatOutcome.NoApiKey
         val cooldownMs = settings.currentLimits().modelCooldownSeconds.coerceAtLeast(1) * 1000L
         var kiloMiss: KiloResult.Unavailable? = null
 
@@ -123,17 +125,36 @@ class OpenRouterClient @Inject constructor(
                 is KiloResult.Unavailable -> { customMiss = r; null }
             }
         }
+        var localMiss: KiloResult.Unavailable? = null
+        suspend fun tryLocal(): ChatOutcome? {
+            if (localModels.isEmpty()) return null
+            return when (val r = local.complete(localModels, messages, tools, status)) {
+                is KiloResult.Success -> { _lastModel.value = r.id; ChatOutcome.Success(r.completion, r.label, "On-device") }
+                is KiloResult.Unavailable -> {
+                    localMiss = r
+                    rateLimitLog.log(RateLimitEvent(0, System.currentTimeMillis(), taskId, localModels.joinToString(),
+                        "On-device", 0, null, null, null, "local_unavailable", r.message, "On-device model unavailable → fallback"))
+                    null
+                }
+            }
+        }
+        // On-device models go first when one heads the priority list (then the rest in order); otherwise they are the last fallback.
+        val localFirst = ModelIds.isLocal(models.first())
+        if (localFirst) tryLocal()?.let { return it }
+        val rest = models.filterNot(ModelIds::isLocal)
+        if (rest.isEmpty()) return ChatOutcome.Failure(localMiss?.message ?: "No on-device model available")
         // Custom provider first when it heads the priority list; otherwise it is the last fallback.
-        val customFirst = ModelIds.isCustom(models.first())
+        val customFirst = ModelIds.isCustom(rest.first())
         if (customFirst) tryCustom()?.let { return it }
-        val kiloFirst = ModelIds.isKilo(models.first()) || (customFirst && models.firstOrNull { !ModelIds.isCustom(it) }?.let(ModelIds::isKilo) == true)
+        val kiloFirst = ModelIds.isKilo(rest.first()) || (customFirst && rest.firstOrNull { !ModelIds.isCustom(it) }?.let(ModelIds::isKilo) == true)
         if (kiloFirst) tryKilo()?.let { return it }
         // No OpenRouter key → OpenRouter entries are skipped instantly (no request, no 401, no cooldown) and Kilo/custom are tried.
         val orOutcome = if (ModelIds.openRouterUsable(orModels, keys.size)) completeOpenRouter(keys, orModels, messages, tools, taskId, status) else null
         if (orOutcome is ChatOutcome.Success) return orOutcome
         if (!kiloFirst) tryKilo()?.let { return it }
         if (!customFirst) tryCustom()?.let { return it }
-        val miss = kiloMiss ?: customMiss
+        if (!localFirst) tryLocal()?.let { return it }
+        val miss = kiloMiss ?: customMiss ?: localMiss
         return when {
             orOutcome == null && miss == null -> ChatOutcome.NoApiKey
             orOutcome == null -> if (miss!!.resumeAt != null) ChatOutcome.RateLimited(miss.resumeAt!!, miss.message)
