@@ -1,0 +1,1 @@
+Security hardening: safer handling of web and tool content; risky shell commands ask after untrusted content; optional Ask before shell commands. Update downloads verified by SHA-256. Notice if saved keys get reset. Repeated tool calls detected. Local model fixes: faster LiteRT follow-ups, timeouts, emoji, accurate tok/s, no looping.
