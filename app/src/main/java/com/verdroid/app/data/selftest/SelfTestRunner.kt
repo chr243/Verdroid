@@ -520,6 +520,11 @@ class SelfTestRunner @Inject constructor(
             check(LM.isLiteRtLm(lrt) && !LM.isLiteRtLm("GGUF....".toByteArray()) && LM.formatOf("a.litertlm", lrt) == LM.LITERTLM &&
                 LM.formatOf("a.bin", lrt) == null && LM.formatOf("a.gguf", "GGUF\u0003\u0000\u0000\u0000".toByteArray()) == LM.GGUF) { "LiteRT-LM magic + extension" }
             check(com.verdroid.app.data.localllm.LocalLabel.format("g", 10, 1000, "LiteRT: GPU").endsWith(" · GPU")) { "LiteRT GPU label" }
+            fun AM(r: String, c: String) = com.verdroid.app.data.network.ApiMessage(r, c)
+            val fitted = L.fit(listOf(AM("system", "S"), AM("system", "Summary of the earlier conversation:\nX"), AM("user", "q"), AM("assistant", "a"), AM("system", "continue")), 4096, 256)
+            check(fitted.count { it.role == "system" } == 1 && fitted.first().content!!.contains("Summary") && fitted.last().role == "user") { "local history keeps summaries + nudges" }
+            check(com.verdroid.app.data.localllm.LiteRtFormat.convo("[{\"role\":\"user\",\"content\":\"q\"},{\"role\":\"assistant\",\"content\":\"a\"}]").last != null) { "LiteRT continues after an assistant turn" }
+            check(com.verdroid.app.data.localllm.LiteRtFormat.tokens(-1, -1, 2, "q", "x".repeat(400)).second == 100L) { "LiteRT token estimate" }
             val lr = com.verdroid.app.data.localllm.LocalReply.parse(com.verdroid.app.data.localllm.LiteRtFormat.reply("", null,
                 listOf("read_file" to mapOf("path" to "a")), "stop", 5, 3, 100, "LiteRT: CPU"), "m")
             check(lr is com.verdroid.app.data.localllm.LocalReply.Result.Ok && lr.completion.finishReason == "tool_calls" &&

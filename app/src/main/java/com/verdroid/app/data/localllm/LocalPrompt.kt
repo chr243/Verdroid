@@ -77,8 +77,7 @@ object LocalPrompt {
                 m.copy(content = c.take(MAX_TOOL_RESULT_CHARS) + "\n…(cut to fit the on-device model)") else m
         }
         val budget = ((nCtx - reserve).coerceAtLeast(256) * CHARS_PER_TOKEN).toInt() - toolsChars
-        val system = msgs.filter { it.role == "system" }.take(1)
-        val rest = msgs.filter { it.role != "system" }
+        val (system, rest) = mergeSystem(msgs)
         var used = system.sumOf(::size)
         val kept = ArrayDeque<ApiMessage>()
         for (m in rest.asReversed()) {
@@ -88,6 +87,28 @@ object LocalPrompt {
         }
         while (kept.size > 1 && kept.first().role == "tool") kept.removeFirst()
         return system + kept
+    }
+
+    /**
+     * Local templates want one leading system message: the first system message + every earlier-conversation summary
+     * (and other mid-history system notes) are merged into it; trailing system nudges (continue after a cut-off,
+     * resend a tool call, …) become a final user turn "[Verdroid] …" so the model still sees them.
+     */
+    fun mergeSystem(msgs: List<ApiMessage>): Pair<List<ApiMessage>, List<ApiMessage>> {
+        val lastNonSystem = msgs.indexOfLast { it.role != "system" }
+        val sysText = StringBuilder()
+        val rest = mutableListOf<ApiMessage>()
+        val trailing = mutableListOf<String>()
+        msgs.forEachIndexed { i, m ->
+            when {
+                m.role != "system" -> rest += m
+                i > lastNonSystem && lastNonSystem >= 0 -> m.content?.takeIf { it.isNotBlank() }?.let(trailing::add)
+                else -> m.content?.takeIf { it.isNotBlank() }?.let { if (sysText.isNotEmpty()) sysText.append("\n\n"); sysText.append(it) }
+            }
+        }
+        if (trailing.isNotEmpty()) rest += ApiMessage("user", "[Verdroid] " + trailing.joinToString("\n\n"))
+        val system = if (sysText.isEmpty()) emptyList() else listOf(ApiMessage("system", sysText.toString()))
+        return system to rest
     }
 
     private fun size(m: ApiMessage): Int = (m.content?.length ?: 0) + 16 +

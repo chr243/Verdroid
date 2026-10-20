@@ -178,6 +178,7 @@ class LiteRtLmEngine @Inject constructor(
             val calls = mutableListOf<Pair<String, Map<String, Any?>>>()
             var chunks = 0L
             var first = 0L
+            val before = runCatching { conversation.getTokenCount().toLong() }.getOrDefault(-1L)
             val start = System.currentTimeMillis()
             // Callback API (not the Flow wrapper): every callback is ours and catches Throwable, so nothing thrown on
             // LiteRT's native callback thread can take the process down.
@@ -213,9 +214,11 @@ class LiteRtLmEngine @Inject constructor(
             if (err != null) throw err
             val end = System.currentTimeMillis()
             val genMs = (end - (if (first > 0) first else start)).coerceAtLeast(1)
-            val promptTokens = runCatching { conversation.getTokenCount().toLong() - chunks }.getOrDefault(0L).coerceAtLeast(0)
-            val finish = if (chunks >= maxTokens) "length" else "stop"
-            return LiteRtFormat.reply(text.toString(), thought.toString(), calls, finish, promptTokens, chunks, genMs, backend)
+            val after = runCatching { conversation.getTokenCount().toLong() }.getOrDefault(-1L)
+            val outText = text.toString() + thought + calls.joinToString { it.first + LiteRtFormat.toJson(it.second) }
+            val (promptTokens, completion) = LiteRtFormat.tokens(before, after, chunks, last.text, outText)
+            val finish = if (completion >= maxTokens - 1) "length" else "stop"
+            return LiteRtFormat.reply(text.toString(), thought.toString(), calls, finish, promptTokens, completion, genMs, backend)
         } catch (c: CancellationException) {
             throw c
         } catch (t: Throwable) {

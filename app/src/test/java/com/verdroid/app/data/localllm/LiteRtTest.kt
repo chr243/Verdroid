@@ -63,7 +63,7 @@ class LiteRtFormatTest {
         assertEquals("read_file", c.last!!.toolName) // resolved from tool_call_id
         assertEquals(mapOf("ok" to true), LiteRtFormat.toolResponse(c.last!!.text))
         assertEquals("plain", LiteRtFormat.toolResponse("plain"))
-        assertNull(LiteRtFormat.convo("""[{"role":"user","content":"a"},{"role":"assistant","content":"b"}]""").last)
+        assertEquals(LiteRtFormat.CONTINUE, LiteRtFormat.convo("""[{"role":"user","content":"a"},{"role":"assistant","content":"b"}]""").last!!.text)
     }
 
     @Test fun toolDescriptions() {
@@ -120,5 +120,38 @@ class LocalEnginesTest {
         assertEquals("litert", (e.current as LocalEngineState.Loaded).backend)
         e.ensureLoaded("q")
         assertNull(lrt.loadedId); assertEquals("q", e.loadedId)
+    }
+}
+
+class LocalHistoryFixesTest {
+    private fun m(role: String, c: String) = com.verdroid.app.data.network.ApiMessage(role, c)
+
+    @Test fun fitKeepsSummaryAndTrailingNudge() {
+        val msgs = listOf(m("system", "SYS"), m("system", "Summary of the earlier conversation:\nS"), m("user", "q"),
+            m("assistant", "partial"), m("system", "Your previous reply was cut off"))
+        val out = LocalPrompt.fit(msgs, 4096, 256)
+        assertEquals("system", out.first().role)
+        assertTrue(out.first().content!!.contains("SYS") && out.first().content!!.contains("Summary of the earlier conversation"))
+        assertEquals(1, out.count { it.role == "system" })
+        assertEquals("user", out.last().role)
+        assertEquals("[Verdroid] Your previous reply was cut off", out.last().content)
+    }
+
+    @Test fun liteRtContinuesAfterAssistantEnding() {
+        val c = LiteRtFormat.convo("""[{"role":"user","content":"q"},{"role":"assistant","content":"partial"}]""")
+        assertNotNull(c.last)
+        assertEquals(LiteRtFormat.CONTINUE, c.last!!.text)
+        assertEquals("assistant", c.history.last().role)
+    }
+
+    @Test fun tokenCounts() {
+        // 3 callbacks but ~100 tokens of text: chunks alone would undercount.
+        val text = "x".repeat(400)
+        val (_, est) = LiteRtFormat.tokens(-1, -1, 3, "hi", text)
+        assertEquals(100L, est)
+        // KV counts: 50 before, 170 after, prompt "hi" ≈ 1+8 → completion ≈ 111
+        val (p, c) = LiteRtFormat.tokens(50, 170, 3, "hi", text)
+        assertEquals(111L, c); assertEquals(59L, p)
+        assertEquals(0L, LiteRtFormat.tokens(10, 20, 0, "hi", "").second)
     }
 }

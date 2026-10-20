@@ -59,12 +59,16 @@ object LiteRtFormat {
         return name to map
     }
 
-    private fun finish(system: StringBuilder, turns: List<Turn>): Convo {
+    private fun finish(system: StringBuilder, turns0: List<Turn>): Convo {
+        // History ending with an assistant turn (e.g. a reply cut off by the token limit): ask it to continue.
+        val turns = if (turns0.lastOrNull()?.role == "assistant") turns0 + Turn("user", CONTINUE) else turns0
         val last = turns.lastOrNull()?.takeIf { it.role == "user" || it.role == "tool" }
         // Consecutive trailing tool results all belong to the turn being sent; LiteRT sends one message, so the
         // earlier ones stay in the history (initialMessages) and the last one is sent.
         return Convo(system.toString().ifBlank { null }, if (last != null) turns.dropLast(1) else turns, last)
     }
+
+    const val CONTINUE = "[Verdroid] Continue exactly where you stopped, without repeating."
 
     /** toolsJson (OpenAI "tools" array) → one OpenAPI function JSON per tool ({name, description, parameters}). */
     fun toolDescriptions(toolsJson: String): List<String> {
@@ -104,6 +108,22 @@ object LiteRtFormat {
         val m = t.message ?: t.javaClass.simpleName
         return error(if (t is OutOfMemoryError || m.contains("memory", true) || m.contains("alloc", true)) "Out of memory: $m" else m)
     }
+
+    /**
+     * (prompt, completion) tokens for one turn. A streaming callback can carry several tokens, so chunks alone
+     * undercount. The conversation's KV token count before/after the turn covers the new prompt + the reply; the
+     * new prompt part is estimated from [sentText]. Without counts, the larger of chunks and a text estimate is used.
+     */
+    fun tokens(before: Long, after: Long, chunks: Long, sentText: String, outText: String): Pair<Long, Long> {
+        val estOut = maxOf(chunks, estimateTokens(outText))
+        val promptEst = estimateTokens(sentText) + TEMPLATE_OVERHEAD
+        val total = if (before >= 0 && after > before) after - before else -1L
+        if (total <= 0) return promptEst to estOut
+        val completion = if (outText.isEmpty()) 0L
+            else (if (total > promptEst) maxOf(chunks, total - promptEst) else minOf(estOut, total)).coerceAtLeast(1)
+        return (before + total - completion).coerceAtLeast(0) to completion
+    }
+    private const val TEMPLATE_OVERHEAD = 8L
 
     fun estimateTokens(text: String): Long = ((text.length + 3) / 4).toLong()
 
