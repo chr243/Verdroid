@@ -1,0 +1,1 @@
+On-device models: GGUF via llama.cpp (CPU, optional Vulkan GPU) and .litertlm via Google LiteRT-LM (GPU via OpenCL, CPU fallback). Settings > LLM providers > Local; add to Model priority with automatic fallback; tok/s shown under replies. arm64 only. The agent can show images in chat (show_image). One-time pop-up inviting ideas in Discussions.

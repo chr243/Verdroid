@@ -37,8 +37,8 @@ android {
         applicationId = "com.verdroid.app"
         minSdk = 30
         targetSdk = 35
-        versionCode = 91
-        versionName = "1.0.62"
+        versionCode = 92
+        versionName = "1.0.63"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables { useSupportLibrary = true }
         // On-device LLM (llama.cpp, CPU only): arm64 phones only.
