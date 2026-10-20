@@ -145,6 +145,7 @@ class AgentLoop internal constructor(
         var nudge: String? = null
         /** The empty-reply nudge asked for a visible progress report; a text-only answer to it is not the final answer. */
         var reportRequested = false
+        val repeats = RepeatCallGuard()
         for (i in 1..maxSteps) {
             val step = cp.step + 1
             coroutineContext.ensureActive()
@@ -249,6 +250,11 @@ class AgentLoop internal constructor(
                     lengthStreak = 0
                     parseStreak = 0
                     reportRequested = false
+                    val same = repeats.observe(calls)
+                    if (same >= RepeatCallGuard.PAUSE_AT) {
+                        return pauseWithReason(taskId, "Repeated tool call",
+                            "⚠️ The model called ${calls.joinToString { it.name }} with identical arguments $same times in a row. Tap Continue to retry.")
+                    }
                     cp = cp.copy(pendingStep = PendingStep(step, "executing_tools", calls.map { it.id }, System.currentTimeMillis()),
                         lastMessageId = msgId, model = outcome.model, phase = "executing_tools")
                     saveCheckpoint(taskId, cp)
@@ -260,6 +266,7 @@ class AgentLoop internal constructor(
                         results += IntermediateResult(step, call.name, r.json.take(300), r.isError)
                         if (r.isError) lastToolError = "${call.name}: ${r.json.take(300)}"
                     }
+                    if (same >= RepeatCallGuard.NUDGE_AT) nudge = RepeatCallGuard.nudge(same, calls.joinToString { it.name })
                     cp = cp.copy(
                         step = step, pendingStep = null, phase = "tools_executed",
                         completedSteps = cp.completedSteps + CompletedStep(step, outcome.model, calls.map { it.name }, System.currentTimeMillis()),

