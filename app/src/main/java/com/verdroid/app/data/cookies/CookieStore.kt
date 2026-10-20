@@ -8,7 +8,7 @@ import androidx.security.crypto.MasterKey
 /** Injected browser cookies in EncryptedSharedPreferences (same scheme as API keys / the Git token). App-private only. */
 class CookieStore(private val context: Context) : CookieVault {
     private val prefs: SharedPreferences by lazy {
-        try { create() } catch (e: Exception) { context.deleteSharedPreferences(FILE); create() }
+        try { create() } catch (e: Exception) { context.deleteSharedPreferences(FILE); com.verdroid.app.data.secure.KeyWipeNotice.record(context, "browser cookies"); create() }
     }
 
     private fun create(): SharedPreferences {

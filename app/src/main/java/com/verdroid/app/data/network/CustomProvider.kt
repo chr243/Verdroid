@@ -144,7 +144,7 @@ data class CustomProviderConfig(val presetId: String, val baseUrl: String, val h
 class CustomProviderStore @Inject constructor(@ApplicationContext private val context: Context) {
     private val prefs = context.getSharedPreferences("custom_provider", Context.MODE_PRIVATE)
     private val secure: SharedPreferences by lazy {
-        try { createSecure() } catch (_: Exception) { context.deleteSharedPreferences(SECURE_FILE); createSecure() }
+        try { createSecure() } catch (_: Exception) { context.deleteSharedPreferences(SECURE_FILE); com.verdroid.app.data.secure.KeyWipeNotice.record(context, "custom provider key"); createSecure() }
     }
     private fun createSecure(): SharedPreferences {
         val mk = MasterKey.Builder(context).setKeyScheme(MasterKey.KeyScheme.AES256_GCM).build()

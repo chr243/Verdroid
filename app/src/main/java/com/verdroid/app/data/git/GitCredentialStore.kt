@@ -13,7 +13,7 @@ import javax.inject.Singleton
 class GitCredentialStore @Inject constructor(@ApplicationContext private val context: Context) : GitAuth {
 
     private val prefs: SharedPreferences by lazy {
-        try { create() } catch (e: Exception) { context.deleteSharedPreferences(FILE); create() }
+        try { create() } catch (e: Exception) { context.deleteSharedPreferences(FILE); com.verdroid.app.data.secure.KeyWipeNotice.record(context, "Git token"); create() }
     }
 
     private fun create(): SharedPreferences {

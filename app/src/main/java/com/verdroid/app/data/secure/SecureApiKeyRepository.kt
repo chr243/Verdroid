@@ -38,6 +38,7 @@ class SecureApiKeyRepository @Inject constructor(
         } catch (e: Exception) {
             // Keyset can become unreadable (e.g. Keystore reset); start fresh rather than crash.
             context.deleteSharedPreferences(FILE)
+            KeyWipeNotice.record(context, "OpenRouter API keys")
             create()
         }
     }

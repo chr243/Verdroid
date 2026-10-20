@@ -7,6 +7,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.repeatOnLifecycle
@@ -103,6 +105,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+        com.verdroid.app.data.secure.KeyWipeNotice.init(this)
         setContent {
             VerdroidTheme {
                 VerdroidRoot(openTaskId = openTaskId.value, onOpenTaskConsumed = { openTaskId.value = null },
@@ -111,6 +114,15 @@ class MainActivity : ComponentActivity() {
                 com.verdroid.app.ui.consent.FileChangeDialog()
                 com.verdroid.app.ui.consent.XPostDialog()
                 com.verdroid.app.ui.consent.InstallDialog()
+                run { // review #16: tell the user when secure storage had to be reset
+                    val wiped by com.verdroid.app.data.secure.KeyWipeNotice.wiped.collectAsState()
+                    if (wiped.isNotEmpty()) androidx.compose.material3.AlertDialog(
+                        onDismissRequest = {},
+                        title = { androidx.compose.material3.Text("Saved keys were reset") },
+                        text = { androidx.compose.material3.Text(com.verdroid.app.data.secure.KeyWipeNotice.message(wiped)) },
+                        confirmButton = { androidx.compose.material3.TextButton(onClick = {
+                            com.verdroid.app.data.secure.KeyWipeNotice.dismiss(this@MainActivity) }) { androidx.compose.material3.Text("OK") } })
+                }
             }
         }
     }
