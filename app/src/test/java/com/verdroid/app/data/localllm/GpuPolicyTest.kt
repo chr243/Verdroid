@@ -37,6 +37,11 @@ class GpuPolicyTest {
 }
 
 class LocalLabelTest {
+    @Test fun thinkingStatus() {
+        assertEquals("Thinking (gemma-4-e4b-it-abliterated, on device)…", LocalLabel.thinking("gemma-4-e4b-it-abliterated"))
+        assertEquals(1, Regex("on device").findAll(LocalLabel.thinking("x")).count())
+    }
+
     @Test fun format() {
         assertEquals("gemma-2-2b (on device) 10 tok/s", LocalLabel.format("gemma-2-2b", 52, 5200, "CPU"))
         assertEquals("gemma-2-2b (on device) 13 tok/s · GPU", LocalLabel.format("gemma-2-2b", 40, 3100, "Vulkan: Adreno (TM) 740"))

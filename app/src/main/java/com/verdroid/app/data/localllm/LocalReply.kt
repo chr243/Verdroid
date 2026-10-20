@@ -12,6 +12,9 @@ import kotlinx.serialization.json.longOrNull
 
 /** Model line under a local reply: "gemma-2-2b (on device) 10 tok/s", plus " · GPU" when Vulkan or LiteRT's GPU ran it. */
 object LocalLabel {
+    /** In-progress status: "Thinking (gemma-2-2b, on device)…" (bare id, one "on device"). */
+    fun thinking(bareId: String): String = "Thinking ($bareId, on device)…"
+
     fun format(modelId: String, completionTokens: Long, genMs: Long, backend: String): String {
         val base = "$modelId (on device)"
         val speed = if (completionTokens > 0 && genMs > 0) " ${Math.round(completionTokens * 1000.0 / genMs)} tok/s" else ""

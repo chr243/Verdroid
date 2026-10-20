@@ -31,7 +31,7 @@ class LocalLlmClient @Inject constructor(
             val toolsJson = compactTools?.toString().orEmpty()
             val shaped = messages.map { if (it.role == "system" && it.content != null) it.copy(content = LocalPrompt.compactSystem(it.content)) else it }
             val fitted = LocalPrompt.fit(shaped, nCtx, maxTokens + 64, toolsJson.length)
-            status("Thinking on-device ($label)…")
+            status(LocalLabel.thinking(bare))
             val (body, err) = engine.chat(bare, LocalPrompt.messagesJson(fitted), toolsJson, maxTokens)
             if (err != null || body == null) { lastError = "$label: ${err ?: "no reply"}"; continue }
             when (val r = LocalReply.parse(body, label)) {
