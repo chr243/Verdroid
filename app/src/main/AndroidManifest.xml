@@ -44,6 +44,10 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.Verdroid"
         tools:targetApi="35">
+        <!-- LiteRT-LM GPU backend (OpenCL); optional, CPU is used when the vendor libraries aren't there. -->
+        <uses-native-library android:name="libOpenCL.so" android:required="false" />
+        <uses-native-library android:name="libvndksupport.so" android:required="false" />
+
 
         <activity
             android:name=".MainActivity"

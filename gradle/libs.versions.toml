@@ -26,9 +26,12 @@ robolectric = "4.14.1"
 androidxTestCore = "1.6.1"
 savedstate = "1.2.1"
 shizuku = "13.1.5"
+# Google LiteRT-LM (second on-device engine, .litertlm). 0.16.1 = newest built with Kotlin 2.2 metadata; 0.17+ needs Kotlin 2.4.
+litertlm = "0.16.1"
 jgit = "5.13.3.202401111512-r"
 
 [libraries]
+litertlm-android = { group = "com.google.ai.edge.litertlm", name = "litertlm-android", version.ref = "litertlm" }
 jsoup = { group = "org.jsoup", name = "jsoup", version.ref = "jsoup" }
 androidx-webkit = { group = "androidx.webkit", name = "webkit", version.ref = "webkit" }
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }

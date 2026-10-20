@@ -15,6 +15,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.verdroid.app.data.localllm.LlamaNative
 import com.verdroid.app.data.localllm.LocalEngineState
+import com.verdroid.app.data.localllm.LiteRtLmEngine
+import com.verdroid.app.data.localllm.LocalEngines
 import com.verdroid.app.data.localllm.LocalLlmEngine
 import com.verdroid.app.data.localllm.LocalModel
 import com.verdroid.app.data.localllm.LocalModelStore
@@ -36,24 +38,28 @@ import javax.inject.Inject
 @HiltViewModel
 class LocalLlmViewModel @Inject constructor(
     val store: LocalModelStore,
-    private val engine: LocalLlmEngine,
+    private val engine: LocalEngines,
+    private val llama: LocalLlmEngine,
+    private val litert: LiteRtLmEngine,
     private val settings: SettingsRepository,
 ) : ViewModel() {
     val models = store.models
-    val state = engine.state
-    val gpuNote = engine.gpuNote
+    val state = engine.state(viewModelScope)
+    val gpuNote = engine.gpuNote(viewModelScope)
     private val _useGpu = MutableStateFlow(store.useGpu)
     val useGpu = _useGpu.asStateFlow()
     private val _probing = MutableStateFlow(false)
     val probing = _probing.asStateFlow()
 
     fun setGpu(on: Boolean) = viewModelScope.launch {
-        if (!on) { engine.disableGpu(); _useGpu.value = false; _note.value = "GPU off; CPU is used"; return@launch }
+        if (!on) { llama.disableGpu(); litert.resetGpuFailure(); if (engine.loadedId?.let(engine::engineFor) === litert) litert.unload(); _useGpu.value = false; _note.value = "GPU off; CPU is used"; return@launch }
         _probing.value = true
         _note.value = "Probing the GPU (separate process)…"
-        val (ok, msg) = engine.enableGpu()
-        _useGpu.value = ok
-        _note.value = msg + if (ok) ". Applies on the next load." else ""
+        val (_, msg) = llama.enableGpu()
+        litert.resetGpuFailure()
+        if (engine.loadedId?.let { engine.engineFor(it) } === litert) litert.unload() // reload on GPU next time
+        _useGpu.value = store.useGpu
+        _note.value = "$msg. Applies on the next load."
         _probing.value = false
     }
     fun setGpuLayers(n: Int) { store.gpuLayers = n; _note.value = "GPU layers ${com.verdroid.app.data.localllm.GpuPolicy.layersLabel(n)} (applies on next load)" }
@@ -96,7 +102,7 @@ class LocalLlmViewModel @Inject constructor(
         _note.value = when {
             err != null -> "Test failed: $err"
             else -> when (val r = LocalReply.parse(body.orEmpty(), id)) {
-                is LocalReply.Result.Ok -> "OK on ${engine.backend} in ${"%.1f".format(secs)} s · ${r.completionTokens} tokens " +
+                is LocalReply.Result.Ok -> "OK on ${(engine.current as? LocalEngineState.Loaded)?.backend ?: "?"} in ${"%.1f".format(secs)} s · ${r.completionTokens} tokens " +
                     "(${if (secs > 0) "%.1f".format(r.completionTokens / secs) else "?"} tok/s incl. prompt): " + (r.completion.content ?: "(empty)").take(200)
                 is LocalReply.Result.Error -> "Test failed: ${r.message}"
             }
@@ -140,7 +146,7 @@ fun LocalProviderPanel(onOpenModels: () -> Unit, vm: LocalLlmViewModel = hiltVie
     var threads by remember { mutableIntStateOf(vm.store.threads) }
     var confirmDelete by remember { mutableStateOf<LocalModel?>(null) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> uri?.let(vm::import) }
-    val engineOk = remember { LlamaNative.available }
+    val engineOk = remember { LlamaNative.available || LiteRtLmEngine.available }
 
     Row(verticalAlignment = Alignment.CenterVertically) {
         Text("Local (on-device)", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
@@ -151,20 +157,20 @@ fun LocalProviderPanel(onOpenModels: () -> Unit, vm: LocalLlmViewModel = hiltVie
             else -> "Ready"
         }) })
     }
-    Text("Runs a GGUF model on this phone with llama.cpp (CPU). Private and offline, but much slower and less capable " +
+    Text("Runs a model on this phone: GGUF files with llama.cpp, .litertlm files with Google LiteRT-LM. Private and offline, but much slower and less capable " +
         "than cloud models. Suggested: Qwen3-4B Q4_K_M (≈2.5 GB, needs ~6 GB RAM) or a 1–2B model on older phones. " +
         "Agents get a smaller tool set on local models. If a local model can't load, Verdroid moves on to the next model in Model priority.",
         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     if (!engineOk) {
-        Text(LlamaNative.unavailableReason, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+        Text(LlamaNative.unavailableReason + "; " + LiteRtLmEngine.unavailableReason, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
         return
     }
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Button(enabled = !busy, onClick = { picker.launch(arrayOf("*/*")) }) { Text("Import .gguf file") }
+        Button(enabled = !busy, onClick = { picker.launch(arrayOf("*/*")) }) { Text("Import a .gguf or .litertlm model") }
         if (busy) OutlinedButton(onClick = vm::cancelImport) { Text("Cancel") }
     }
-    Text("The file is copied into Verdroid's private storage.", style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant)
+    Text("The file is copied into Verdroid's private storage. .litertlm models come from the LiteRT Community on Hugging Face (huggingface.co/litert-community).",
+        style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
 
     Text("Context size", style = MaterialTheme.typography.labelLarge)
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -174,11 +180,11 @@ fun LocalProviderPanel(onOpenModels: () -> Unit, vm: LocalLlmViewModel = hiltVie
     Slider(value = threads.toFloat(), onValueChange = { threads = it.toInt() }, onValueChangeFinished = { vm.setThreads(threads) },
         valueRange = 1f..8f, steps = 6)
 
-    ListItem(headlineContent = { Text("Use GPU (Vulkan)") },
-        supportingContent = { Text("Experimental. Turning it on first tests the GPU in a separate process; on any GPU problem Verdroid uses the CPU instead.") },
+    ListItem(headlineContent = { Text("Use GPU") },
+        supportingContent = { Text("Experimental. GGUF: Vulkan, tested first in a separate process. LiteRT: its GPU (OpenCL) backend. On any GPU problem Verdroid uses the CPU instead.") },
         trailingContent = { if (probing) CircularProgressIndicator(Modifier.size(24.dp)) else Switch(useGpu, vm::setGpu, enabled = !busy) })
     if (useGpu) {
-        Text("GPU layers", style = MaterialTheme.typography.labelLarge)
+        Text("GPU layers (GGUF only)", style = MaterialTheme.typography.labelLarge)
         FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             com.verdroid.app.data.localllm.GpuPolicy.LAYER_CHOICES.forEach { n ->
                 FilterChip(selected = gpuLayers == n, onClick = { gpuLayers = n; vm.setGpuLayers(n) },
@@ -202,7 +208,10 @@ fun LocalProviderPanel(onOpenModels: () -> Unit, vm: LocalLlmViewModel = hiltVie
         val inPriority = ModelIds.local(m.id) in priority
         ElevatedCard(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(m.name, style = MaterialTheme.typography.titleSmall)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(m.name, style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                    AssistChip(onClick = {}, enabled = false, label = { Text(if (m.format == LocalModels.LITERTLM) "LiteRT" else "GGUF") })
+                }
                 Text("${LocalModels.human(m.sizeBytes)} · local:${m.id}${if (loaded) " · loaded on ${(state as LocalEngineState.Loaded).backend}" else ""}",
                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

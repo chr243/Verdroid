@@ -8,12 +8,13 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Serves `local:<id>` entries of Model priority with the on-device engine. Missing file, load failure, out of
+ * Serves `local:<id>` entries of Model priority with the on-device engine for the model's format
+ * (GGUF → llama.cpp, .litertlm → LiteRT-LM; see [LocalEngines]). Missing file, load failure, out of
  * memory or a native error → [KiloResult.Unavailable] so the caller falls back to the next model.
  */
 @Singleton
 class LocalLlmClient @Inject constructor(
-    private val engine: LocalLlmEngine,
+    private val engine: LocalEngines,
     private val store: LocalModelStore,
 ) {
     suspend fun complete(models: List<String>, messages: List<ApiMessage>, tools: JsonArray?, status: suspend (String) -> Unit = {}): KiloResult {
@@ -24,7 +25,7 @@ class LocalLlmClient @Inject constructor(
             if (engine.loadedId != bare) status("Loading $label…")
             val loadErr = engine.ensureLoaded(bare)
             if (loadErr != null) { lastError = "$label: $loadErr"; continue }
-            val nCtx = engine.contextSize()
+            val nCtx = engine.contextSize(bare)
             val maxTokens = store.maxTokens.coerceAtMost(nCtx / 2)
             val compactTools = LocalPrompt.compactTools(tools)
             val toolsJson = compactTools?.toString().orEmpty()

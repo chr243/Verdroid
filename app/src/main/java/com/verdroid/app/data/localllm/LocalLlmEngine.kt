@@ -26,6 +26,48 @@ sealed interface LocalEngineState {
     data class Failed(val id: String, val message: String) : LocalEngineState
 }
 
+/** One on-device engine (llama.cpp for GGUF, LiteRT-LM for .litertlm). [LocalEngines] routes between them. */
+interface LocalEngine {
+    val state: StateFlow<LocalEngineState>
+    val gpuNote: StateFlow<String?>
+    val loadedId: String?
+    suspend fun ensureLoaded(id: String): String?
+    suspend fun chat(id: String, messagesJson: String, toolsJson: String, maxTokens: Int, temperature: Float): Pair<String?, String?>
+    suspend fun unload()
+    fun contextSize(): Int
+}
+
+/**
+ * The GPU crash sentinel is shared by both engines: whichever engine starts first after a native crash on the GPU
+ * (Vulkan or OpenCL) blocks the GPU and both report the message.
+ */
+object GpuGuard {
+    @Volatile private var checked = false
+    @Volatile var crashNote: String? = null
+        private set
+
+    @Synchronized
+    fun check(store: LocalModelStore): String? {
+        if (!checked) {
+            checked = true
+            runCatching {
+                val s = store.gpuSentinel
+                if (s.isFile) {
+                    val msg = GpuPolicy.crashMessage(s.readText())
+                    store.gpuBlocked = msg; store.useGpu = false
+                    s.delete()
+                    crashNote = msg
+                }
+            }
+        }
+        return crashNote
+    }
+
+    fun mark(store: LocalModelStore, phase: String?) = runCatching {
+        if (phase == null) store.gpuSentinel.delete() else store.gpuSentinel.writeText("$phase|${System.currentTimeMillis()}")
+    }
+}
+
 /**
  * Holds at most one loaded model (one native handle). Every call is serialised.
  * GPU (Vulkan): only when "Use GPU" is on. Any GPU load/generation failure falls back to the CPU (reason in [gpuNote]);
@@ -35,7 +77,7 @@ sealed interface LocalEngineState {
 class LocalLlmEngine @Inject constructor(
     @ApplicationContext private val context: Context,
     private val store: LocalModelStore,
-) {
+) : LocalEngine {
     private val mutex = Mutex()
     @Volatile private var handle = 0L
     @Volatile private var loadedKey: String? = null
@@ -45,25 +87,17 @@ class LocalLlmEngine @Inject constructor(
     /** Whether Vulkan is registered in this process (null = engine not started yet). */
     @Volatile private var vulkanInProcess: Boolean? = null
     private val _state = MutableStateFlow<LocalEngineState>(LocalEngineState.Idle)
-    val state: StateFlow<LocalEngineState> = _state.asStateFlow()
+    override val state: StateFlow<LocalEngineState> = _state.asStateFlow()
     private val _gpuNote = MutableStateFlow<String?>(null)
     /** Latest GPU problem / fallback reason (shown in the panel, also logged). */
-    val gpuNote: StateFlow<String?> = _gpuNote.asStateFlow()
+    override val gpuNote: StateFlow<String?> = _gpuNote.asStateFlow()
 
     init {
-        // A crash during GPU work last time → GPU off, with the reason.
-        runCatching {
-            val s = store.gpuSentinel
-            if (s.isFile) {
-                val msg = GpuPolicy.crashMessage(s.readText())
-                store.gpuBlocked = msg; store.useGpu = false
-                s.delete()
-                note(msg)
-            }
-        }
+        // A crash during GPU work last time (either engine) → GPU off, with the reason.
+        GpuGuard.check(store)?.let(::note)
     }
 
-    val loadedId: String? get() = (state.value as? LocalEngineState.Loaded)?.id
+    override val loadedId: String? get() = (state.value as? LocalEngineState.Loaded)?.id
     val backend: String get() = (state.value as? LocalEngineState.Loaded)?.backend ?: "CPU"
 
     private fun note(msg: String?) { _gpuNote.value = msg; if (msg != null) Log.w(TAG, msg) }
@@ -75,14 +109,12 @@ class LocalLlmEngine @Inject constructor(
 
     private fun hasVulkan(): Boolean = LlamaNative.available && runCatching { LlamaNative.nativeHasVulkan() }.getOrDefault(false)
 
-    private fun decide(): GpuPolicy.Decision = GpuPolicy.decide(store.useGpu, store.gpuBlocked, hasVulkan(), vulkanInProcess)
+    private fun decide(): GpuPolicy.Decision = GpuPolicy.decide(store.useGpu, store.gpuBlocked ?: store.vulkanBlocked, hasVulkan(), vulkanInProcess)
 
-    private fun sentinel(phase: String?) = runCatching {
-        if (phase == null) store.gpuSentinel.delete() else store.gpuSentinel.writeText("$phase|${System.currentTimeMillis()}")
-    }
+    private fun sentinel(phase: String?) = GpuGuard.mark(store, phase)
 
     /** Loads [id] (unloading any other). Returns null on success, else a reason (missing file, RAM, bad GGUF, …). */
-    suspend fun ensureLoaded(id: String): String? = mutex.withLock { loadLocked(id) }
+    override suspend fun ensureLoaded(id: String): String? = mutex.withLock { loadLocked(id) }
 
     private suspend fun loadLocked(id: String, forceCpu: Boolean = false): String? {
         if (!LlamaNative.available) return LlamaNative.unavailableReason
@@ -90,7 +122,7 @@ class LocalLlmEngine @Inject constructor(
         val f = File(m.path)
         if (!f.isFile) return "Model file for \"$id\" is missing"
         if (vulkanInProcess == null) {
-            val want = store.useGpu && store.gpuBlocked == null && hasVulkan()
+            val want = store.useGpu && store.gpuBlocked == null && store.vulkanBlocked == null && hasVulkan()
             vulkanInProcess = runCatching { LlamaNative.nativeInitBackend(want) }.getOrDefault(false)
         }
         val d = if (forceCpu || gpuFailed) GpuPolicy.Decision(GpuPolicy.Mode.CPU, null) else decide()
@@ -126,13 +158,14 @@ class LocalLlmEngine @Inject constructor(
         val info = runCatching { LlamaNative.nativeInfo(h) }.getOrDefault("{}")
         val ctx = Regex("\"n_ctx\":(\\d+)").find(info)?.groupValues?.get(1)?.toIntOrNull() ?: nCtx
         _state.value = LocalEngineState.Loaded(id, ctx, info, GpuPolicy.backendLabel(info))
+        store.lastBackend = GpuPolicy.backendLabel(info)
         Log.i(TAG, "loaded $id on ${GpuPolicy.backendLabel(info)}")
         return null
     }
 
     private fun fail(id: String, msg: String): String { _state.value = LocalEngineState.Failed(id, msg); return msg }
 
-    suspend fun unload() = mutex.withLock { unloadLocked() }
+    override suspend fun unload() = mutex.withLock { unloadLocked() }
 
     private fun unloadLocked() {
         val h = handle
@@ -145,7 +178,7 @@ class LocalLlmEngine @Inject constructor(
      * Runs one chat turn on [id]; cancelling the coroutine stops generation. Returns (native JSON, load error).
      * A GPU generation error reloads the model on the CPU and retries once.
      */
-    suspend fun chat(id: String, messagesJson: String, toolsJson: String, maxTokens: Int, temperature: Float = 0.6f): Pair<String?, String?> =
+    override suspend fun chat(id: String, messagesJson: String, toolsJson: String, maxTokens: Int, temperature: Float): Pair<String?, String?> =
         mutex.withLock {
             loadLocked(id)?.let { return@withLock null to it }
             val body = generate(messagesJson, toolsJson, maxTokens, temperature)
@@ -179,26 +212,35 @@ class LocalLlmEngine @Inject constructor(
     }
 
     /** Context size of the loaded model (or the setting). */
-    fun contextSize(): Int = (state.value as? LocalEngineState.Loaded)?.nCtx ?: store.contextSize
+    override fun contextSize(): Int = (state.value as? LocalEngineState.Loaded)?.nCtx ?: store.contextSize
 
-    /** Turning the switch on: probe in a separate process first; only a passing probe enables GPU. Returns a summary. */
+    /**
+     * Turning the switch on: the Vulkan probe runs in a separate process first; only a passing probe lets GGUF
+     * models use the GPU. The switch stays on either way so LiteRT-LM models can still try their GPU (OpenCL)
+     * backend, which has its own in-process CPU fallback + crash sentinel. Returns (vulkan ok, summary).
+     */
     suspend fun enableGpu(): Pair<Boolean, String> {
-        if (!hasVulkan()) return false to "This build/phone has no GPU (Vulkan) support"
+        store.gpuBlocked = null; store.useGpu = true; gpuFailed = false
+        if (!hasVulkan()) {
+            val s = "No Vulkan in this build/phone: GGUF stays on CPU; LiteRT models try GPU (OpenCL)"
+            store.vulkanBlocked = s; store.gpuProbe = s
+            return false to s
+        }
         val json = GpuProbeService.probe(context)
         val ok = Regex("\"ok\":true").containsMatchIn(json)
         val dev = Regex("\"device\":\"([^\"]*)\"").find(json)?.groupValues?.get(1)
         val err = Regex("\"error\":\"([^\"]*)\"").find(json)?.groupValues?.get(1)
         val ms = Regex("\"ms\":(\\d+)").find(json)?.groupValues?.get(1)
         return if (ok) {
-            store.gpuBlocked = null; store.useGpu = true; gpuFailed = false
+            store.vulkanBlocked = null
             val s = "${dev ?: "GPU"} · probe OK${ms?.let { " in $it ms" } ?: ""}"
             store.gpuProbe = s
             note(if (vulkanInProcess == false) "GPU probe passed; restart Verdroid to use the GPU" else null)
             mutex.withLock { if (handle != 0L) unloadLocked() } // reload on GPU next time
             true to s
         } else {
-            store.useGpu = false
-            val s = "GPU probe failed: ${err ?: "unknown error"}${dev?.let { " ($it)" } ?: ""}; staying on CPU"
+            val s = "GPU probe failed: ${err ?: "unknown error"}${dev?.let { " ($it)" } ?: ""}; GGUF stays on CPU (LiteRT models still try GPU)"
+            store.vulkanBlocked = s
             store.gpuProbe = s
             note(s)
             false to s

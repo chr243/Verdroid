@@ -50,3 +50,8 @@
 -dontwarn javax.annotation.**
 -dontwarn com.google.api.client.**
 -dontwarn org.joda.time.**
+
+# Google LiteRT-LM: the AAR ships no consumer rules; its JNI library calls back into these classes by name
+# (callbacks, Message/ToolCall builders, gson-parsed JSON), so keep them unobfuscated.
+-keep class com.google.ai.edge.litertlm.** { *; }
+-dontwarn com.google.ai.edge.litertlm.**

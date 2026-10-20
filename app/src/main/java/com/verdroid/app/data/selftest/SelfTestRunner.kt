@@ -495,6 +495,15 @@ class SelfTestRunner @Inject constructor(
             check(com.verdroid.app.data.localllm.LocalModels.isGguf("GGUF".toByteArray()) && !com.verdroid.app.data.localllm.LocalModels.isGguf("PK..".toByteArray())) { "gguf magic" }
             val r = com.verdroid.app.data.localllm.LocalReply.parse("{\"error\":\"Out of memory\"}", "m")
             check(r is com.verdroid.app.data.localllm.LocalReply.Result.Error && r.outOfMemory) { "OOM → unavailable" }
+            val LM = com.verdroid.app.data.localllm.LocalModels
+            val lrt = "LITERTLM".toByteArray() + byteArrayOf(1, 0, 0, 0)
+            check(LM.isLiteRtLm(lrt) && !LM.isLiteRtLm("GGUF....".toByteArray()) && LM.formatOf("a.litertlm", lrt) == LM.LITERTLM &&
+                LM.formatOf("a.bin", lrt) == null && LM.formatOf("a.gguf", "GGUF\u0003\u0000\u0000\u0000".toByteArray()) == LM.GGUF) { "LiteRT-LM magic + extension" }
+            check(com.verdroid.app.data.localllm.LocalLabel.format("g", 10, 1000, "LiteRT: GPU").endsWith(" · GPU")) { "LiteRT GPU label" }
+            val lr = com.verdroid.app.data.localllm.LocalReply.parse(com.verdroid.app.data.localllm.LiteRtFormat.reply("", null,
+                listOf("read_file" to mapOf("path" to "a")), "stop", 5, 3, 100, "LiteRT: CPU"), "m")
+            check(lr is com.verdroid.app.data.localllm.LocalReply.Result.Ok && lr.completion.finishReason == "tool_calls" &&
+                lr.completion.toolCalls.single().argumentsJson.contains("\"path\"")) { "LiteRT reply → tool_calls" }
             val abi = android.os.Build.SUPPORTED_ABIS.firstOrNull().orEmpty()
             if (!abi.startsWith("arm64")) throw SkipCheck("on-device engine is arm64-only (this device: $abi)")
             val G = com.verdroid.app.data.localllm.GpuPolicy
@@ -510,7 +519,12 @@ class SelfTestRunner @Inject constructor(
             val pj = Json.parseToJsonElement(probe).jsonObject
             val gpu = if (pj["ok"]?.jsonPrimitive?.boolean == true) "GPU probe OK (${pj["device"]?.jsonPrimitive?.content})"
                 else "GPU probe: ${pj["error"]?.jsonPrimitive?.content ?: "failed"} → CPU fallback"
-            "llama.cpp engine loads; $n local model${if (n == 1) "" else "s"}; GPU ${if (store.useGpu) "on" else "off"}" +
+            val litert = if (!com.verdroid.app.data.localllm.LiteRtLmEngine.available) "LiteRT-LM missing"
+                else runCatching { System.loadLibrary("litertlm_jni"); "LiteRT-LM ${com.verdroid.app.data.localllm.LiteRtLmEngine.VERSION} available" }
+                    .getOrElse { "LiteRT-LM native lib failed: ${it.message}" }
+            check(!litert.contains("missing")) { litert }
+            val nLrt = store.models.value.count { it.format == LM.LITERTLM }
+            "llama.cpp engine loads; $litert; $n local model${if (n == 1) "" else "s"} ($nLrt LiteRT); last backend ${store.lastBackend ?: "none yet"}; GPU ${if (store.useGpu) "on" else "off"}" +
                 (store.gpuBlocked?.let { " (auto-off: $it)" } ?: "") + "; $gpu; compaction + fallback rules OK"
         },
         "show_image" to {
