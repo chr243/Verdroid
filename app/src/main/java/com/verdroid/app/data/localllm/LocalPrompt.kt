@@ -94,6 +94,8 @@ object LocalPrompt {
      * (and other mid-history system notes) are merged into it; trailing system nudges (continue after a cut-off,
      * resend a tool call, …) become a final user turn "[Verdroid] …" so the model still sees them.
      */
+    const val CLOCK_PREFIX = "Current local date and time:"
+
     fun mergeSystem(msgs: List<ApiMessage>): Pair<List<ApiMessage>, List<ApiMessage>> {
         val lastNonSystem = msgs.indexOfLast { it.role != "system" }
         val sysText = StringBuilder()
@@ -106,13 +108,19 @@ object LocalPrompt {
                 else -> m.content?.takeIf { it.isNotBlank() }?.let { if (sysText.isNotEmpty()) sysText.append("\n\n"); sysText.append(it) }
             }
         }
-        if (trailing.isNotEmpty()) {
-            val note = "[Verdroid] " + trailing.joinToString("\n\n")
+        // v1.0.65: the trailing clock line made small models answer "Task: … The current date and time is …".
+        // It becomes a day-stable date line at the END of the system prompt (never a user turn; conversation reuse
+        // survives within a day). Other notes (nudges) go BEFORE the last real user/tool text, so that text stays last.
+        val (clock, notes) = trailing.partition { it.startsWith(CLOCK_PREFIX) }
+        clock.lastOrNull()?.let { c ->
+            if (sysText.isNotEmpty()) sysText.append("\n\n")
+            sysText.append("Today: ").append(c.removePrefix(CLOCK_PREFIX).trim().replace(Regex(" \\d{2}:\\d{2},"), ","))
+        }
+        if (notes.isNotEmpty()) {
+            val note = "(Note: " + notes.joinToString(" ") + ")"
             val lastMsg = rest.lastOrNull()
-            // After a user/tool turn the note rides on that turn (only the tail changes: KV/conversation reuse keeps working);
-            // after an assistant turn (e.g. a cut-off reply) it becomes its own user turn.
             if (lastMsg != null && (lastMsg.role == "user" || lastMsg.role == "tool"))
-                rest[rest.lastIndex] = lastMsg.copy(content = lastMsg.content.orEmpty() + "\n\n" + note)
+                rest[rest.lastIndex] = lastMsg.copy(content = note + "\n\n" + lastMsg.content.orEmpty())
             else rest += ApiMessage("user", note)
         }
         val system = if (sysText.isEmpty()) emptyList() else listOf(ApiMessage("system", sysText.toString()))

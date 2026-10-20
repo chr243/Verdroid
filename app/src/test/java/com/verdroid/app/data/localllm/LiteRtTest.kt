@@ -134,7 +134,7 @@ class LocalHistoryFixesTest {
         assertTrue(out.first().content!!.contains("SYS") && out.first().content!!.contains("Summary of the earlier conversation"))
         assertEquals(1, out.count { it.role == "system" })
         assertEquals("user", out.last().role)
-        assertEquals("[Verdroid] Your previous reply was cut off", out.last().content)
+        assertEquals("(Note: Your previous reply was cut off)", out.last().content)
     }
 
     @Test fun liteRtContinuesAfterAssistantEnding() {
@@ -149,9 +149,9 @@ class LocalHistoryFixesTest {
         val text = "x".repeat(400)
         val (_, est) = LiteRtFormat.tokens(-1, -1, 3, "hi", text)
         assertEquals(100L, est)
-        // KV counts: 50 before, 170 after, prompt "hi" ≈ 1+8 → completion ≈ 111
+        // KV counts never inflate completion: 50 before, 170 after → completion = output estimate (100), prompt = 70
         val (p, c) = LiteRtFormat.tokens(50, 170, 3, "hi", text)
-        assertEquals(111L, c); assertEquals(59L, p)
+        assertEquals(100L, c); assertEquals(70L, p)
         assertEquals(0L, LiteRtFormat.tokens(10, 20, 0, "hi", "").second)
     }
 }
@@ -161,7 +161,7 @@ class LiteRtReuseTest {
 
     @Test fun reuseWhenHistoryExtends() {
         val call = listOf("read_file" to mapOf<String, Any?>("path" to "a"))
-        val live = listOf(T("user", "read a\n\n[Verdroid] Current local date and time: …"), T("assistant", "<think>hm</think> ", call))
+        val live = listOf(T("user", "read a"), T("assistant", "<think>hm</think> ", call))
         val hist = listOf(T("user", "read a"), T("assistant", "", call))
         assertTrue(LiteRtFormat.sameHistory(live, hist))
         assertFalse(LiteRtFormat.sameHistory(live, listOf(T("user", "read b"), T("assistant", "", call))))
@@ -170,10 +170,32 @@ class LiteRtReuseTest {
         assertNotEquals(LiteRtFormat.convoKey("s", "[]", 0.6f, 100), LiteRtFormat.convoKey("s2", "[]", 0.6f, 100))
     }
 
-    @Test fun trailingNoteRidesOnLastToolTurn() {
+    @Test fun clockGoesToSystemNotUserTurn() {
         fun m(role: String, c: String) = com.verdroid.app.data.network.ApiMessage(role, c)
-        val out = LocalPrompt.fit(listOf(m("system", "S"), m("user", "q"), m("tool", "{\"ok\":true}"), m("system", "Current local date and time: X")), 4096, 256)
-        assertEquals("tool", out.last().role)
-        assertTrue(out.last().content!!.startsWith("{\"ok\":true}") && out.last().content!!.endsWith("[Verdroid] Current local date and time: X"))
+        val clock = "Current local date and time: Tuesday 2026-10-20 17:31, time zone Europe/Paris (UTC+02:00)."
+        val out = LocalPrompt.fit(listOf(m("system", "S"), m("user", "test test"), m("system", clock)), 4096, 256)
+        assertEquals("user", out.last().role); assertEquals("test test", out.last().content) // the real message is the last turn
+        assertTrue(out.first().content!!.endsWith("Today: Tuesday 2026-10-20, time zone Europe/Paris (UTC+02:00)."))
+        val tool = LocalPrompt.fit(listOf(m("system", "S"), m("user", "q"), m("tool", "{\"ok\":true}"), m("system", clock)), 4096, 256)
+        assertEquals("{\"ok\":true}", tool.last().content)
+    }
+
+    // Regression (v1.0.64, gemma-4-e4b GPU): "test test" → 649 tok/s + false finish=length + continue loop.
+    @Test fun shortReplyIsNotLengthEvenWithBigKvDelta() {
+        val reply = "Task: No task yet defined."
+        val (p, c) = LiteRtFormat.tokens(0, 2400, 7, "test test", reply)
+        assertEquals(7L, c); assertTrue(p > 2000)
+        assertEquals("stop", LiteRtFormat.finishReason(reply, 1024))
+        assertEquals("length", LiteRtFormat.finishReason("x".repeat(4096), 1024))
+    }
+
+    // Regression: a looping conversation must not be reused for another chat / a different history.
+    @Test fun strictReuse() {
+        val live = listOf(T("user", "test test"), T("assistant", "Task: Continue the previous response"))
+        assertFalse(LiteRtFormat.sameHistory(live, listOf(T("user", "everything up and running?"), T("assistant", ""))))
+        assertFalse(LiteRtFormat.sameHistory(live, listOf(T("user", "test"), T("assistant", "Task: Continue the previous response"))))
+        assertFalse(LiteRtFormat.sameHistory(listOf(T("user", "a"), T("assistant", "long text")), listOf(T("user", "a"), T("assistant", ""))))
+        assertFalse(LiteRtFormat.sameHistory(live, emptyList()))
+        assertTrue(LiteRtFormat.sameHistory(live, live))
     }
 }

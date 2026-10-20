@@ -68,7 +68,7 @@ object LiteRtFormat {
         return Convo(system.toString().ifBlank { null }, if (last != null) turns.dropLast(1) else turns, last)
     }
 
-    const val CONTINUE = "[Verdroid] Continue exactly where you stopped, without repeating."
+    const val CONTINUE = "Please continue your previous reply exactly where it stopped, without repeating it."
 
     fun convoKey(system: String?, toolsJson: String, temperature: Float, maxTokens: Int): String =
         listOf(system.orEmpty(), toolsJson, temperature.toString(), maxTokens.toString()).joinToString("\u0000")
@@ -76,16 +76,17 @@ object LiteRtFormat {
     /**
      * Whether [live] (what the live conversation holds, incl. the model's last reply) is the same history as [history]
      * (rebuilt from the chat). Assistant turns: same tool calls and same text ignoring whitespace/thinking; user/tool
-     * turns: the live one may carry an extra trailing "[Verdroid] …" note (clock) that the chat history doesn't.
+     * turns: exactly equal. v1.0.65: strict (the old prefix/endsWith matching let an empty assistant turn match anything
+     * and leaked a looping conversation into the next turn/chat). Any doubt → false → fresh conversation.
      */
     fun sameHistory(live: List<Turn>, history: List<Turn>): Boolean {
         if (live.size != history.size) return false
         return live.zip(history).all { (a, b) ->
             a.role == b.role && when (a.role) {
                 "assistant" -> a.toolCalls.map { it.first to toJson(it.second) } == b.toolCalls.map { it.first to toJson(it.second) } &&
-                    norm(a.text).let { x -> val y = norm(b.text); x == y || x.endsWith(y) }
-                "tool" -> a.toolName == b.toolName && a.text.startsWith(b.text)
-                else -> a.text.startsWith(b.text)
+                    norm(a.text) == norm(b.text)
+                "tool" -> a.toolName == b.toolName && a.text == b.text
+                else -> a.text == b.text
             }
         }
     }
@@ -135,15 +136,21 @@ object LiteRtFormat {
      * undercount. The conversation's KV token count before/after the turn covers the new prompt + the reply; the
      * new prompt part is estimated from [sentText]. Without counts, the larger of chunks and a text estimate is used.
      */
+    /**
+     * (prompt, completion). v1.0.65: completion comes from the OUTPUT only (callbacks / text estimate), never from the KV
+     * delta — a fresh conversation prefills the whole history inside sendMessage, so the delta was mostly prompt
+     * (→ "649 tok/s" and false finish=length). The KV count only sizes the prompt.
+     */
     fun tokens(before: Long, after: Long, chunks: Long, sentText: String, outText: String): Pair<Long, Long> {
-        val estOut = maxOf(chunks, estimateTokens(outText))
+        val completion = if (outText.isEmpty()) 0L else maxOf(chunks, estimateTokens(outText)).coerceAtLeast(1)
         val promptEst = estimateTokens(sentText) + TEMPLATE_OVERHEAD
-        val total = if (before >= 0 && after > before) after - before else -1L
-        if (total <= 0) return promptEst to estOut
-        val completion = if (outText.isEmpty()) 0L
-            else (if (total > promptEst) maxOf(chunks, total - promptEst) else minOf(estOut, total)).coerceAtLeast(1)
-        return (before + total - completion).coerceAtLeast(0) to completion
+        val prompt = if (after > 0) (after - completion).coerceAtLeast(promptEst) else promptEst
+        return prompt to completion
     }
+
+    /** "length" only when the visible output really is near the cap (text estimate ≥ 90 %); when unsure, "stop". */
+    fun finishReason(outText: String, maxTokens: Int): String =
+        if (maxTokens > 0 && estimateTokens(outText) * 10 >= maxTokens * 9L) "length" else "stop"
     private const val TEMPLATE_OVERHEAD = 8L
 
     fun estimateTokens(text: String): Long = ((text.length + 3) / 4).toLong()

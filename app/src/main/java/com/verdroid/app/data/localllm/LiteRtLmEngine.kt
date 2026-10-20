@@ -237,7 +237,7 @@ class LiteRtLmEngine @Inject constructor(
             val after = runCatching { conversation.getTokenCount().toLong() }.getOrDefault(-1L)
             val outText = text.toString() + thought + calls.joinToString { it.first + LiteRtFormat.toJson(it.second) }
             val (promptTokens, completion) = LiteRtFormat.tokens(before, after, chunks, last.text, outText)
-            val finish = if (completion >= maxTokens - 1) "length" else "stop"
+            val finish = LiteRtFormat.finishReason(outText, maxTokens)
             live = conversation; liveKey = key; keep = true
             liveTurns = convo.history + last + LiteRtFormat.Turn("assistant", text.toString(), calls.toList())
             return LiteRtFormat.reply(text.toString(), thought.toString(), calls, finish, promptTokens, completion, genMs, backend)

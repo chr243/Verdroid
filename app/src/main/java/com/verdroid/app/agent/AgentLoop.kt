@@ -203,7 +203,9 @@ class AgentLoop internal constructor(
                     if (calls.isEmpty()) {
                         if (finish == "length") {
                             lengthStreak++
-                            if (lengthStreak > MAX_LENGTH_CONTINUATIONS) {
+                            // v1.0.65: on-device models get at most one automatic continue (small models loop on it).
+                            val maxCont = if (outcome.model.startsWith(com.verdroid.app.data.network.ModelIds.LOCAL_PREFIX)) MAX_LOCAL_CONTINUATIONS else MAX_LENGTH_CONTINUATIONS
+                            if (lengthStreak > maxCont) {
                                 return pauseWithReason(taskId, "Reply cut off", "✂️ The model's reply was cut off (finish_reason=length) ${lengthStreak} times. Tap Continue to keep going, or lower the context in Settings → Limits.")
                             }
                             nudge = "Your previous reply was cut off by the token limit. Continue exactly where you stopped, without repeating."
@@ -407,6 +409,7 @@ class AgentLoop internal constructor(
             (it.role == MessageRole.USER && (it.kind == MessageKind.NORMAL || it.kind == MessageKind.SCHEDULED_PROMPT)) || it.kind == MessageKind.SUMMARY
         }
         private const val MAX_LENGTH_CONTINUATIONS = 3
+        const val MAX_LOCAL_CONTINUATIONS = 1
         /** Only the latest image attachments are re-sent each step (vision tokens are expensive on free tiers). */
         const val MAX_IMAGE_TURNS = 2
         private const val FINISH_NOTIFICATION_BASE = 52_000
