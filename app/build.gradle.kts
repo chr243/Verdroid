@@ -87,6 +87,8 @@ android {
         aidl = true // Shizuku UserService (IShellService.aidl)
     }
     packaging {
+        // llama.cpp + Vulkan shaders (~37 MB .so) compress to ~12 MB; extracted once at install.
+        jniLibs { useLegacyPackaging = true }
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
             // JGit ships OSGi/Eclipse metadata that can clash with other jars.

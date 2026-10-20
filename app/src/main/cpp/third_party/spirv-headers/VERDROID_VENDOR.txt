@@ -1,0 +1,1 @@
+SPIRV-Headers (KhronosGroup, main @ 86f980c): only include/spirv/unified1/spirv.hpp. MIT-style Khronos license.

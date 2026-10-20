@@ -34,7 +34,10 @@ class LocalLlmClient @Inject constructor(
             val (body, err) = engine.chat(bare, LocalPrompt.messagesJson(fitted), toolsJson, maxTokens)
             if (err != null || body == null) { lastError = "$label: ${err ?: "no reply"}"; continue }
             when (val r = LocalReply.parse(body, label)) {
-                is LocalReply.Result.Ok -> return KiloResult.Success(r.completion, label, id)
+                is LocalReply.Result.Ok -> {
+                    val line = LocalLabel.format(bare, r.completionTokens, r.genMs, r.backend)
+                    return KiloResult.Success(r.completion.copy(model = line), line, id)
+                }
                 is LocalReply.Result.Error -> {
                     if (r.outOfMemory) engine.unload()
                     lastError = "$label: ${r.message}"

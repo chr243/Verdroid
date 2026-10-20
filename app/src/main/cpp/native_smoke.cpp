@@ -5,7 +5,7 @@
 
 int main(int argc, char ** argv) {
     if (argc < 2) { fprintf(stderr, "usage: %s model.gguf\n", argv[0]); return 2; }
-    Engine * e = load_impl(argv[1], 2048, 4);
+    Engine * e = load_impl(argv[1], 2048, 4, 0);
     if (!e) { fprintf(stderr, "load failed: %s\n", g_last_error.c_str()); return 1; }
     std::string tools = R"([{"type":"function","function":{"name":"web_search","description":"Search the web.","parameters":{"type":"object","properties":{"query":{"type":"string"}},"required":["query"]}}}])";
     printf("PLAIN: %s\n", chat_impl(e, R"([{"role":"system","content":"You are helpful."},{"role":"user","content":"What is 2+2? One short sentence."}])", "", 64, 0.0f, false).c_str());

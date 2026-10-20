@@ -15,6 +15,17 @@
 #include "chat.h"
 #include "sampling.h"
 #include "json.h"
+#ifndef VERDROID_HAS_VULKAN
+#define VERDROID_HAS_VULKAN 0
+#endif
+#include "ggml-backend.h"
+#include "ggml-alloc.h"
+#include <chrono>
+#include <cmath>
+#include <cstdlib>
+#if VERDROID_HAS_VULKAN
+#include "ggml-vulkan.h"
+#endif
 
 #define TAG "VerdroidLlama"
 #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, TAG, __VA_ARGS__)
@@ -27,6 +38,8 @@ struct Engine {
     llama_context * ctx = nullptr;
     common_chat_templates_ptr tmpls;
     llama_tokens cached;      // tokens currently in the KV cache (seq 0)
+    int gpu_layers = 0;       // requested offload (0 = CPU)
+    std::string backend = "CPU";
     int n_batch = 512;
     std::atomic<bool> cancel{false};
     std::mutex mu;
@@ -34,6 +47,35 @@ struct Engine {
 
 std::string g_last_error;
 std::once_flag g_backend_once;
+bool g_vk_enabled = false;  // Vulkan registered in this process (decided once, before the first backend init)
+
+void log_cb(ggml_log_level level, const char * text, void *) {
+    if (level >= GGML_LOG_LEVEL_WARN) __android_log_print(ANDROID_LOG_WARN, TAG, "%s", text);
+}
+
+// Must run before anything touches the ggml backend registry. CPU-only processes never create a Vulkan instance.
+void init_backend(bool want_vulkan) {
+    std::call_once(g_backend_once, [want_vulkan] {
+        llama_log_set(log_cb, nullptr);
+#if VERDROID_HAS_VULKAN
+        if (!want_vulkan) setenv("GGML_DISABLE_VULKAN", "1", 1);
+        g_vk_enabled = want_vulkan;
+#else
+        (void) want_vulkan;
+#endif
+        llama_backend_init();
+    });
+}
+
+// First non-CPU device (the Vulkan GPU), or nullptr.
+ggml_backend_dev_t gpu_device() {
+    for (size_t i = 0; i < ggml_backend_dev_count(); i++) {
+        auto * d = ggml_backend_dev_get(i);
+        auto t = ggml_backend_dev_type(d);
+        if (t == GGML_BACKEND_DEVICE_TYPE_GPU || t == GGML_BACKEND_DEVICE_TYPE_IGPU) return d;
+    }
+    return nullptr;
+}
 
 std::string jstr(JNIEnv * env, jstring s) {
     if (!s) return {};
@@ -51,9 +93,6 @@ std::string error_json(const std::string & msg) {
     return j.dump_safe();
 }
 
-void log_cb(ggml_log_level level, const char * text, void *) {
-    if (level >= GGML_LOG_LEVEL_WARN) __android_log_print(ANDROID_LOG_WARN, TAG, "%s", text);
-}
 
 // Tokenize a rendered prompt: template text may contain special tokens, user input parts never do.
 llama_tokens tokenize_prompt(const llama_vocab * vocab, const common_chat_prompt & prompt, bool add_bos) {
@@ -85,13 +124,27 @@ bool decode_range(Engine * e, const llama_tokens & toks, size_t from) {
 
 }  // namespace
 
-Engine * load_impl(const std::string & path, int n_ctx, int n_threads) {
-    std::call_once(g_backend_once, [] { llama_log_set(log_cb, nullptr); llama_backend_init(); });
+Engine * load_impl(const std::string & path, int n_ctx, int n_threads, int gpu_layers) {
+    init_backend(gpu_layers != 0);
     Engine * e = nullptr;
+    ggml_backend_dev_t gpu = gpu_layers != 0 ? gpu_device() : nullptr;
+    if (gpu_layers != 0 && !gpu) { g_last_error = g_vk_enabled ? "No usable Vulkan GPU found" : "GPU is off in this process (restart Verdroid after turning on Use GPU)"; return nullptr; }
+    static ggml_backend_dev_t no_devices[1] = { nullptr };
+    static ggml_backend_dev_t gpu_devices[2] = { nullptr, nullptr };
     try {
         e = new Engine();
         llama_model_params mp = llama_model_default_params();
-        mp.n_gpu_layers = 0;
+        if (gpu) {
+            gpu_devices[0] = gpu;
+            mp.devices = gpu_devices;
+            mp.n_gpu_layers = gpu_layers < 0 ? -1 : gpu_layers;
+            mp.split_mode = LLAMA_SPLIT_MODE_NONE;
+            e->gpu_layers = gpu_layers;
+            e->backend = std::string("Vulkan: ") + ggml_backend_dev_description(gpu);
+        } else {
+            mp.devices = no_devices;
+            mp.n_gpu_layers = 0;
+        }
         e->model = llama_model_load_from_file(path.c_str(), mp);
         if (!e->model) { g_last_error = "Could not load model (not a valid GGUF or not enough memory)"; delete e; return nullptr; }
         llama_context_params cp = llama_context_default_params();
@@ -181,6 +234,7 @@ std::string chat_impl(Engine * e, const std::string & messages_s, const std::str
         int limit = max_tokens > 0 ? max_tokens : 1024;
         common_batch batch(e->ctx);
         llama_pos pos = (llama_pos) prompt.size();
+        auto t_gen0 = std::chrono::steady_clock::now();
         while (n_gen < limit) {
             if (e->cancel.load()) { finish = "cancelled"; break; }
             if ((int) pos >= n_ctx - 1) { finish = "length"; break; }
@@ -204,6 +258,7 @@ std::string chat_impl(Engine * e, const std::string & messages_s, const std::str
         }
         common_sampler_free(smpl);
         smpl = nullptr;
+        int64_t gen_ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t_gen0).count();
 
         common_chat_msg msg = session.finish(gen);
         common_json out = common_json::object();
@@ -223,6 +278,8 @@ std::string chat_impl(Engine * e, const std::string & messages_s, const std::str
         out["finish"] = msg.tool_calls.empty() ? finish : std::string("tool_calls");
         out["prompt_tokens"] = (int64_t) prompt.size();
         out["completion_tokens"] = (int64_t) n_gen;
+        out["gen_ms"] = gen_ms;
+        out["backend"] = e->backend;
         out["raw"] = msg.tool_calls.empty() && msg.content.empty() ? text : std::string();
         return out.dump_safe();
     } catch (const std::bad_alloc &) {
@@ -236,11 +293,75 @@ std::string chat_impl(Engine * e, const std::string & messages_s, const std::str
 }
 
 
+
+// GPU probe: run in a throwaway process (a driver crash there can't take the app down). Lists Vulkan devices and
+// checks a small f32 matmul on the GPU against the CPU result.
+std::string gpu_probe_impl() {
+    common_json out = common_json::object();
+#if !VERDROID_HAS_VULKAN
+    out["ok"] = false; out["error"] = std::string("This build has no Vulkan backend");
+    return out.dump_safe();
+#else
+    init_backend(true);
+    if (!g_vk_enabled) { out["ok"] = false; out["error"] = std::string("Vulkan was not enabled in this process"); return out.dump_safe(); }
+    int n = ggml_backend_vk_get_device_count();
+    common_json devs = common_json::array();
+    for (int i = 0; i < n; i++) {
+        char d[256] = {0};
+        ggml_backend_vk_get_device_description(i, d, sizeof(d));
+        size_t fr = 0, tot = 0;
+        ggml_backend_vk_get_device_memory(i, &fr, &tot);
+        common_json o = common_json::object();
+        o["name"] = std::string(d); o["mem_total"] = (int64_t) tot; o["mem_free"] = (int64_t) fr;
+        devs.push_back(o);
+    }
+    out["devices"] = devs;
+    auto * dev = gpu_device();
+    if (!dev) { out["ok"] = false; out["error"] = std::string(n == 0 ? "No Vulkan GPU found" : "Vulkan GPU not supported by llama.cpp"); return out.dump_safe(); }
+    out["device"] = std::string(ggml_backend_dev_description(dev));
+    auto t0 = std::chrono::steady_clock::now();
+    ggml_backend_t be = ggml_backend_dev_init(dev, nullptr);
+    if (!be) { out["ok"] = false; out["error"] = std::string("Vulkan device init failed"); return out.dump_safe(); }
+    const int K = 64, M = 32, N = 16;
+    ggml_init_params ip = { ggml_tensor_overhead() * 8 + ggml_graph_overhead(), nullptr, true };
+    ggml_context * ctx = ggml_init(ip);
+    ggml_tensor * a = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, K, M);
+    ggml_tensor * b = ggml_new_tensor_2d(ctx, GGML_TYPE_F32, K, N);
+    ggml_tensor * c = ggml_mul_mat(ctx, a, b);
+    ggml_cgraph * gf = ggml_new_graph(ctx);
+    ggml_build_forward_expand(gf, c);
+    ggml_backend_buffer_t buf = ggml_backend_alloc_ctx_tensors(ctx, be);
+    std::vector<float> av(K * M), bv(K * N), cv(M * N);
+    for (int i = 0; i < K * M; i++) av[i] = std::sin(0.1f * i);
+    for (int i = 0; i < K * N; i++) bv[i] = std::cos(0.07f * i);
+    ggml_backend_tensor_set(a, av.data(), 0, av.size() * 4);
+    ggml_backend_tensor_set(b, bv.data(), 0, bv.size() * 4);
+    bool ok = buf && ggml_backend_graph_compute(be, gf) == GGML_STATUS_SUCCESS;
+    float max_err = 0;
+    if (ok) {
+        ggml_backend_tensor_get(c, cv.data(), 0, cv.size() * 4);
+        for (int j = 0; j < N; j++) for (int i = 0; i < M; i++) {
+            float ref = 0; for (int k = 0; k < K; k++) ref += av[i * K + k] * bv[j * K + k];
+            max_err = std::max(max_err, std::fabs(ref - cv[j * M + i]));
+        }
+        ok = std::isfinite(max_err) && max_err < 0.05f;
+    }
+    if (buf) ggml_backend_buffer_free(buf);
+    ggml_free(ctx);
+    ggml_backend_free(be);
+    out["ok"] = ok;
+    out["max_err"] = (double) max_err;
+    out["ms"] = (int64_t) std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - t0).count();
+    if (!ok) out["error"] = std::string("GPU matmul gave wrong results or failed");
+    return out.dump_safe();
+#endif
+}
+
 extern "C" {
 
 JNIEXPORT jlong JNICALL
-Java_com_verdroid_app_data_localllm_LlamaNative_nativeLoad(JNIEnv * env, jobject, jstring jpath, jint n_ctx, jint n_threads) {
-    return reinterpret_cast<jlong>(load_impl(jstr(env, jpath), n_ctx, n_threads));
+Java_com_verdroid_app_data_localllm_LlamaNative_nativeLoad(JNIEnv * env, jobject, jstring jpath, jint n_ctx, jint n_threads, jint gpu_layers) {
+    return reinterpret_cast<jlong>(load_impl(jstr(env, jpath), n_ctx, n_threads, gpu_layers));
 }
 
 JNIEXPORT jstring JNICALL
@@ -278,6 +399,8 @@ Java_com_verdroid_app_data_localllm_LlamaNative_nativeInfo(JNIEnv * env, jobject
     j["n_params"] = (int64_t) llama_model_n_params(e->model);
     j["has_template"] = common_chat_templates_was_explicit(e->tmpls.get());
     j["system"] = std::string(llama_print_system_info());
+    j["backend"] = e->backend;
+    j["gpu_layers"] = (int64_t) e->gpu_layers;
     return to_j(env, j.dump_safe());
 }
 
@@ -286,5 +409,20 @@ Java_com_verdroid_app_data_localllm_LlamaNative_nativeChat(JNIEnv * env, jobject
                                                              jint max_tokens, jfloat temp, jboolean thinking) {
     return to_j(env, chat_impl(reinterpret_cast<Engine *>(h), jstr(env, jmessages), jstr(env, jtools), max_tokens, temp, thinking));
 }
+
+JNIEXPORT jstring JNICALL
+Java_com_verdroid_app_data_localllm_LlamaNative_nativeGpuProbe(JNIEnv * env, jobject) {
+    try { return to_j(env, gpu_probe_impl()); } catch (const std::exception & ex) { return to_j(env, error_json(std::string("GPU probe: ") + ex.what())); }
+}
+
+// Decides once per process whether Vulkan is registered. Returns true if this call (or an earlier one) enabled it.
+JNIEXPORT jboolean JNICALL
+Java_com_verdroid_app_data_localllm_LlamaNative_nativeInitBackend(JNIEnv *, jobject, jboolean vulkan) {
+    init_backend(vulkan);
+    return g_vk_enabled;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_verdroid_app_data_localllm_LlamaNative_nativeHasVulkan(JNIEnv *, jobject) { return VERDROID_HAS_VULKAN ? JNI_TRUE : JNI_FALSE; }
 
 }  // extern "C"

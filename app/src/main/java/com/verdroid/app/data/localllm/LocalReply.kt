@@ -10,10 +10,21 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.longOrNull
 
+/** Model line under a local reply: "gemma-2-2b (on device) 10 tok/s", plus " · GPU" when Vulkan ran it. */
+object LocalLabel {
+    fun format(modelId: String, completionTokens: Long, genMs: Long, backend: String): String {
+        val base = "$modelId (on device)"
+        val speed = if (completionTokens > 0 && genMs > 0) " ${Math.round(completionTokens * 1000.0 / genMs)} tok/s" else ""
+        val gpu = if (backend.startsWith("Vulkan")) " · GPU" else ""
+        return base + speed + gpu
+    }
+}
+
 /** Parses the native reply JSON (see verdroid_llama.cpp). Pure, JVM-tested. */
 object LocalReply {
     sealed interface Result {
-        data class Ok(val completion: ParsedCompletion, val promptTokens: Long, val completionTokens: Long) : Result
+        data class Ok(val completion: ParsedCompletion, val promptTokens: Long, val completionTokens: Long,
+                      val genMs: Long = 0, val backend: String = "CPU") : Result
         data class Error(val message: String, val outOfMemory: Boolean, val cancelled: Boolean) : Result
     }
 
@@ -38,6 +49,7 @@ object LocalReply {
         return Result.Ok(
             ParsedCompletion(split.content?.takeIf { it.isNotBlank() }, calls, finish, modelLabel, reasoning),
             o["prompt_tokens"]?.jsonPrimitive?.longOrNull ?: 0, o["completion_tokens"]?.jsonPrimitive?.longOrNull ?: 0,
+            o["gen_ms"]?.jsonPrimitive?.longOrNull ?: 0, s("backend")?.ifBlank { null } ?: "CPU",
         )
     }
 }

@@ -28,11 +28,36 @@ if (ANDROID_ABI STREQUAL "arm64-v8a")
   set(GGML_CPU_ARM_ARCH "armv8.2-a+dotprod+fp16" CACHE STRING "" FORCE)
 endif()
 
+# GPU: Vulkan backend (arm64 only). Off at runtime unless the user turns on "Use GPU"; any failure falls back to CPU.
+option(VERDROID_VULKAN "Build the llama.cpp Vulkan backend" ON)
+if (VERDROID_VULKAN AND ANDROID_ABI STREQUAL "arm64-v8a")
+    set(GGML_VULKAN ON CACHE BOOL "" FORCE)
+    set(GGML_VULKAN_NO_COOPMAT2 ON)
+    set(Vulkan_INCLUDE_DIR ${CMAKE_CURRENT_LIST_DIR}/third_party/vulkan-headers/include CACHE PATH "" FORCE)
+    find_library(VERDROID_VK_LIB vulkan REQUIRED)
+    set(Vulkan_LIBRARY ${VERDROID_VK_LIB} CACHE FILEPATH "" FORCE)
+    # Prefer a recent host glslc (shaderc ≥ 2024, e.g. `apt install glslc`): the NDK's 2022 glslc lacks
+    # GL_EXT_integer_dot_product etc., which makes quantized matmuls much slower. The NDK one still builds.
+    find_program(VERDROID_HOST_GLSLC glslc NO_CMAKE_FIND_ROOT_PATH)
+    if (VERDROID_HOST_GLSLC)
+        set(Vulkan_GLSLC_EXECUTABLE ${VERDROID_HOST_GLSLC} CACHE FILEPATH "" FORCE)
+    else()
+        set(Vulkan_GLSLC_EXECUTABLE ${ANDROID_NDK}/shader-tools/${ANDROID_HOST_TAG}/glslc CACHE FILEPATH "" FORCE)
+    endif()
+    set(SPIRV-Headers_DIR ${CMAKE_CURRENT_LIST_DIR}/third_party/spirv-headers-stub CACHE PATH "" FORCE)
+    include_directories(SYSTEM ${CMAKE_CURRENT_LIST_DIR}/third_party/spirv-headers/include)
+    set(VERDROID_HAS_VULKAN 1)
+else()
+    set(GGML_VULKAN OFF CACHE BOOL "" FORCE)
+    set(VERDROID_HAS_VULKAN 0)
+endif()
+
 add_subdirectory(llama.cpp build-llama)
 
 add_library(verdroid_llama SHARED verdroid_llama.cpp)
 target_include_directories(verdroid_llama PRIVATE llama.cpp/common llama.cpp/include llama.cpp/ggml/include)
 target_link_libraries(verdroid_llama llama llama-common android log)
+target_compile_definitions(verdroid_llama PRIVATE VERDROID_HAS_VULKAN=${VERDROID_HAS_VULKAN})
 target_compile_options(verdroid_llama PRIVATE -O2 -fvisibility=hidden -ffunction-sections -fdata-sections)
 target_link_options(verdroid_llama PRIVATE -Wl,--gc-sections -Wl,--exclude-libs,ALL -Wl,-z,max-page-size=16384)
 

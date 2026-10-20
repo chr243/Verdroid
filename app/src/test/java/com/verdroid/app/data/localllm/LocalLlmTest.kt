@@ -16,7 +16,7 @@ class LocalLlmTest {
         assertTrue(ModelIds.isLocal("local:qwen3-4b"))
         assertFalse(ModelIds.isOpenRouter("local:qwen3-4b"))
         assertEquals("qwen3-4b", ModelIds.bare("local:qwen3-4b"))
-        assertEquals("qwen3-4b (on-device)", ModelIds.label("local:qwen3-4b"))
+        assertEquals("qwen3-4b (on device)", ModelIds.label("local:qwen3-4b"))
         assertEquals("local:a", ModelIds.local(" a "))
     }
 

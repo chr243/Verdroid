@@ -497,9 +497,21 @@ class SelfTestRunner @Inject constructor(
             check(r is com.verdroid.app.data.localllm.LocalReply.Result.Error && r.outOfMemory) { "OOM → unavailable" }
             val abi = android.os.Build.SUPPORTED_ABIS.firstOrNull().orEmpty()
             if (!abi.startsWith("arm64")) throw SkipCheck("on-device engine is arm64-only (this device: $abi)")
+            val G = com.verdroid.app.data.localllm.GpuPolicy
+            check(G.decide(false, null, true, true).mode == com.verdroid.app.data.localllm.GpuPolicy.Mode.CPU && G.decide(true, null, true, true).mode == com.verdroid.app.data.localllm.GpuPolicy.Mode.GPU &&
+                G.decide(true, "crash", true, true).mode == com.verdroid.app.data.localllm.GpuPolicy.Mode.CPU && G.decide(true, null, true, false).mode == com.verdroid.app.data.localllm.GpuPolicy.Mode.CPU) { "GPU decision rules" }
+            check(G.nativeLayers(com.verdroid.app.data.localllm.GpuPolicy.Mode.CPU, -1) == 0 && G.nativeLayers(com.verdroid.app.data.localllm.GpuPolicy.Mode.GPU, -1) == -1) { "GPU layers" }
             check(com.verdroid.app.data.localllm.LlamaNative.available) { com.verdroid.app.data.localllm.LlamaNative.unavailableReason }
-            val n = com.verdroid.app.data.localllm.LocalModelStore(context).models.value.size
-            "llama.cpp engine loads; $n local model${if (n == 1) "" else "s"} imported; prompt/tool compaction + fallback rules OK"
+            check(com.verdroid.app.data.localllm.LlamaNative.nativeHasVulkan()) { "arm64 build must include the Vulkan backend" }
+            val store = com.verdroid.app.data.localllm.LocalModelStore(context)
+            val n = store.models.value.size
+            // Probe runs in the throwaway :gpuprobe process; a failing GPU is not a test failure (CPU fallback).
+            val probe = com.verdroid.app.data.localllm.GpuProbeService.probe(context, 45_000)
+            val pj = Json.parseToJsonElement(probe).jsonObject
+            val gpu = if (pj["ok"]?.jsonPrimitive?.boolean == true) "GPU probe OK (${pj["device"]?.jsonPrimitive?.content})"
+                else "GPU probe: ${pj["error"]?.jsonPrimitive?.content ?: "failed"} → CPU fallback"
+            "llama.cpp engine loads; $n local model${if (n == 1) "" else "s"}; GPU ${if (store.useGpu) "on" else "off"}" +
+                (store.gpuBlocked?.let { " (auto-off: $it)" } ?: "") + "; $gpu; compaction + fallback rules OK"
         },
         "show_image" to {
             val S = com.verdroid.app.agent.tools.ShownImages

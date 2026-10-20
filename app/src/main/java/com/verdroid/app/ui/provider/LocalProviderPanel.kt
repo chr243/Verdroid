@@ -41,6 +41,22 @@ class LocalLlmViewModel @Inject constructor(
 ) : ViewModel() {
     val models = store.models
     val state = engine.state
+    val gpuNote = engine.gpuNote
+    private val _useGpu = MutableStateFlow(store.useGpu)
+    val useGpu = _useGpu.asStateFlow()
+    private val _probing = MutableStateFlow(false)
+    val probing = _probing.asStateFlow()
+
+    fun setGpu(on: Boolean) = viewModelScope.launch {
+        if (!on) { engine.disableGpu(); _useGpu.value = false; _note.value = "GPU off; CPU is used"; return@launch }
+        _probing.value = true
+        _note.value = "Probing the GPU (separate process)…"
+        val (ok, msg) = engine.enableGpu()
+        _useGpu.value = ok
+        _note.value = msg + if (ok) ". Applies on the next load." else ""
+        _probing.value = false
+    }
+    fun setGpuLayers(n: Int) { store.gpuLayers = n; _note.value = "GPU layers ${com.verdroid.app.data.localllm.GpuPolicy.layersLabel(n)} (applies on next load)" }
     val priority = settings.modelPriority.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     private val _note = MutableStateFlow<String?>(null)
     val note = _note.asStateFlow()
@@ -80,7 +96,7 @@ class LocalLlmViewModel @Inject constructor(
         _note.value = when {
             err != null -> "Test failed: $err"
             else -> when (val r = LocalReply.parse(body.orEmpty(), id)) {
-                is LocalReply.Result.Ok -> "OK in ${"%.1f".format(secs)} s · ${r.completionTokens} tokens " +
+                is LocalReply.Result.Ok -> "OK on ${engine.backend} in ${"%.1f".format(secs)} s · ${r.completionTokens} tokens " +
                     "(${if (secs > 0) "%.1f".format(r.completionTokens / secs) else "?"} tok/s incl. prompt): " + (r.completion.content ?: "(empty)").take(200)
                 is LocalReply.Result.Error -> "Test failed: ${r.message}"
             }
@@ -116,6 +132,10 @@ fun LocalProviderPanel(onOpenModels: () -> Unit, vm: LocalLlmViewModel = hiltVie
     val priority by vm.priority.collectAsStateWithLifecycle()
     val note by vm.note.collectAsStateWithLifecycle()
     val busy by vm.busy.collectAsStateWithLifecycle()
+    val useGpu by vm.useGpu.collectAsStateWithLifecycle()
+    val probing by vm.probing.collectAsStateWithLifecycle()
+    val gpuNote by vm.gpuNote.collectAsStateWithLifecycle()
+    var gpuLayers by remember { mutableIntStateOf(vm.store.gpuLayers) }
     var nCtx by remember { mutableIntStateOf(vm.store.contextSize) }
     var threads by remember { mutableIntStateOf(vm.store.threads) }
     var confirmDelete by remember { mutableStateOf<LocalModel?>(null) }
@@ -154,6 +174,22 @@ fun LocalProviderPanel(onOpenModels: () -> Unit, vm: LocalLlmViewModel = hiltVie
     Slider(value = threads.toFloat(), onValueChange = { threads = it.toInt() }, onValueChangeFinished = { vm.setThreads(threads) },
         valueRange = 1f..8f, steps = 6)
 
+    ListItem(headlineContent = { Text("Use GPU (Vulkan)") },
+        supportingContent = { Text("Experimental. Turning it on first tests the GPU in a separate process; on any GPU problem Verdroid uses the CPU instead.") },
+        trailingContent = { if (probing) CircularProgressIndicator(Modifier.size(24.dp)) else Switch(useGpu, vm::setGpu, enabled = !busy) })
+    if (useGpu) {
+        Text("GPU layers", style = MaterialTheme.typography.labelLarge)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            com.verdroid.app.data.localllm.GpuPolicy.LAYER_CHOICES.forEach { n ->
+                FilterChip(selected = gpuLayers == n, onClick = { gpuLayers = n; vm.setGpuLayers(n) },
+                    label = { Text(com.verdroid.app.data.localllm.GpuPolicy.layersLabel(n)) })
+            }
+        }
+    }
+    vm.store.gpuProbe?.let { Text("Last GPU probe: $it", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+    gpuNote?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
+    (state as? LocalEngineState.Loaded)?.let { Text("Active backend: ${it.backend}", style = MaterialTheme.typography.labelLarge) }
+
     when (val s = state) {
         is LocalEngineState.Loading -> Text("Loading ${s.id}…")
         is LocalEngineState.Failed -> Text("${s.id}: ${s.message}", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
@@ -167,7 +203,7 @@ fun LocalProviderPanel(onOpenModels: () -> Unit, vm: LocalLlmViewModel = hiltVie
         ElevatedCard(Modifier.fillMaxWidth()) {
             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(m.name, style = MaterialTheme.typography.titleSmall)
-                Text("${LocalModels.human(m.sizeBytes)} · local:${m.id}${if (loaded) " · loaded" else ""}",
+                Text("${LocalModels.human(m.sizeBytes)} · local:${m.id}${if (loaded) " · loaded on ${(state as LocalEngineState.Loaded).backend}" else ""}",
                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (loaded) OutlinedButton(onClick = { vm.unload() }) { Text("Unload") }

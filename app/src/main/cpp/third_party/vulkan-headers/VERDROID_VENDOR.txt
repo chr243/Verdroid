@@ -1,0 +1,1 @@
+Vulkan-Headers v1.4.328 (KhronosGroup), include/ only, Apache-2.0/MIT. Used for vulkan.hpp; the NDK's headers (275) are too old for ggml-vulkan.

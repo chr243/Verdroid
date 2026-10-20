@@ -89,6 +89,26 @@ class LocalModelStore @Inject constructor(@ApplicationContext private val contex
     var threads: Int
         get() = prefs.getInt("threads", LocalModels.defaultThreads(Runtime.getRuntime().availableProcessors()))
         set(v) { prefs.edit().putInt("threads", v.coerceIn(1, 16)).apply() }
+    /** "Use GPU" switch (Vulkan), off by default. */
+    var useGpu: Boolean
+        get() = prefs.getBoolean("use_gpu", false)
+        set(v) { prefs.edit().putBoolean("use_gpu", v).apply() }
+    /** GPU layers to offload: −1 = all. */
+    var gpuLayers: Int
+        get() = prefs.getInt("gpu_layers", -1)
+        set(v) { prefs.edit().putInt("gpu_layers", v).apply() }
+    /** Why the GPU was switched off automatically (crash / failed probe); null = not blocked. */
+    var gpuBlocked: String?
+        get() = prefs.getString("gpu_blocked", null)
+        set(v) { prefs.edit().apply { if (v == null) remove("gpu_blocked") else putString("gpu_blocked", v) }.apply() }
+    /** Last probe summary shown in the panel ("Adreno (TM) 740 · OK"). */
+    var gpuProbe: String?
+        get() = prefs.getString("gpu_probe", null)
+        set(v) { prefs.edit().putString("gpu_probe", v).apply() }
+
+    /** Crash sentinel: written right before risky GPU work, removed when it finishes. Survives a native crash. */
+    val gpuSentinel: File get() = File(context.filesDir, "gpu_in_progress")
+
     var maxTokens: Int
         get() = prefs.getInt("max_tokens", 1024)
         set(v) { prefs.edit().putInt("max_tokens", v.coerceIn(64, 8192)).apply() }

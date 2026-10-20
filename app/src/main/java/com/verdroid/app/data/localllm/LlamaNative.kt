@@ -13,7 +13,14 @@ object LlamaNative {
     val unavailableReason: String get() = if (loaded) "" else "On-device engine not available on this phone (${loadError ?: "arm64 only"})"
 
     /** Returns a handle, or 0 on failure ([nativeLastError] says why). */
-    external fun nativeLoad(path: String, nCtx: Int, nThreads: Int): Long
+    /** [gpuLayers]: 0 = CPU only, -1 = all layers on the Vulkan GPU, n = first n layers. */
+    external fun nativeLoad(path: String, nCtx: Int, nThreads: Int, gpuLayers: Int): Long
+    /** Decides once per process whether Vulkan is registered (call before the first load). Returns whether it is. */
+    external fun nativeInitBackend(vulkan: Boolean): Boolean
+    /** True when this build contains the Vulkan backend (arm64). */
+    external fun nativeHasVulkan(): Boolean
+    /** JSON {ok, device, devices[], max_err, ms, error}. Only call in the probe process (see [GpuProbeService]). */
+    external fun nativeGpuProbe(): String
     external fun nativeLastError(): String
     external fun nativeFree(handle: Long)
     external fun nativeCancel(handle: Long)

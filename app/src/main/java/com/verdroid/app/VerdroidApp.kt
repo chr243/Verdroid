@@ -38,6 +38,8 @@ class VerdroidApp : Application(), Configuration.Provider {
 
     override fun onCreate() {
         super.onCreate()
+        // The throwaway GPU probe process (:gpuprobe, local LLM) must not run any app start-up work (task recovery, alarms…).
+        if (getProcessName().endsWith(":gpuprobe")) return
         // Crash log (Settings → App → Crash log): Documents/Verdroid/Internal/crash/, app-private fallback; chains to the default handler.
         com.verdroid.app.data.crash.CrashLog.install(
             dirs = { com.verdroid.app.data.crash.CrashLog.dirs(sharedFolder.internal.takeIf { runCatching { sharedFolder.hasAccess() }.getOrDefault(false) }, filesDir) },

@@ -61,7 +61,7 @@ object ModelIds {
     fun label(id: String): String = when (provider(id)) {
         ModelProvider.KILO -> "${bare(id)} (Kilo)"
         ModelProvider.CUSTOM -> "${bare(id)} (${providerIdOf(id)?.let { ProviderPresets.byId(it).shortName } ?: "Custom"})"
-        ModelProvider.LOCAL -> "${bare(id)} (on-device)"
+        ModelProvider.LOCAL -> "${bare(id)} (on device)"
         else -> id
     }
     /** One-time migration for existing installs: Kilo Auto Free on top unless a Kilo model is already listed. */

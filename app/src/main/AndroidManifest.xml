@@ -122,6 +122,11 @@
             android:windowSoftInputMode="adjustResize" />
 
         <!-- Overlay chat head (SYSTEM_ALERT_WINDOW fallback for HyperOS/MIUI). -->
+        <!-- Local LLM: Vulkan probe in a throwaway process so a GPU driver crash can't take the app down. -->
+        <service
+            android:name=".data.localllm.GpuProbeService"
+            android:exported="false"
+            android:process=":gpuprobe" />
         <service
             android:name=".chathead.ChatHeadService"
             android:exported="false"
