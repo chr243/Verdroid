@@ -50,3 +50,11 @@ class LocalLabelTest {
         assertEquals(2000L, r.genMs); assertEquals("CPU", r.backend)
     }
 }
+
+class GenerationTimeoutTest {
+    @org.junit.Test fun timeout() {
+        org.junit.Assert.assertEquals(120_000L, GpuPolicy.generationTimeoutMs(64))
+        org.junit.Assert.assertEquals(1_024_000L, GpuPolicy.generationTimeoutMs(1024))
+        org.junit.Assert.assertTrue(GpuPolicy.isGpuFailure(GpuPolicy.TIMEOUT_ERROR)) // → CPU fallback
+    }
+}

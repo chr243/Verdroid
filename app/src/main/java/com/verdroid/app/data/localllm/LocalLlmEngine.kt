@@ -200,14 +200,15 @@ class LocalLlmEngine @Inject constructor(
         val gpu = onGpu
         if (gpu) sentinel("generation")
         try {
-            return suspendCancellableCoroutine { cont ->
+            // Watchdog: a hung GPU driver would hold the engine forever; timeout → cancel + error (→ CPU fallback on GPU).
+            return kotlinx.coroutines.withTimeoutOrNull(GpuPolicy.generationTimeoutMs(maxTokens)) { suspendCancellableCoroutine { cont ->
                 thread(name = "verdroid-llama", isDaemon = true) {
                     val r = try { LlamaNative.nativeChat(h, messagesJson, toolsJson, maxTokens, temperature, false) }
                         catch (e: Throwable) { "{\"error\":\"${(e.message ?: e.javaClass.simpleName).replace("\"", "'")}\"}" }
                     if (cont.isActive) cont.resumeWith(Result.success(r))
                 }
                 cont.invokeOnCancellation { runCatching { LlamaNative.nativeCancel(h) } } // native side holds its own lock
-            }
+            } } ?: "{\"error\":\"${GpuPolicy.TIMEOUT_ERROR}\"}"
         } finally { if (gpu) sentinel(null) }
     }
 

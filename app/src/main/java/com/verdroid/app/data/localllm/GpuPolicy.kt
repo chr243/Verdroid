@@ -29,6 +29,10 @@ object GpuPolicy {
         return "Verdroid closed unexpectedly during $phase on the GPU last time, so GPU was switched off. You can try again with Use GPU."
     }
 
+    /** Generation watchdog: generous (slow CPUs), max(120 s, 1 s per allowed output token). */
+    fun generationTimeoutMs(maxTokens: Int): Long = maxOf(120_000L, maxTokens.toLong() * 1_000L)
+    const val TIMEOUT_ERROR = "Generation timed out (no progress from the engine)"
+
     /** Errors after which the GPU attempt is abandoned for this model load and the CPU is used instead. */
     fun isGpuFailure(error: String): Boolean = error != "cancelled"
 

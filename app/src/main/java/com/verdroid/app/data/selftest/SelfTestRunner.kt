@@ -526,6 +526,9 @@ class SelfTestRunner @Inject constructor(
             check(fitted.count { it.role == "system" } == 1 && fitted.first().content!!.contains("Summary") && fitted.last().role == "user") { "local history keeps summaries + nudges" }
             check(com.verdroid.app.data.localllm.LiteRtFormat.convo("[{\"role\":\"user\",\"content\":\"q\"},{\"role\":\"assistant\",\"content\":\"a\"}]").last != null) { "LiteRT continues after an assistant turn" }
             check(com.verdroid.app.data.localllm.LiteRtFormat.tokens(-1, -1, 2, "q", "x".repeat(400)).second == 100L) { "LiteRT token estimate" }
+            check(com.verdroid.app.data.localllm.LiteRtFormat.sameHistory(listOf(com.verdroid.app.data.localllm.LiteRtFormat.Turn("user", "q\n\n[Verdroid] t")),
+                listOf(com.verdroid.app.data.localllm.LiteRtFormat.Turn("user", "q")))) { "LiteRT conversation reuse" }
+            check(com.verdroid.app.data.localllm.GpuPolicy.generationTimeoutMs(64) >= 120_000L) { "generation watchdog" }
             val lr = com.verdroid.app.data.localllm.LocalReply.parse(com.verdroid.app.data.localllm.LiteRtFormat.reply("", null,
                 listOf("read_file" to mapOf("path" to "a")), "stop", 5, 3, 100, "LiteRT: CPU"), "m")
             check(lr is com.verdroid.app.data.localllm.LocalReply.Result.Ok && lr.completion.finishReason == "tool_calls" &&

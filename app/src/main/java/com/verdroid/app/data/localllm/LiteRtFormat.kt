@@ -70,6 +70,27 @@ object LiteRtFormat {
 
     const val CONTINUE = "[Verdroid] Continue exactly where you stopped, without repeating."
 
+    fun convoKey(system: String?, toolsJson: String, temperature: Float, maxTokens: Int): String =
+        listOf(system.orEmpty(), toolsJson, temperature.toString(), maxTokens.toString()).joinToString("\u0000")
+
+    /**
+     * Whether [live] (what the live conversation holds, incl. the model's last reply) is the same history as [history]
+     * (rebuilt from the chat). Assistant turns: same tool calls and same text ignoring whitespace/thinking; user/tool
+     * turns: the live one may carry an extra trailing "[Verdroid] …" note (clock) that the chat history doesn't.
+     */
+    fun sameHistory(live: List<Turn>, history: List<Turn>): Boolean {
+        if (live.size != history.size) return false
+        return live.zip(history).all { (a, b) ->
+            a.role == b.role && when (a.role) {
+                "assistant" -> a.toolCalls.map { it.first to toJson(it.second) } == b.toolCalls.map { it.first to toJson(it.second) } &&
+                    norm(a.text).let { x -> val y = norm(b.text); x == y || x.endsWith(y) }
+                "tool" -> a.toolName == b.toolName && a.text.startsWith(b.text)
+                else -> a.text.startsWith(b.text)
+            }
+        }
+    }
+    private fun norm(s: String) = s.replace(Regex("<think>[\\s\\S]*?</think>"), "").replace(Regex("\\s+"), " ").trim()
+
     /** toolsJson (OpenAI "tools" array) → one OpenAPI function JSON per tool ({name, description, parameters}). */
     fun toolDescriptions(toolsJson: String): List<String> {
         if (toolsJson.isBlank()) return emptyList()

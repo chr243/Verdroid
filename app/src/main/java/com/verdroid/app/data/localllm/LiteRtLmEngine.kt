@@ -131,6 +131,7 @@ class LiteRtLmEngine @Inject constructor(
 
     private fun unloadLocked() {
         val e = engine
+        dropLive()
         engine = null; loadedKey = null; onGpu = false
         if (e != null) runCatching { e.close() }
         _state.value = LocalEngineState.Idle
@@ -153,7 +154,18 @@ class LiteRtLmEngine @Inject constructor(
             body to null
         }
 
-    /** One turn: a fresh conversation rebuilt from the full history (simple and stateless), then the last message is streamed. */
+    /** Live conversation kept between turns: reused when the new history is exactly what it already holds (KV reuse). */
+    private var live: Conversation? = null
+    private var liveKey: String? = null
+    private var liveTurns: List<LiteRtFormat.Turn> = emptyList()
+
+    private fun dropLive() { live?.let { runCatching { it.close() } }; live = null; liveKey = null; liveTurns = emptyList() }
+
+    /**
+     * One turn. Normal agent-loop case (the history is the previous turn + the model's reply): only the new message is
+     * sent to the live conversation, so nothing is prefilled twice. Anything else (edit, summary, trimmed history,
+     * other chat, new tools/system prompt) rebuilds the conversation from the full history.
+     */
     private suspend fun generate(messagesJson: String, toolsJson: String, maxTokens: Int, temperature: Float): String {
         val e = engine ?: return LiteRtFormat.error("Engine not loaded")
         val convo = LiteRtFormat.convo(messagesJson)
@@ -161,9 +173,13 @@ class LiteRtLmEngine @Inject constructor(
         val gpu = onGpu
         val backend = if (gpu) GPU_LABEL else CPU_LABEL
         var conversation: Conversation? = null
+        var keep = false
+        val key = LiteRtFormat.convoKey(convo.system, toolsJson, temperature, maxTokens)
         if (gpu) GpuGuard.mark(store, "generation (LiteRT)")
         try {
-            conversation = withContext(Dispatchers.Default) {
+            val reuse = live != null && liveKey == key && LiteRtFormat.sameHistory(liveTurns, convo.history)
+            if (!reuse) dropLive()
+            conversation = if (reuse) live!! else withContext(Dispatchers.Default) {
                 e.createConversation(ConversationConfig(
                     systemInstruction = convo.system?.let { Contents.of(it) },
                     initialMessages = convo.history.map(::toMessage),
@@ -183,7 +199,7 @@ class LiteRtLmEngine @Inject constructor(
             // Callback API (not the Flow wrapper): every callback is ours and catches Throwable, so nothing thrown on
             // LiteRT's native callback thread can take the process down.
             val err: Throwable? = try {
-                suspendCancellableCoroutine { cont ->
+                kotlinx.coroutines.withTimeout(GpuPolicy.generationTimeoutMs(maxTokens)) { suspendCancellableCoroutine { cont ->
                     val done = java.util.concurrent.atomic.AtomicBoolean(false)
                     fun finish(t: Throwable?) { if (done.compareAndSet(false, true) && cont.isActive) cont.resume(t) }
                     cont.invokeOnCancellation { runCatching { conversation.cancelProcess() } }
@@ -204,7 +220,11 @@ class LiteRtLmEngine @Inject constructor(
                             override fun onError(throwable: Throwable) { try { finish(throwable) } catch (t: Throwable) { Log.w(TAG, "onError", t) } }
                         })
                     } catch (t: Throwable) { finish(t) }
-                }
+                } }
+            } catch (t: kotlinx.coroutines.TimeoutCancellationException) {
+                // Watchdog: a hung driver never calls back. Stop, and report an error (→ CPU fallback on GPU).
+                runCatching { conversation.cancelProcess() }
+                java.io.IOException(GpuPolicy.TIMEOUT_ERROR)
             } catch (c: CancellationException) {
                 runCatching { conversation.cancelProcess() }
                 throw c
@@ -218,6 +238,8 @@ class LiteRtLmEngine @Inject constructor(
             val outText = text.toString() + thought + calls.joinToString { it.first + LiteRtFormat.toJson(it.second) }
             val (promptTokens, completion) = LiteRtFormat.tokens(before, after, chunks, last.text, outText)
             val finish = if (completion >= maxTokens - 1) "length" else "stop"
+            live = conversation; liveKey = key; keep = true
+            liveTurns = convo.history + last + LiteRtFormat.Turn("assistant", text.toString(), calls.toList())
             return LiteRtFormat.reply(text.toString(), thought.toString(), calls, finish, promptTokens, completion, genMs, backend)
         } catch (c: CancellationException) {
             throw c
@@ -226,7 +248,7 @@ class LiteRtLmEngine @Inject constructor(
             return LiteRtFormat.errorFor(t)
         } finally {
             if (gpu) GpuGuard.mark(store, null)
-            conversation?.let { runCatching { it.close() } }
+            if (!keep) { if (conversation === live) dropLive() else conversation?.let { runCatching { it.close() } } }
         }
     }
 

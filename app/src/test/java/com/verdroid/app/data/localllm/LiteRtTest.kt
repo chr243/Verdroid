@@ -155,3 +155,25 @@ class LocalHistoryFixesTest {
         assertEquals(0L, LiteRtFormat.tokens(10, 20, 0, "hi", "").second)
     }
 }
+
+class LiteRtReuseTest {
+    private fun T(r: String, t: String, calls: List<Pair<String, Map<String, Any?>>> = emptyList(), n: String? = null) = LiteRtFormat.Turn(r, t, calls, n)
+
+    @Test fun reuseWhenHistoryExtends() {
+        val call = listOf("read_file" to mapOf<String, Any?>("path" to "a"))
+        val live = listOf(T("user", "read a\n\n[Verdroid] Current local date and time: …"), T("assistant", "<think>hm</think> ", call))
+        val hist = listOf(T("user", "read a"), T("assistant", "", call))
+        assertTrue(LiteRtFormat.sameHistory(live, hist))
+        assertFalse(LiteRtFormat.sameHistory(live, listOf(T("user", "read b"), T("assistant", "", call))))
+        assertFalse(LiteRtFormat.sameHistory(live, listOf(T("user", "read a"), T("assistant", "", listOf("read_file" to mapOf<String, Any?>("path" to "b"))))))
+        assertFalse(LiteRtFormat.sameHistory(live, hist.take(1)))
+        assertNotEquals(LiteRtFormat.convoKey("s", "[]", 0.6f, 100), LiteRtFormat.convoKey("s2", "[]", 0.6f, 100))
+    }
+
+    @Test fun trailingNoteRidesOnLastToolTurn() {
+        fun m(role: String, c: String) = com.verdroid.app.data.network.ApiMessage(role, c)
+        val out = LocalPrompt.fit(listOf(m("system", "S"), m("user", "q"), m("tool", "{\"ok\":true}"), m("system", "Current local date and time: X")), 4096, 256)
+        assertEquals("tool", out.last().role)
+        assertTrue(out.last().content!!.startsWith("{\"ok\":true}") && out.last().content!!.endsWith("[Verdroid] Current local date and time: X"))
+    }
+}

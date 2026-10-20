@@ -106,7 +106,15 @@ object LocalPrompt {
                 else -> m.content?.takeIf { it.isNotBlank() }?.let { if (sysText.isNotEmpty()) sysText.append("\n\n"); sysText.append(it) }
             }
         }
-        if (trailing.isNotEmpty()) rest += ApiMessage("user", "[Verdroid] " + trailing.joinToString("\n\n"))
+        if (trailing.isNotEmpty()) {
+            val note = "[Verdroid] " + trailing.joinToString("\n\n")
+            val lastMsg = rest.lastOrNull()
+            // After a user/tool turn the note rides on that turn (only the tail changes: KV/conversation reuse keeps working);
+            // after an assistant turn (e.g. a cut-off reply) it becomes its own user turn.
+            if (lastMsg != null && (lastMsg.role == "user" || lastMsg.role == "tool"))
+                rest[rest.lastIndex] = lastMsg.copy(content = lastMsg.content.orEmpty() + "\n\n" + note)
+            else rest += ApiMessage("user", note)
+        }
         val system = if (sysText.isEmpty()) emptyList() else listOf(ApiMessage("system", sysText.toString()))
         return system to rest
     }
