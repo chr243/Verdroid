@@ -133,15 +133,18 @@ class AppUpdater @Inject constructor(@ApplicationContext private val context: Co
                     if (!resp.isSuccessful) throw IOException("download failed: HTTP ${resp.code}")
                     val body = resp.body ?: throw IOException("empty download")
                     var done = 0L; var lastEmit = 0L
+                    val md = java.security.MessageDigest.getInstance("SHA-256")
                     body.byteStream().use { input -> tmp.outputStream().use { o ->
                         val buf = ByteArray(64 * 1024)
                         while (true) {
                             val n = input.read(buf); if (n < 0) break
-                            o.write(buf, 0, n); done += n
+                            o.write(buf, 0, n); md.update(buf, 0, n); done += n
                             if (done - lastEmit > 128 * 1024) { lastEmit = done; _state.value = UpdateState.Downloading(release, done, asset.size) }
                         }
                     } }
                     if (done != asset.size) throw IOException("size mismatch: got $done bytes, expected ${asset.size}")
+                    val hex = md.digest().joinToString("") { "%02x".format(it) }
+                    if (!UpdateLogic.digestOk(asset.sha256, hex)) throw IOException("SHA-256 mismatch: the APK does not match the release's digest")
                 }
                 if (!tmp.renameTo(out)) throw IOException("could not save the APK")
             }

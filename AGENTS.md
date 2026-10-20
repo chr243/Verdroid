@@ -145,4 +145,5 @@ If you touched Shizuku, rish, Termux, Accessibility or chat heads, also test on 
 - [ ] `ebook_translate` on a small file in `Input/` returns an estimate first, then translates into `Output/` after confirming.
 - [ ] With a package missing, `termux_run` `pip install …` / `pdf_info` / `ebook_translate` ask before installing; "no" installs nothing, "yes" installs and continues.
 - [ ] No secrets in the diff (see command above); `git ls-files | grep -E 'local.properties|\.jks|\.keystore'` is empty.
+- [ ] SHA-256 published: `sha256sum Verdroid-v<ver>.apk > Verdroid-v<ver>.apk.sha256` attached next to the APK (the in-app updater verifies GitHub's asset digest and refuses a mismatch); release built with the release key, never the debug-key fallback.
 - [ ] GitHub release created with the APK attached; README, METADATA.md and docs/ARCHITECTURE.md are up to date.

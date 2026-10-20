@@ -25,7 +25,7 @@ class UpdateLogicTest {
             UpdateLogic.pickAsset(listOf(a("notes.txt"), a("Verdroid-v1.0.6-release.apk"), a("Verdroid-v1.0.6-debug.apk")))!!.name)
         assertEquals("Verdroid-v1.0.6-release.apk", UpdateLogic.pickAsset(listOf(a("Verdroid-v1.0.6-release.apk"), a("other.apk")), "release")!!.name)
         assertEquals("Verdroid-v1.0.6.apk", UpdateLogic.pickAsset(listOf(a("other.apk"), a("Verdroid-v1.0.6.apk")))!!.name)
-        assertEquals("other.apk", UpdateLogic.pickAsset(listOf(a("other.apk"), a("source.zip")))!!.name)
+        assertNull(UpdateLogic.pickAsset(listOf(a("other.apk"), a("source.zip")))) // never a non-Verdroid APK
         assertNull(UpdateLogic.pickAsset(listOf(a("Verdroid-v1.0.6-debug.apk", size = 0), a("source.zip"))))
         assertNull(UpdateLogic.pickAsset(listOf(ApkAsset("Verdroid-v1-debug.apk", "http://insecure/x.apk", 10))))
         assertNull(UpdateLogic.pickAsset(emptyList()))
@@ -52,5 +52,14 @@ class UpdateLogicTest {
         assertFalse(UpdateLogic.autoCheckDue(now - 5 * h, now))
         assertTrue(UpdateLogic.autoCheckDue(now - 6 * h, now))
         assertTrue(UpdateLogic.autoCheckDue(now + h, now)) // clock went backwards
+    }
+
+    @Test fun digest() {
+        val h = "ab".repeat(32)
+        assertEquals(h, UpdateLogic.sha256Of("sha256:" + h.uppercase()))
+        assertNull(UpdateLogic.sha256Of("md5:abc")); assertNull(UpdateLogic.sha256Of("sha256:xyz")); assertNull(UpdateLogic.sha256Of(null))
+        assertTrue(UpdateLogic.digestOk(null, h)); assertTrue(UpdateLogic.digestOk(h, h)); assertFalse(UpdateLogic.digestOk(h, "cd".repeat(32)))
+        val r = UpdateLogic.parseRelease("""{"tag_name":"v9","assets":[{"name":"Verdroid-v9.apk","browser_download_url":"https://x/y.apk","size":5,"digest":"sha256:$h"}]}""", "release")!!
+        assertEquals(h, r.asset!!.sha256)
     }
 }

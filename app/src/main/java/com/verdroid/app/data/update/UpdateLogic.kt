@@ -5,7 +5,8 @@ import kotlinx.serialization.json.*
 /** A GitHub release as far as the updater cares. */
 data class ReleaseInfo(val tag: String, val version: String, val name: String, val notes: String, val htmlUrl: String?, val asset: ApkAsset?)
 
-data class ApkAsset(val name: String, val url: String, val size: Long)
+/** [sha256]: lowercase hex from GitHub's asset `digest` ("sha256:…"), null on old releases without one. */
+data class ApkAsset(val name: String, val url: String, val size: Long, val sha256: String? = null)
 
 /** Pure update logic (unit-tested): version comparison, asset choice, release parsing, auto-check throttle. */
 object UpdateLogic {
@@ -61,7 +62,7 @@ object UpdateLogic {
     /**
      * The APK to install: `Verdroid-*.apk` of the installed build type (debug → `-debug.apk`; release → `-release.apk` or plain
      * `Verdroid-v<ver>.apk`), else any `Verdroid-*.apk`,
-     * else any `.apk`. Assets with size 0 or no URL are skipped.
+     * never a non-Verdroid `.apk` (v1.0.64: review #15). Assets with size 0 or no URL are skipped.
      */
     fun pickAsset(assets: List<ApkAsset>, buildType: String = "debug"): ApkAsset? {
         val apks = assets.filter { it.name.endsWith(".apk", ignoreCase = true) && it.url.startsWith("https://") && it.size > 0 }
@@ -69,7 +70,7 @@ object UpdateLogic {
         val exact = verdroid.firstOrNull { it.name.endsWith("-$buildType.apk", ignoreCase = true) }
         // v1.0.40+: release assets are plain `Verdroid-v<ver>.apk` (no build-type suffix).
         val plainRelease = verdroid.firstOrNull { !it.name.endsWith("-debug.apk", ignoreCase = true) }
-        return exact ?: (if (buildType == "release") plainRelease else null) ?: verdroid.firstOrNull() ?: apks.firstOrNull()
+        return exact ?: (if (buildType == "release") plainRelease else null) ?: verdroid.firstOrNull()
     }
 
     fun parseRelease(body: String, buildType: String = "debug"): ReleaseInfo? {
@@ -81,10 +82,20 @@ object UpdateLogic {
             val ao = a as? JsonObject ?: return@mapNotNull null
             ApkAsset(ao["name"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null,
                 ao["browser_download_url"]?.jsonPrimitive?.contentOrNull ?: return@mapNotNull null,
-                ao["size"]?.jsonPrimitive?.longOrNull ?: 0L)
+                ao["size"]?.jsonPrimitive?.longOrNull ?: 0L,
+                sha256Of(ao["digest"]?.jsonPrimitive?.contentOrNull))
         }
         return ReleaseInfo(tag, tag.removePrefix("v").removePrefix("V"), s("name") ?: tag, s("body").orEmpty(), s("html_url"), pickAsset(assets, buildType))
     }
+
+    /** "sha256:<64 hex>" → hex; anything else → null. */
+    fun sha256Of(digest: String?): String? {
+        val h = digest?.trim()?.takeIf { it.startsWith("sha256:", ignoreCase = true) }?.substring(7)?.lowercase() ?: return null
+        return h.takeIf { it.length == 64 && it.all { c -> c in '0'..'9' || c in 'a'..'f' } }
+    }
+
+    /** Download check: a published digest must match; without one only the size check applies. */
+    fun digestOk(expected: String?, actualHex: String): Boolean = expected == null || expected.equals(actualHex, ignoreCase = true)
 
     fun autoCheckDue(lastCheckMs: Long, nowMs: Long): Boolean = lastCheckMs <= 0 || nowMs - lastCheckMs >= AUTO_CHECK_EVERY_MS || nowMs < lastCheckMs
 }
