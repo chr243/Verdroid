@@ -145,6 +145,7 @@ object AppModule {
         xPostGuard: com.verdroid.app.data.consent.XPostGuard,
         schedules: javax.inject.Provider<com.verdroid.app.data.schedule.ScheduleManager>,
         messageDao: com.verdroid.app.data.local.MessageDao,
+        shellPrefs: com.verdroid.app.data.consent.ShellPrefs,
     ): ToolRegistry = ToolRegistry(
         listOf(
             ReadFileTool(sandbox, sharedFolder), WriteFileTool(sandbox, sharedFolder), ListDirTool(sandbox, sharedFolder),
@@ -227,6 +228,10 @@ object AppModule {
         headless = { id -> com.verdroid.app.domain.schedule.ScheduleSafety.scheduleName(messageDao.lastUserContent(id)) },
         // x_post may run unattended only with its own Always allow ("Post to X without asking"); the post limit (if on) + audit log still apply.
         alwaysAllowed = { tool -> tool == "x_post" && xPostConsent.always.value },
+        // Shell safety: taint after untrusted content since the user's last message; optional "Ask before shell commands".
+        toolsSinceUser = { id -> messageDao.toolNamesSinceUser(id) },
+        shellAskAlways = { shellPrefs.askAlways.value },
+        shellConfirmer = fileConsent,
     )
 }
 

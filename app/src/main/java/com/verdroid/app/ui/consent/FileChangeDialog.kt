@@ -19,7 +19,7 @@ import dagger.hilt.components.SingletonComponent
 @EntryPoint
 @InstallIn(SingletonComponent::class)
 interface FileChangeConsentEntryPoint { fun consent(): FileChangeConsent; fun xPost(): com.verdroid.app.data.consent.XPostConsent
-    fun install(): com.verdroid.app.data.consent.InstallPrompt; fun xPostGuard(): com.verdroid.app.data.consent.XPostGuard }
+    fun install(): com.verdroid.app.data.consent.InstallPrompt; fun shellPrefs(): com.verdroid.app.data.consent.ShellPrefs; fun xPostGuard(): com.verdroid.app.data.consent.XPostGuard }
 
 /** Shows the oldest pending file-change question (Allow / Deny). Back/outside tap does nothing: the user must choose. */
 @Composable
@@ -30,7 +30,7 @@ fun FileChangeDialog() {
     val p = pending.firstOrNull() ?: return
     AlertDialog(
         onDismissRequest = {},
-        title = { Text("Allow this file change?") },
+        title = { Text(if (p.req.kind == com.verdroid.app.agent.tools.FileChangeRequest.Kind.SHELL) "Allow this command?" else "Allow this file change?") },
         text = {
             Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(p.req.summary, style = MaterialTheme.typography.titleSmall)
@@ -97,6 +97,22 @@ fun OverwriteSetting(modifier: Modifier = Modifier) {
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Switch(checked = on, onCheckedChange = { prefs.setAlways(it) })
+    }
+}
+
+/** Settings → Tools: "Ask before shell commands" (off by default; risky commands after untrusted content always ask). */
+@Composable
+fun ShellAskSetting(modifier: Modifier = Modifier) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val prefs = remember { EntryPointAccessors.fromApplication(context.applicationContext, FileChangeConsentEntryPoint::class.java).shellPrefs() }
+    val on by prefs.askAlways.collectAsState()
+    Row(modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text("Ask before shell commands", style = MaterialTheme.typography.bodyLarge)
+            Text("Yes/No before every run_shell, rish_run, termux_run and termux_python. Even when off, risky commands (uploads, pm, settings put, …) ask after the chat read web or other untrusted content.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Switch(checked = on, onCheckedChange = { prefs.setAskAlways(it) })
     }
 }
 

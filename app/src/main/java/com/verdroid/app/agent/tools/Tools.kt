@@ -178,7 +178,12 @@ class ToolRegistry(val tools: List<AgentTool>, private val switches: com.verdroi
     /** Non-null (the schedule's name) while [taskId] is an unattended scheduled run (its last user message is the scheduler's): risky tools are refused. */
     private val headless: suspend (taskId: Long) -> String? = { null },
     /** Live "Always allow" state of the blocked tools that have one ([com.verdroid.app.domain.schedule.ScheduleSafety.ALWAYS_ALLOWABLE]). */
-    private val alwaysAllowed: (tool: String) -> Boolean = { false }) {
+    private val alwaysAllowed: (tool: String) -> Boolean = { false },
+    /** Shell safety ([ShellSafety]): tool names of the results since the user's latest message (taint), the setting, the Yes/No. */
+    private val toolsSinceUser: suspend (taskId: Long) -> List<String?> = { emptyList() },
+    private val shellAskAlways: () -> Boolean = { false },
+    private val shellConfirmer: FileChangeConfirmer? = null) {
+    private var nextShellId = 1_000_000L
     private val staticByName = tools.associateBy { it.name }
     private val allTools: List<AgentTool> get() = tools + dynamic().filter { it.name !in staticByName }
     val enabledTools: List<AgentTool> get() = allTools.filter { switches.isEnabled(it.name) }
@@ -220,10 +225,26 @@ class ToolRegistry(val tools: List<AgentTool>, private val switches: com.verdroi
             (com.verdroid.app.domain.schedule.ScheduleSafety.blockReason(name, args, alwaysAllowed) ?: fileGuard?.headlessReason(taskId, name, args))
                 ?.let { return ToolResult(com.verdroid.app.domain.schedule.ScheduleSafety.blockedJson(name, it), true) }
         }
+        val fileAsked = fileGuard?.inspect(name, args) != null
         fileGuard?.let { g ->
             try { g.check(taskId, name, args) } catch (e: kotlinx.coroutines.CancellationException) { throw e }
                 catch (e: Exception) { FileChangeGuard.denied(name, listOf("confirmation failed: ${e.message}")) }
         }?.let { return ToolResult(it, true) }
+        if (name in ShellSafety.SHELL_TOOLS) {
+            val tainted = try { ShellSafety.tainted(toolsSinceUser(taskId)) } catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Exception) { false }
+            when (val d = ShellSafety.decide(name, args, tainted, shellAskAlways(), unattended)) {
+                is ShellSafety.Decision.Block -> return ToolResult(com.verdroid.app.domain.schedule.ScheduleSafety.blockedJson(name, d.reason), true)
+                is ShellSafety.Decision.Ask -> if (!fileAsked || tainted) {
+                    val shown = ((args["command"] ?: args["code"]) as? JsonPrimitive)?.contentOrNull
+                    val ok = shellConfirmer?.let { c ->
+                        try { c.confirm(FileChangeRequest(synchronized(this) { nextShellId++ }, taskId, name, "Run this command?", d.reasons, shown?.take(4000), kind = FileChangeRequest.Kind.SHELL)) }
+                        catch (e: kotlinx.coroutines.CancellationException) { throw e } catch (e: Exception) { false }
+                    } ?: true
+                    if (!ok) return ToolResult(ShellSafety.deniedJson(name, d.reasons), true)
+                }
+                ShellSafety.Decision.Allow -> {}
+            }
+        }
         return try {
             val out = if (unattended) kotlinx.coroutines.withContext(com.verdroid.app.domain.schedule.HeadlessRun(taskId, scheduleName.orEmpty())) { tool.execute(args, ToolContext(taskId)) }
                 else tool.execute(args, ToolContext(taskId))

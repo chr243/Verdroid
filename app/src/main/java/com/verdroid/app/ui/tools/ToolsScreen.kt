@@ -68,6 +68,7 @@ fun ToolsScreen(onBack: () -> Unit, onOpenShizuku: () -> Unit = {}, onOpenPermis
                 SectionTitle("File safety")
                 com.verdroid.app.ui.consent.OverwriteSetting()
                 com.verdroid.app.ui.consent.SharedDeleteSetting()
+                com.verdroid.app.ui.consent.ShellAskSetting()
                 Hint("The Yes/No dialog's This chat / Always allow buttons set these too.")
             }
             // 2. Shared folder

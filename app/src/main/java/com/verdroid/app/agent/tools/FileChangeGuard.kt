@@ -116,7 +116,11 @@ data class FileChangeRequest(val id: Long, val taskId: Long, val tool: String, v
     /** Only overwrites: the dialog may offer "Always allow" / "This chat". */
     val overwriteOnly: Boolean = false,
     /** Only deletes/moves/renames, all proven inside Documents/Verdroid: the dialog may offer the Documents/Verdroid "This chat" / "Always allow". */
-    val sharedDeletesOnly: Boolean = false)
+    val sharedDeletesOnly: Boolean = false,
+    /** FILE = delete/move/rename/overwrite; SHELL = a shell command ([ShellSafety]). */
+    val kind: Kind = Kind.FILE) {
+    enum class Kind { FILE, SHELL }
+}
 
 /** Asks the user (dialog / notification). true = Allow. Implementations must default to false (deny) on timeout. */
 fun interface FileChangeConfirmer {

@@ -87,6 +87,11 @@ interface MessageDao {
     suspend fun insert(message: MessageEntity): Long
 
     /** Newest user message of a chat (scheduled-run detection: the scheduler's messages start with a marker). */
+    /** Tool names of the tool results after the chat's latest user message (shell-safety taint). */
+    @Query("""SELECT toolName FROM messages WHERE taskId = :taskId AND role = 'tool'
+        AND id > COALESCE((SELECT MAX(id) FROM messages WHERE taskId = :taskId AND role = 'user'), 0)""")
+    suspend fun toolNamesSinceUser(taskId: Long): List<String?>
+
     @Query("SELECT content FROM messages WHERE taskId = :taskId AND role = 'user' ORDER BY id DESC LIMIT 1")
     suspend fun lastUserContent(taskId: Long): String?
 
