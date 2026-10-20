@@ -90,9 +90,15 @@ class AgentLoop internal constructor(
         presetNote(taskId).let { if (it.isBlank()) "" else "\n\n" + it } +
         userInstructions().let { if (it.isBlank()) "" else "\n\n" + it } +
         skillsPrompt().let { if (it.isBlank()) "" else "\n\n" + it } +
-        memoryPrompt(taskId).let { if (it.isBlank()) "" else "\n\n" + com.verdroid.app.data.network.MemoryRedaction.wrap(it) } +
-        // Last, so the rest of the prompt stays a stable prefix: resolves "in 10 minutes" / "at 10am" for the schedule_* tools.
-        "\n\n" + com.verdroid.app.domain.schedule.ScheduleMath.nowLine(System.currentTimeMillis(), java.time.ZoneId.systemDefault())
+        memoryPrompt(taskId).let { if (it.isBlank()) "" else "\n\n" + com.verdroid.app.data.network.MemoryRedaction.wrap(it) }
+
+    /**
+     * The clock (resolves "in 10 minutes" / "at 10am" for the schedule_* tools) goes at the END of each request, not in
+     * the system prompt: the system prompt + history stay a byte-identical prefix across steps, so llama.cpp's KV
+     * prefix reuse and cloud prompt caching keep working when the minute changes.
+     */
+    private fun nowMessage(): ApiMessage = ApiMessage("system",
+        com.verdroid.app.domain.schedule.ScheduleMath.nowLine(System.currentTimeMillis(), java.time.ZoneId.systemDefault()))
 
     private val json = Json { ignoreUnknownKeys = true; explicitNulls = false }
 
@@ -146,7 +152,7 @@ class AgentLoop internal constructor(
             tasks.updateSubtitle(taskId, "Thinking...")
             cp = cp.copy(pendingStep = PendingStep(step, "calling_model", startedAt = System.currentTimeMillis()), phase = "calling_model")
             saveCheckpoint(taskId, cp)
-            val messages = buildApiMessages(taskId).let { m -> nudge?.let { m + ApiMessage("system", it) } ?: m }
+            val messages = (buildApiMessages(taskId) + nowMessage()).let { m -> nudge?.let { m + ApiMessage("system", it) } ?: m }
             val outcome = model(messages, registry.schemas(taskId), taskId) { tasks.updateSubtitle(taskId, it) }
             when (outcome) {
                 ChatOutcome.NoApiKey -> {
