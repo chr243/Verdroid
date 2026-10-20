@@ -27,6 +27,10 @@ val releaseSigning: Map<String, String>? = run {
     )
     if (m.values.all { !it.isNullOrBlank() } && file(m["storeFile"]!!).isFile) m.mapValues { it.value!! } else null
 }
+// Review #14: say it loudly when a release build would be signed with the debug key (never publish such an APK).
+if (releaseSigning == null && gradle.startParameter.taskNames.any { it.contains("Release", ignoreCase = true) })
+    logger.warn("\n" + "!".repeat(72) + "\nWARNING: release signing NOT configured -> this RELEASE APK is signed with the DEBUG key.\n" +
+        "Do NOT publish it. Set VERDROID_KEYSTORE_PROPS or the VERDROID_* env vars.\n" + "!".repeat(72))
 
 android {
     namespace = "com.verdroid.app"
