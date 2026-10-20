@@ -160,7 +160,7 @@ class AgentLoop internal constructor(
                     val c = outcome.completion
                     val finish = c.finishReason?.lowercase()
                     val native = c.toolCalls
-                    val fenced = if (native.isEmpty()) FencedToolCallParser.parse(c.content, registry.namesFor(taskId)) else emptyList()
+                    val fenced = if (native.isEmpty()) FencedToolCallParser.deliberate(c.content, registry.namesFor(taskId)) else emptyList()
                     val calls = native.ifEmpty { fenced }
                     val blank = c.content.isNullOrBlank()
 
@@ -205,7 +205,8 @@ class AgentLoop internal constructor(
                             saveCheckpoint(taskId, cp)
                             continue
                         }
-                        if (LoopMessages.looksLikeToolCall(c.content)) {
+                        // A quoted/explained example in a final answer is not a failed call: only nudge for real attempts.
+                        if (LoopMessages.looksLikeToolCall(c.content) && FencedToolCallParser.rejection(c.content, registry.namesFor(taskId)) != "explanatory") {
                             parseStreak++
                             if (parseStreak > 1) {
                                 return pauseWithReason(taskId, "Tool call not understood", "⚠️ The model's tool call couldn't be parsed twice in a row. Tap Continue to retry.")
@@ -377,7 +378,7 @@ class AgentLoop internal constructor(
                 MessageRole.TOOL -> {
                     val id = m.toolCallId.orEmpty()
                     out += if (id.startsWith("fenced_")) {
-                        ApiMessage("user", "Tool result for ${m.toolName}:\n```json\n${m.content}\n```")
+                        ApiMessage("user", FencedToolCallParser.resultMessage(m.toolName, m.content.orEmpty(), "tool-msg-${m.id}"))
                     } else {
                         ApiMessage("tool", m.content.orEmpty(), toolCallId = id, name = m.toolName)
                     }

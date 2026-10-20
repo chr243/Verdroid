@@ -39,8 +39,9 @@ class VerdroidAccessibilityService : AccessibilityService() {
     override fun onKeyEvent(event: android.view.KeyEvent?): Boolean {
         val e = event ?: return false
         val l = com.verdroid.app.chathead.HomeSignal.listener
-        if (l != null) HeadLog.d("a11y key ${android.view.KeyEvent.keyCodeToString(e.keyCode)} action=${e.action}")
+        // Only the navigation keys we act on are ever logged (debug builds only): typed keys never reach logcat.
         if (l != null && e.action == android.view.KeyEvent.ACTION_DOWN && com.verdroid.app.chathead.HomeSignal.isLeaveKey(e.keyCode)) {
+            HeadLog.d("a11y leave key ${android.view.KeyEvent.keyCodeToString(e.keyCode)}")
             l("key:" + android.view.KeyEvent.keyCodeToString(e.keyCode))
         }
         return false

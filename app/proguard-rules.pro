@@ -55,3 +55,9 @@
 # (callbacks, Message/ToolCall builders, gson-parsed JSON), so keep them unobfuscated.
 -keep class com.google.ai.edge.litertlm.** { *; }
 -dontwarn com.google.ai.edge.litertlm.**
+
+# Release: strip debug/verbose logging app-wide (nothing typed or private reaches logcat via Log.d/v).
+-assumenosideeffects class android.util.Log {
+    public static int d(...);
+    public static int v(...);
+}

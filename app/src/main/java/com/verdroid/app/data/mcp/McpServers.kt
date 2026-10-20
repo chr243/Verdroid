@@ -70,18 +70,46 @@ object McpNaming {
     }
 }
 
+/**
+ * MCP servers are third-party: their tool descriptions are shortened and stripped of assistant-directed instructions
+ * (tool poisoning), and their results are fenced as untrusted data. Pure, JVM-tested.
+ */
+object McpSafety {
+    const val MAX_DESCRIPTION = 300
+    private val INSTRUCTION = Regex(
+        """\b(ignore (?:all |any )?(?:previous|prior|above)|system prompt|you (?:must|should|are required to)|always (?:call|use|run|send)|""" +
+            """do not (?:tell|mention|inform)|don'?t (?:tell|mention)|before (?:using|calling) any other tool|assistant (?:must|should)|<\s*/?\s*(?:system|important|instructions?)\s*>)""",
+        RegexOption.IGNORE_CASE)
+
+    fun description(raw: String): String {
+        val sentences = raw.replace(Regex("\\s+"), " ").split(Regex("(?<=[.!?])\\s+"))
+        val kept = sentences.filterNot { INSTRUCTION.containsMatchIn(it) }.joinToString(" ").trim()
+        return if (kept.length <= MAX_DESCRIPTION) kept else kept.take(MAX_DESCRIPTION - 1).trimEnd() + "…"
+    }
+
+    fun result(serverName: String, toolName: String, text: String, isError: Boolean): String =
+        if (isError) buildJsonObject {
+            put("error", "MCP tool $toolName failed")
+            put("details", com.verdroid.app.data.websearch.UntrustedFence.fence(text.take(4_000), null, origin = "the third-party MCP server $serverName"))
+            put("untrusted", true)
+        }.toString()
+        else buildJsonObject {
+            put("result", com.verdroid.app.data.websearch.UntrustedFence.fence(text, null, origin = "the third-party MCP server $serverName"))
+            put("untrusted", true)
+        }.toString()
+}
+
 /** One MCP tool as an agent tool. */
-class McpAgentTool(private val manager: McpManager, val serverId: String, serverName: String, val tool: McpTool) : AgentTool {
+class McpAgentTool(private val manager: McpManager, val serverId: String, private val serverName: String, val tool: McpTool) : AgentTool {
     override val name = McpNaming.toolName(serverName, tool.name)
-    override val description = "[MCP $serverName] " + tool.description.ifBlank { tool.name }.take(1_000)
+    override val description = "[MCP $serverName, third-party] " + McpSafety.description(tool.description).ifBlank { tool.name }
     override val parameters: JsonObject = tool.inputSchema.let { s ->
         if (s["type"] == null) JsonObject(s + ("type" to JsonPrimitive("object"))) else s
     }
 
     override suspend fun execute(args: JsonObject): String {
         val r = manager.call(serverId, tool.name, args)
-        return if (r.isError) buildJsonObject { put("error", "MCP tool ${tool.name} failed: ${r.text.take(4_000)}") }.toString()
-        else buildJsonObject { put("result", r.text) }.toString()
+        return McpSafety.result(serverName, tool.name, r.text, r.isError)
     }
 }
 
