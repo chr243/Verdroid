@@ -4,6 +4,7 @@ import android.app.Application
 import android.graphics.Bitmap
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.CompositionLocalProvider
@@ -49,6 +50,8 @@ class HomeTopBarScreenshotTest {
         val gear = rule.onNode(hasContentDescription("Settings", substring = true)).fetchSemanticsNode().boundsInRoot
         val profile = rule.onNode(hasContentDescription("Profile:", substring = true)).fetchSemanticsNode().boundsInRoot
         val title = rule.onNodeWithText("Verdroid").fetchSemanticsNode().boundsInRoot
+        rule.onNodeWithContentDescription("Profile: ${active.name}").assertExists()
+        assertTrue("$name: profile name shown", rule.onAllNodesWithText(active.name, substring = true).fetchSemanticsNodes().isEmpty())
         val out = File("build/screenshots").apply { mkdirs() }
         val root = rule.activity.window.decorView
         val full = Bitmap.createBitmap(root.width, root.height, Bitmap.Config.ARGB_8888)
@@ -68,6 +71,23 @@ class HomeTopBarScreenshotTest {
     @Test fun update_longProfile() = render("update_long_profile", 360, 1f, "1.0.66", listOf(Profiles.DEFAULT, long), long, true)
     @Test fun small_bigFont_update_longProfile() = render("small_font150_update_long_profile", 320, 1.5f, "1.0.66", listOf(Profiles.DEFAULT, long), long, true)
     @Test fun noUpdate_longProfile() = render("no_update_long_profile", 360, 1f, null, listOf(Profiles.DEFAULT, long), long, true)
+    @Test fun emojiGrid() {
+        rule.setContent { MaterialTheme { Surface { Box(Modifier.width(360.dp).testTag("bar")) {
+            androidx.compose.foundation.layout.Column(Modifier.padding(16.dp)) { com.verdroid.app.ui.profiles.EmojiGrid("💻") {} }
+        } } } }
+        assertTrue(com.verdroid.app.ui.profiles.SUGGESTED_EMOJI.size in 16..24)
+        rule.onNodeWithContentDescription("Icon 💻, selected").assertExists()
+        shot("emoji_grid", rule.onNodeWithTag("bar").fetchSemanticsNode().boundsInRoot)
+    }
+
+    private fun shot(name: String, bar: androidx.compose.ui.geometry.Rect) {
+        val root = rule.activity.window.decorView
+        val full = Bitmap.createBitmap(root.width, root.height, Bitmap.Config.ARGB_8888)
+        rule.runOnUiThread { root.draw(android.graphics.Canvas(full)) }
+        val bmp = Bitmap.createBitmap(full, 0, 0, bar.right.toInt().coerceAtMost(full.width), bar.bottom.toInt().coerceIn(1, full.height))
+        File("build/screenshots").apply { mkdirs() }.let { File(it, "$name.png") }.outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
+    }
+
     @Test fun tiers() {
         assertTrue(HomeBarLayout.level(600f, 1f) == HomeBarLayout.FULL && HomeBarLayout.level(360f, 1f) == HomeBarLayout.SHORT &&
             HomeBarLayout.level(360f, 1.3f) == HomeBarLayout.TIGHT && HomeBarLayout.level(320f, 1.5f) == HomeBarLayout.TIGHT)

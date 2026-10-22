@@ -150,7 +150,7 @@ internal fun HomeTopBar(
     profiles: List<com.verdroid.app.data.profiles.Profile>, active: com.verdroid.app.data.profiles.Profile, showAll: Boolean,
     onSelect: (String) -> Unit, onShowAll: () -> Unit, onNew: () -> Unit, onManage: () -> Unit, onOpenSettings: () -> Unit,
 ) {
-    // Small screens / big fonts: shorter update pill, then an emoji-only profile button, so the title and gear always fit.
+    // Small screens / big fonts: shorter update pill, so the title, profile icon and gear always fit.
     androidx.compose.foundation.layout.BoxWithConstraints {
     val level = HomeBarLayout.level(maxWidth.value, LocalDensity.current.fontScale)
     TopAppBar(
@@ -165,9 +165,7 @@ internal fun HomeTopBar(
         },
         actions = {
             quota?.invoke()
-            ProfileMenu(profiles, active, showAll, onSelect, onShowAll, onNew, onManage,
-                emojiOnly = level == HomeBarLayout.TIGHT || (updateLatest != null && level != HomeBarLayout.FULL),
-                nameMax = if (level == HomeBarLayout.FULL) 120.dp else 72.dp)
+            ProfileMenu(profiles, active, showAll, onSelect, onShowAll, onNew, onManage)
             IconButton(onClick = onOpenSettings) {
                 Box {
                     Icon(Icons.Filled.Settings, contentDescription = if (updateAvailable) "Settings (update available)" else "Settings")
@@ -328,17 +326,15 @@ fun ConversationRow(c: Conversation, badge: String? = null, onLongClick: (() -> 
 @Composable
 private fun ProfileMenu(
     profiles: List<com.verdroid.app.data.profiles.Profile>, active: com.verdroid.app.data.profiles.Profile, showAll: Boolean,
-    onSelect: (String) -> Unit, onShowAll: () -> Unit, onNew: () -> Unit, onManage: () -> Unit, emojiOnly: Boolean = false,
-    nameMax: androidx.compose.ui.unit.Dp = 88.dp,
+    onSelect: (String) -> Unit, onShowAll: () -> Unit, onNew: () -> Unit, onManage: () -> Unit,
 ) {
     var open by remember { mutableStateOf(false) }
     val multi = com.verdroid.app.data.profiles.Profiles.visible(profiles)
     Box {
         TextButton(onClick = { open = true }, contentPadding = PaddingValues(horizontal = 8.dp),
             modifier = Modifier.semantics { contentDescription = "Profile: ${active.name}" }) {
-            Text(active.emoji, maxLines = 1, softWrap = false)
-            if (multi && !emojiOnly) Text(" " + active.name, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.widthIn(max = nameMax))
+            // Always icon-only (emoji + arrow); the menu lists the full names.
+            Text(active.emoji.ifBlank { "🤖" }, maxLines = 1, softWrap = false)
             Icon(Icons.Filled.ArrowDropDown, null, Modifier.size(18.dp))
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {

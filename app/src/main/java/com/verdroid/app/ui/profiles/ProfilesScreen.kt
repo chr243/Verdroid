@@ -11,6 +11,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -132,8 +134,10 @@ private fun ProfileEditor(initial: Profile, vm: ProfilesViewModel, onDone: (Prof
     BackScaffold(if (initial.isDefault) "Default profile" else "Edit profile", { onDone(null) },
         actions = { TextButton(onClick = { onDone(p) }) { Text("Save") } }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
+            Section("Icon")
+            EmojiGrid(p.emoji) { p = p.copy(emoji = it) }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                OutlinedTextField(p.emoji, { p = p.copy(emoji = it.take(8)) }, label = { Text("Icon") }, singleLine = true, modifier = Modifier.width(88.dp))
+                OutlinedTextField(p.emoji, { p = p.copy(emoji = it.take(8)) }, label = { Text("Any emoji") }, singleLine = true, modifier = Modifier.width(88.dp))
                 Spacer(Modifier.width(8.dp))
                 OutlinedTextField(p.name, { p = p.copy(name = it.take(40)) }, label = { Text("Name") }, singleLine = true,
                     enabled = !p.isDefault, modifier = Modifier.weight(1f))
@@ -218,4 +222,27 @@ fun ProfilePickerDialog(profiles: List<Profile>, current: String, onPick: (Strin
             }
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } })
+}
+
+/** Suggested profile icons (free entry stays available below the grid). */
+internal val SUGGESTED_EMOJI = listOf("🤖", "🔎", "💻", "🧑‍💻", "📚", "✍️", "🎨", "📈", "🛠️", "🔐", "🧪", "🎮",
+    "🏠", "💼", "📝", "🌐", "📱", "🎵", "🧠", "⚡", "🗂️", "💬", "🌍", "❤️")
+
+@Composable
+internal fun EmojiGrid(selected: String, onPick: (String) -> Unit) {
+    Column {
+        SUGGESTED_EMOJI.chunked(8).forEach { row ->
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                row.forEach { e ->
+                    val on = e == selected
+                    Surface(shape = MaterialTheme.shapes.small,
+                        color = if (on) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface,
+                        modifier = Modifier.size(40.dp).clickable { onPick(e) }
+                            .semantics { contentDescription = "Icon $e" + if (on) ", selected" else "" }) {
+                        Box(contentAlignment = Alignment.Center) { Text(e, style = MaterialTheme.typography.titleLarge, maxLines = 1, softWrap = false) }
+                    }
+                }
+            }
+        }
+    }
 }
