@@ -112,9 +112,11 @@ class ChatViewModel @Inject constructor(
         taskId.flatMapLatest { if (it == 0L) draftPresets else presets.observe(it) }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
-    /** Settings → Tools state per preset (live; drives the dialog switches; effective = override, else Settings). */
+    /** Baseline per preset: Settings → Tools filtered by this chat's profile (drives the dialog switches; effective = override, else baseline). */
     val presetsGlobal: StateFlow<Map<com.verdroid.app.data.tools.ToolPreset, com.verdroid.app.data.tools.ToolPreset.Companion.Global>> =
-        toolPrefs.disabled.map { com.verdroid.app.data.tools.ToolPreset.globalState(toolRegistry.tools.map { t -> t.name }, it) }
+        combine(toolPrefs.disabled, chatProfile) { d, p ->
+            com.verdroid.app.data.profiles.Profiles.presetBaseline(com.verdroid.app.data.tools.ToolPreset.globalState(toolRegistry.tools.map { t -> t.name }, d), p)
+        }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
 
     private fun updatePresets(f: (Map<com.verdroid.app.data.tools.ToolPreset, Boolean>) -> Map<com.verdroid.app.data.tools.ToolPreset, Boolean>) {
@@ -124,6 +126,9 @@ class ChatViewModel @Inject constructor(
 
     fun setPreset(preset: com.verdroid.app.data.tools.ToolPreset, enabled: Boolean) =
         updatePresets { com.verdroid.app.data.tools.ToolPreset.toggle(it, preset, enabled, presetsGlobal.value) }
+
+    /** "Reset to profile": drop this chat's overrides. */
+    fun resetPresets() = updatePresets { emptyMap() }
 
     fun setAllPresets(enabled: Boolean) =
         updatePresets { com.verdroid.app.data.tools.ToolPreset.toggleAll(it, enabled, presetsGlobal.value) }

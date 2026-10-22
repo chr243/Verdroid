@@ -124,55 +124,67 @@ private fun ProfileEditor(initial: Profile, vm: ProfilesViewModel, onDone: (Prof
     val skills by vm.skills.collectAsStateWithLifecycle()
     val memories by vm.memories.collectAsStateWithLifecycle()
     val models by vm.models.collectAsStateWithLifecycle()
-    var modelMenu by remember { mutableStateOf(false) }
     BackHandler { onDone(null) }
     BackScaffold(if (initial.isDefault) "Default profile" else "Edit profile", { onDone(null) },
         actions = { TextButton(onClick = { onDone(p) }) { Text("Save") } }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 16.dp)) {
+            ProfileEditorContent(p, skills.map { PickItem(it.id, it.name + if (!it.enabled) " (off in Settings → Skills)" else "", it.description.takeIf { d -> d.isNotBlank() }) },
+                memories.map { PickItem(it.id.toString(), it.text.take(120), it.tags.takeIf { t -> t.isNotEmpty() }?.joinToString(", ")) },
+                models) { p = it }
+        }
+    }
+}
+
+/** Editor sections in order: Icon, Model, Tools, Skills, Memory, Instructions (last). */
+@Composable
+internal fun ProfileEditorContent(initialP: Profile, skills: List<PickItem>, memories: List<PickItem>, models: List<String>, onChange: (Profile) -> Unit) {
+    val p = initialP
+    fun set(n: Profile) = onChange(n)
+    var modelMenu by remember { mutableStateOf(false) }
+    run {
             Section("Icon")
-            EmojiGrid(p.emoji) { p = p.copy(emoji = it) }
+            EmojiGrid(p.emoji) { set(p.copy(emoji = it)) }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                OutlinedTextField(p.emoji, { p = p.copy(emoji = it.take(8)) }, label = { Text("Any emoji") }, singleLine = true, modifier = Modifier.width(88.dp))
+                OutlinedTextField(p.emoji, { set(p.copy(emoji = it.take(8))) }, label = { Text("Any emoji") }, singleLine = true, modifier = Modifier.width(88.dp))
                 Spacer(Modifier.width(8.dp))
-                OutlinedTextField(p.name, { p = p.copy(name = it.take(40)) }, label = { Text("Name") }, singleLine = true,
+                OutlinedTextField(p.name, { set(p.copy(name = it.take(40))) }, label = { Text("Name") }, singleLine = true,
                     enabled = !p.isDefault, modifier = Modifier.weight(1f))
             }
             Section("Model")
             Box {
                 OutlinedButton(onClick = { modelMenu = true }) { Text(if (p.model.isBlank()) "Follow Model priority" else ModelIds.label(p.model)) }
                 DropdownMenu(expanded = modelMenu, onDismissRequest = { modelMenu = false }) {
-                    DropdownMenuItem(text = { Text("Follow Model priority") }, onClick = { p = p.copy(model = ""); modelMenu = false })
+                    DropdownMenuItem(text = { Text("Follow Model priority") }, onClick = { set(p.copy(model = "")); modelMenu = false })
                     (models + listOfNotNull(p.model.takeIf { it.isNotBlank() })).distinct().forEach { m ->
-                        DropdownMenuItem(text = { Text(ModelIds.label(m)) }, onClick = { p = p.copy(model = m); modelMenu = false })
+                        DropdownMenuItem(text = { Text(ModelIds.label(m)) }, onClick = { set(p.copy(model = m)); modelMenu = false })
                     }
                 }
             }
             Hint("Tried first; if it fails, the rest of Model priority is used. A chat's own pinned model still wins.")
 
             Section("Tools")
-            ToolsSection(p) { p = it }
+            ToolsSection(p) { set(it) }
             Hint("A chat's Tool presets can still override this; Settings → Tools switches still apply.")
 
             Section("Skills")
-            SkillsSection(p, skills.map { PickItem(it.id, it.name + if (!it.enabled) " (off in Settings → Skills)" else "", it.description.takeIf { d -> d.isNotBlank() }) }) { p = it }
-
-            Section("Instructions")
-            OutlinedTextField(p.instructions, { p = p.copy(instructions = it.take(Profiles.MAX_INSTRUCTIONS)) },
-                placeholder = { Text("Context or persona for this profile, e.g. \"You help me with Android coding in Kotlin.\"") },
-                minLines = 4, modifier = Modifier.fillMaxWidth())
-            Hint("Added to the agent's instructions, after AGENTS.md.")
+            SkillsSection(p, skills) { set(it) }
 
             Section("Memory")
             if (p.isDefault) Hint("Default always sees all memories.")
             else {
-                MemorySection(p, memories.map { PickItem(it.id.toString(), it.text.take(120), it.tags.takeIf { t -> t.isNotEmpty() }?.joinToString(", ")) }) { p = it }
+                MemorySection(p, memories) { set(it) }
                 Hint("Selected only: the agent sees just these long-term memories, and anything it learns in this profile is added here " +
                     "(hidden from other profiles). Short-term notes are always per chat.")
             }
+
+            Section("Instructions")
+            OutlinedTextField(p.instructions, { set(p.copy(instructions = it.take(Profiles.MAX_INSTRUCTIONS))) },
+                placeholder = { Text("Context or persona for this profile, e.g. \"You help me with Android coding in Kotlin.\"") },
+                minLines = 4, modifier = Modifier.fillMaxWidth())
+            Hint("Added to the agent's instructions, after AGENTS.md.")
             Spacer(Modifier.height(12.dp))
             Text(Profiles.SHARED_NOTE, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(32.dp))
-        }
     }
 }
 

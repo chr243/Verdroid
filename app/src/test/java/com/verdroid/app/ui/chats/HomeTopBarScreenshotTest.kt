@@ -140,6 +140,36 @@ class HomeTopBarScreenshotTest {
     @Test fun editorSections() = sections("profile_editor_sections", 1f)
     @Test fun editorSections_font150() = sections("profile_editor_sections_font150", 1.5f)
 
+    @Config(qualifiers = "w400dp-h1600dp")
+    @Test fun editorOrder_instructionsLast() {
+        val p = Profile("p1", "Research", "🔎", memories = setOf(1L), instructions = "Cite sources.")
+        rule.setContent {
+            MaterialTheme { Surface { Box(Modifier.width(360.dp).testTag("bar")) {
+                androidx.compose.foundation.layout.Column(Modifier.padding(horizontal = 16.dp)) {
+                    com.verdroid.app.ui.profiles.ProfileEditorContent(p, emptyList(),
+                        listOf(com.verdroid.app.ui.profiles.PickItem("1", "Lives in Paris")), emptyList()) {}
+                }
+            } } }
+        }
+        val tops = listOf("Icon", "Model", "Tools", "Skills", "Memory", "Instructions").map {
+            rule.onNodeWithText(it, useUnmergedTree = true).fetchSemanticsNode().positionInRoot.y
+        }
+        assertTrue("section order $tops", tops.zipWithNext().all { (a, b) -> a < b })
+        shot("profile_editor_full", rule.onNodeWithTag("bar").fetchSemanticsNode().boundsInRoot)
+    }
+
+    @Config(qualifiers = "w400dp-h1600dp")
+    @Test fun toolPresetsDialog_fromProfile() {
+        val tp = com.verdroid.app.data.tools.ToolPreset
+        val p = Profile("p1", "Research", "🔎", tools = Profiles.ALL_TOOL_GROUPS.toSet() - "git")
+        val base = Profiles.presetBaseline(com.verdroid.app.data.tools.ToolPreset.entries.associateWith { com.verdroid.app.data.tools.ToolPreset.Companion.Global(1, 1) }, p)
+        rule.setContent { MaterialTheme { Surface { Box(Modifier.width(320.dp).testTag("bar").padding(16.dp)) {
+            com.verdroid.app.ui.chat.ToolPresetsContent(mapOf(com.verdroid.app.data.tools.ToolPreset.WEB to false), base, { _, _ -> }, {}, p.label)
+        } } } }
+        rule.onNodeWithText("From profile: 🔎 Research").assertExists()
+        shot("tool_presets_from_profile", rule.onNodeWithTag("bar").fetchSemanticsNode().boundsInRoot)
+    }
+
     @Test fun tiers() {
         assertTrue(HomeBarLayout.level(600f, 1f) == HomeBarLayout.FULL && HomeBarLayout.level(360f, 1f) == HomeBarLayout.SHORT &&
             HomeBarLayout.level(360f, 1.3f) == HomeBarLayout.TIGHT && HomeBarLayout.level(320f, 1.5f) == HomeBarLayout.TIGHT)

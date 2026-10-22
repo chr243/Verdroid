@@ -226,7 +226,8 @@ fun ChatDetailScreen(onBack: () -> Unit, onChatMemory: (Long) -> Unit = {}, vm: 
                                         vm.setAllPresets(true); vm.setPreset(tw, false)
                                         tosPending = { vm.setPreset(tw, true) }
                                     } else vm.setAllPresets(on)
-                                }) { showPresets = false }
+                                }, { showPresets = false }, profileLabel = vm.chatProfile.collectAsStateWithLifecycle().value.label,
+                                onReset = { vm.resetPresets() })
                             tosPending?.let { act -> com.verdroid.app.ui.consent.TwitterTosDialog(onConfirm = { act(); tosPending = null }, onCancel = { tosPending = null }) }
                         }
                         Box {
@@ -389,21 +390,38 @@ fun ChatDetailScreen(onBack: () -> Unit, onChatMemory: (Long) -> Unit = {}, vm: 
 
 /** Per-chat tool presets: one per Settings → Tools group (memory/skills, charts & other and MCP excluded), plus All. Everything is on by default. */
 @Composable
-private fun ToolPresetsDialog(
+internal fun ToolPresetsDialog(
     off: Map<com.verdroid.app.data.tools.ToolPreset, Boolean>,
     global: Map<com.verdroid.app.data.tools.ToolPreset, com.verdroid.app.data.tools.ToolPreset.Companion.Global>,
     onSet: (com.verdroid.app.data.tools.ToolPreset, Boolean) -> Unit,
     onSetAll: (Boolean) -> Unit,
     onDismiss: () -> Unit,
+    profileLabel: String = "",
+    onReset: () -> Unit = {},
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
+        dismissButton = { TextButton(onClick = onReset, enabled = off.isNotEmpty()) { Text("Reset to profile") } },
         title = { Text("Tool presets") },
-        text = {
+        text = { ToolPresetsContent(off, global, onSet, onSetAll, profileLabel) },
+    )
+}
+
+/** Body of the Tool presets dialog (separate so screenshot tests can render it without a dialog window). */
+@Composable
+internal fun ToolPresetsContent(
+    off: Map<com.verdroid.app.data.tools.ToolPreset, Boolean>,
+    global: Map<com.verdroid.app.data.tools.ToolPreset, com.verdroid.app.data.tools.ToolPreset.Companion.Global>,
+    onSet: (com.verdroid.app.data.tools.ToolPreset, Boolean) -> Unit,
+    onSetAll: (Boolean) -> Unit,
+    profileLabel: String,
+) {
             Column(Modifier.verticalScroll(rememberScrollState())) {
-                Text("Per chat; overrides Settings → Tools for this chat. Memory & skills, charts & other (incl. self-test) and MCP " +
-                    "follow Settings.", style = MaterialTheme.typography.bodySmall,
+                if (profileLabel.isNotBlank()) Text("From profile: $profileLabel", style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.primary)
+                Text("Starts from this chat's profile and Settings → Tools; changes here apply only to this chat. Memory & skills, " +
+                    "charts & other (incl. self-test) and MCP follow Settings.", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(8.dp))
                 PresetRow("All", "Every tool category", com.verdroid.app.data.tools.ToolPreset.allOn(off, global)) { onSetAll(it) }
@@ -413,8 +431,6 @@ private fun ToolPresetsDialog(
                     PresetRow(p.label, p.description, com.verdroid.app.data.tools.ToolPreset.shownOn(p, off, global)) { onSet(p, it) }
                 }
             }
-        },
-    )
 }
 
 @Composable

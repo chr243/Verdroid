@@ -84,6 +84,19 @@ class ProfilesTest {
         assertEquals(setOf(9L), Profiles.migrateMemory(Profiles.decode(raw), mapOf("s" to listOf(9L)))[1].memories)
     }
 
+    @Test fun `tool presets dialog starts from the profile`() {
+        val tp = com.verdroid.app.data.tools.ToolPreset
+        val g = com.verdroid.app.data.tools.ToolPreset.entries.associateWith { com.verdroid.app.data.tools.ToolPreset.Companion.Global(2, 2) }
+        val base = Profiles.presetBaseline(g, coding)
+        assertFalse(tp.shownOn(com.verdroid.app.data.tools.ToolPreset.TWITTER, emptyMap(), base)); assertTrue(tp.shownOn(com.verdroid.app.data.tools.ToolPreset.WEB, emptyMap(), base))
+        assertEquals(g, Profiles.presetBaseline(g, Profiles.DEFAULT))
+        // turning Twitter on in the chat is a chat-only override; turning it back off clears it (= reset to profile)
+        val on = tp.toggle(emptyMap(), com.verdroid.app.data.tools.ToolPreset.TWITTER, true, base)
+        assertEquals(mapOf(com.verdroid.app.data.tools.ToolPreset.TWITTER to true), on)
+        assertTrue(Profiles.toolAllowed("twitter", on[com.verdroid.app.data.tools.ToolPreset.TWITTER], coding, true))
+        assertEquals(emptyMap<Any, Any>(), tp.toggle(on, com.verdroid.app.data.tools.ToolPreset.TWITTER, false, base))
+    }
+
     @Test fun `chat filter`() {
         val l = listOf(Profiles.DEFAULT, coding)
         val chats = listOf(1L to "default", 2L to "p1", 3L to "deleted")

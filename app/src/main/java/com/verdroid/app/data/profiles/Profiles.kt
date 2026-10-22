@@ -104,6 +104,13 @@ object Profiles {
     fun toolAllowed(group: String, override: Boolean?, profile: Profile, globallyOn: Boolean): Boolean =
         override ?: if (group in profile.toolGroupsOff || profile.tools?.contains(group) == false) false else globallyOn
 
+    /**
+     * Tool presets dialog baseline: Settings → Tools state, with groups the profile leaves out shown as off.
+     * The chat's overrides are applied on top (and only to that chat).
+     */
+    fun presetBaseline(global: Map<com.verdroid.app.data.tools.ToolPreset, com.verdroid.app.data.tools.ToolPreset.Companion.Global>, profile: Profile) =
+        global.mapValues { (p, g) -> if (g.total > 0 && !toolAllowed(p.groupId, null, profile, true)) g.copy(on = 0) else g }
+
     fun skillAllowed(profile: Profile, skillId: String): Boolean = profile.skills?.contains(skillId) ?: true
 
     /** Owner stamped on long-term memories learned in [profile]: null = unowned (All memories), else the Selected-only profile's id. */
