@@ -28,6 +28,7 @@ import com.verdroid.app.data.tools.ToolPreset
 import com.verdroid.app.ui.components.BackScaffold
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -36,11 +37,14 @@ import javax.inject.Inject
 class ProfilesViewModel @Inject constructor(
     private val store: ProfileStore,
     private val skillStore: SkillStore,
+    memoryRepo: com.verdroid.app.data.memory.MemoryRepository,
     settings: com.verdroid.app.domain.repository.SettingsRepository,
 ) : ViewModel() {
     val profiles = store.profiles
     val activeId = store.activeId
     val skills = skillStore.skills
+    /** Long-term memories (pickable in a Selected-only profile). */
+    val memories = memoryRepo.memories.map { l -> l.filter { it.chatId == null } }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val models = settings.modelPriority.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     init { skillStore.refresh() }
 
@@ -77,17 +81,7 @@ fun ProfilesScreen(onBack: () -> Unit, startNew: Boolean = false, vm: ProfilesVi
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
             }
             items(profiles, key = { it.id }) { p ->
-                ListItem(
-                    modifier = Modifier.clickable { editing = p },
-                    headlineContent = { Text(p.label + if (p.id == active) "  · active" else "") },
-                    supportingContent = { Text(summary(p), maxLines = 2, overflow = TextOverflow.Ellipsis) },
-                    trailingContent = {
-                        Row {
-                            if (p.id != active) TextButton(onClick = { vm.activate(p.id) }) { Text("Use") }
-                            if (!p.isDefault) TextButton(onClick = { confirmDelete = p }) { Text("Delete") }
-                        }
-                    },
-                )
+                ProfileRow(p, p.id == active, onUse = { vm.activate(p.id) }, onEdit = { editing = p }, onDelete = { confirmDelete = p })
             }
             item {
                 Box(Modifier.padding(16.dp)) {
@@ -110,7 +104,7 @@ fun ProfilesScreen(onBack: () -> Unit, startNew: Boolean = false, vm: ProfilesVi
 
     confirmDelete?.let { p ->
         AlertDialog(onDismissRequest = { confirmDelete = null }, title = { Text("Delete profile \"${p.name}\"?") },
-            text = { Text("Its chats move to Default and its separate memories become shared. Chats and memories are not deleted.") },
+            text = { Text("Its chats move to Default and the memories it learned become visible to \"All memories\" profiles. Chats and memories are not deleted.") },
             confirmButton = { TextButton(onClick = { vm.delete(p.id); confirmDelete = null }) { Text("Delete") } },
             dismissButton = { TextButton(onClick = { confirmDelete = null }) { Text("Cancel") } })
     }
@@ -118,9 +112,9 @@ fun ProfilesScreen(onBack: () -> Unit, startNew: Boolean = false, vm: ProfilesVi
 
 private fun summary(p: Profile): String = listOfNotNull(
     if (p.model.isBlank()) "Model priority" else ModelIds.label(p.model),
-    if (p.toolGroupsOff.isEmpty()) "all tools" else "${p.toolGroupsOff.size} tool groups off",
+    if (p.tools == null) "all tools" else "${p.tools.size} tool groups",
     if (p.skills == null) "all skills" else "${p.skills.size} skills",
-    if (p.separateMemory) "separate memory" else "shared memory",
+    if (p.memories == null) "all memories" else "${p.memories.size} memories",
     if (p.instructions.isNotBlank()) "instructions" else null,
 ).joinToString(" · ")
 
@@ -128,6 +122,7 @@ private fun summary(p: Profile): String = listOfNotNull(
 private fun ProfileEditor(initial: Profile, vm: ProfilesViewModel, onDone: (Profile?) -> Unit) {
     var p by remember(initial.id) { mutableStateOf(initial) }
     val skills by vm.skills.collectAsStateWithLifecycle()
+    val memories by vm.memories.collectAsStateWithLifecycle()
     val models by vm.models.collectAsStateWithLifecycle()
     var modelMenu by remember { mutableStateOf(false) }
     BackHandler { onDone(null) }
@@ -155,24 +150,11 @@ private fun ProfileEditor(initial: Profile, vm: ProfilesViewModel, onDone: (Prof
             Hint("Tried first; if it fails, the rest of Model priority is used. A chat's own pinned model still wins.")
 
             Section("Tools")
-            Hint("Unticked groups are off in this profile. A chat's Tool presets can still override them; Settings → Tools switches still apply.")
-            ToolPreset.entries.forEach { t ->
-                CheckRow(t.label, t.groupId !in p.toolGroupsOff) { on ->
-                    p = p.copy(toolGroupsOff = if (on) p.toolGroupsOff - t.groupId else p.toolGroupsOff + t.groupId)
-                }
-            }
+            ToolsSection(p) { p = it }
+            Hint("A chat's Tool presets can still override this; Settings → Tools switches still apply.")
 
             Section("Skills")
-            if (skills.isEmpty()) Hint("No saved skills yet.")
-            else {
-                CheckRow("All skills (incl. new ones)", p.skills == null) { on -> p = p.copy(skills = if (on) null else skills.map { it.id }.toSet()) }
-                skills.forEach { s ->
-                    CheckRow(s.name + if (!s.enabled) " (off in Settings → Skills)" else "", p.skills?.contains(s.id) ?: true) { on ->
-                        val cur = p.skills ?: skills.map { it.id }.toSet()
-                        p = p.copy(skills = if (on) cur + s.id else cur - s.id)
-                    }
-                }
-            }
+            SkillsSection(p, skills.map { PickItem(it.id, it.name + if (!it.enabled) " (off in Settings → Skills)" else "", it.description.takeIf { d -> d.isNotBlank() }) }) { p = it }
 
             Section("Instructions")
             OutlinedTextField(p.instructions, { p = p.copy(instructions = it.take(Profiles.MAX_INSTRUCTIONS)) },
@@ -181,11 +163,11 @@ private fun ProfileEditor(initial: Profile, vm: ProfilesViewModel, onDone: (Prof
             Hint("Added to the agent's instructions, after AGENTS.md.")
 
             Section("Memory")
-            if (p.isDefault) Hint("Default always uses the shared long-term memory.")
+            if (p.isDefault) Hint("Default always sees all memories.")
             else {
-                RadioRow("Shared with all profiles", !p.separateMemory) { p = p.copy(separateMemory = false) }
-                RadioRow("Separate for this profile", p.separateMemory) { p = p.copy(separateMemory = true) }
-                Hint("Separate: this profile's long-term memories are kept apart. Short-term (per chat) notes are always per chat.")
+                MemorySection(p, memories.map { PickItem(it.id.toString(), it.text.take(120), it.tags.takeIf { t -> t.isNotEmpty() }?.joinToString(", ")) }) { p = it }
+                Hint("Selected only: the agent sees just these long-term memories, and anything it learns in this profile is added here " +
+                    "(hidden from other profiles). Short-term notes are always per chat.")
             }
             Spacer(Modifier.height(12.dp))
             Text(Profiles.SHARED_NOTE, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -199,11 +181,6 @@ private fun ProfileEditor(initial: Profile, vm: ProfilesViewModel, onDone: (Prof
 
 @Composable private fun Hint(t: String) =
     Text(t, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(vertical = 4.dp))
-
-@Composable private fun CheckRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) =
-    Row(Modifier.fillMaxWidth().clickable { onChange(!checked) }, verticalAlignment = Alignment.CenterVertically) {
-        Checkbox(checked, onChange); Text(label)
-    }
 
 @Composable private fun RadioRow(label: String, selected: Boolean, onClick: () -> Unit) =
     Row(Modifier.fillMaxWidth().clickable(onClick = onClick), verticalAlignment = Alignment.CenterVertically) {
@@ -245,4 +222,107 @@ internal fun EmojiGrid(selected: String, onPick: (String) -> Unit) {
             }
         }
     }
+}
+
+/** One Settings → Profiles row: name + summary, actions on their own line (Use · Edit · Delete; Default has no Delete). */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+internal fun ProfileRow(p: Profile, isActive: Boolean, onUse: () -> Unit, onEdit: () -> Unit, onDelete: () -> Unit) {
+    Column(Modifier.fillMaxWidth().clickable(onClick = onEdit).padding(start = 16.dp, end = 8.dp, top = 10.dp, bottom = 2.dp)) {
+        Text(p.label + if (isActive) "  · active" else "", style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+        Text(summary(p), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 3, overflow = TextOverflow.Ellipsis)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+            TextButton(onClick = onUse, enabled = !isActive,
+                modifier = Modifier.semantics { contentDescription = if (isActive) "${p.name} is active" else "Use ${p.name}" }) {
+                Text(if (isActive) "In use" else "Use", maxLines = 1, softWrap = false)
+            }
+            TextButton(onClick = onEdit, modifier = Modifier.semantics { contentDescription = "Edit ${p.name}" }) { Text("Edit", maxLines = 1, softWrap = false) }
+            if (!p.isDefault) TextButton(onClick = onDelete, modifier = Modifier.semantics { contentDescription = "Delete ${p.name}" },
+                colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text("Delete", maxLines = 1, softWrap = false) }
+        }
+    }
+}
+
+/** One pickable item of a profile section (tool group, skill or memory). */
+internal data class PickItem(val id: String, val title: String, val subtitle: String? = null)
+
+@Composable
+internal fun ToolsSection(p: Profile, onChange: (Profile) -> Unit) =
+    SelectionSection("tools", ToolPreset.entries.map { PickItem(it.groupId, it.label, it.description) }, p.tools,
+        startWith = Profiles.ALL_TOOL_GROUPS.toSet()) { onChange(p.copy(tools = it, toolGroupsOff = emptySet())) }
+
+@Composable
+internal fun SkillsSection(p: Profile, items: List<PickItem>, onChange: (Profile) -> Unit) =
+    SelectionSection("skills", items, p.skills, startWith = items.map { it.id }.toSet()) { onChange(p.copy(skills = it)) }
+
+@Composable
+internal fun MemorySection(p: Profile, items: List<PickItem>, onChange: (Profile) -> Unit) =
+    SelectionSection("memories", items, p.memories?.map { it.toString() }?.toSet(),
+        startWith = items.map { it.id }.toSet()) { sel -> onChange(p.copy(memories = sel?.mapNotNull { it.toLongOrNull() }?.toSet())) }
+
+/**
+ * Same pattern for Tools, Skills and Memory: a dropdown "All <noun> (incl. new ones)" / "Selected only";
+ * Selected shows the chosen items (✕ removes) and "+ Add" opens a searchable multi-select picker of the rest.
+ */
+@Composable
+internal fun SelectionSection(noun: String, items: List<PickItem>, selected: Set<String>?, startWith: Set<String>, onChange: (Set<String>?) -> Unit) {
+    var menu by remember { mutableStateOf(false) }
+    var picking by remember { mutableStateOf(false) }
+    Box {
+        OutlinedButton(onClick = { menu = true }, modifier = Modifier.semantics { contentDescription = "$noun mode" }) {
+            Text(if (selected == null) "All $noun (incl. new ones)" else "Selected only (${selected.size})", maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text("  ▾")
+        }
+        DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
+            DropdownMenuItem(text = { Text("All $noun (incl. new ones)") }, onClick = { onChange(null); menu = false })
+            DropdownMenuItem(text = { Text("Selected only") }, onClick = { if (selected == null) onChange(startWith); menu = false })
+        }
+    }
+    if (selected == null) return
+    val byId = items.associateBy { it.id }
+    if (selected.isEmpty()) Hint("None selected — this profile uses no $noun.")
+    selected.sortedBy { id -> items.indexOfFirst { it.id == id }.let { if (it < 0) Int.MAX_VALUE else it } }.forEach { id ->
+        val it = byId[id]
+        Row(Modifier.fillMaxWidth().padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(it?.title ?: "(deleted)", style = MaterialTheme.typography.bodyMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                it?.subtitle?.let { s -> Text(s, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+            }
+            IconButton(onClick = { onChange(selected - id) }, modifier = Modifier.semantics { contentDescription = "Remove ${it?.title ?: id}" }) { Text("✕") }
+        }
+    }
+    val rest = items.filter { it.id !in selected }
+    TextButton(onClick = { picking = true }, enabled = rest.isNotEmpty(), modifier = Modifier.semantics { contentDescription = "Add $noun" }) {
+        Text(if (rest.isEmpty()) "All $noun added" else "+ Add")
+    }
+    if (picking) PickerDialog(noun, rest, onDismiss = { picking = false }) { onChange(selected + it); picking = false }
+}
+
+@Composable
+internal fun PickerDialog(noun: String, items: List<PickItem>, onDismiss: () -> Unit, onAdd: (Set<String>) -> Unit) {
+    var q by remember { mutableStateOf("") }
+    var chosen by remember { mutableStateOf(setOf<String>()) }
+    val shown = items.filter { q.isBlank() || it.title.contains(q, true) || it.subtitle?.contains(q, true) == true }
+    AlertDialog(onDismissRequest = onDismiss, title = { Text("Add $noun") },
+        text = {
+            Column {
+                OutlinedTextField(q, { q = it }, placeholder = { Text("Search") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                LazyColumn(Modifier.heightIn(max = 360.dp)) {
+                    items(shown, key = { it.id }) { item ->
+                        Row(Modifier.fillMaxWidth().clickable { chosen = if (item.id in chosen) chosen - item.id else chosen + item.id },
+                            verticalAlignment = Alignment.CenterVertically) {
+                            Checkbox(item.id in chosen, { on -> chosen = if (on) chosen + item.id else chosen - item.id })
+                            Column {
+                                Text(item.title, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                item.subtitle?.let { Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 1, overflow = TextOverflow.Ellipsis) }
+                            }
+                        }
+                    }
+                    if (shown.isEmpty()) item { Text("No matches", modifier = Modifier.padding(8.dp)) }
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { onAdd(chosen) }, enabled = chosen.isNotEmpty()) { Text(if (chosen.isEmpty()) "Add" else "Add (${chosen.size})") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } })
 }

@@ -8,30 +8,38 @@ private fun Skill.summary(): JsonObject = buildJsonObject {
     put("id", id); put("name", name); put("description", description); put("enabled", enabled); put("chars", body.length)
 }
 
+/** Profile filter: (chat id, skill id) → allowed. Skills left out of a chat's profile are blocked, not just hidden. */
+typealias SkillGate = (Long, String) -> Boolean
+val ALL_SKILLS: SkillGate = { _, _ -> true }
+private fun blocked(id: String) = errorJson("The skill '$id' is not part of this chat's profile (Settings → Profiles). Do not use it or work around it; tell the user to add it to the profile if it's needed.")
+
 private inline fun skillCall(block: () -> String): String = try { block() }
     catch (e: IllegalArgumentException) { errorJson(e.message ?: "invalid input") }
     catch (e: NoSuchElementException) { errorJson(e.message ?: "not found") }
 
-class SkillListTool(private val store: SkillStore) : AgentTool {
+class SkillListTool(private val store: SkillStore, private val gate: SkillGate = ALL_SKILLS) : AgentTool {
     override val name = "skill_list"
     override val description = "List saved skills (reusable procedures) with id, name, description and whether they are enabled."
     override val parameters = schema(emptyList())
-    override suspend fun execute(args: JsonObject): String = buildJsonObject {
-        putJsonArray("skills") { store.list().forEach { add(it.summary()) } }
+    override suspend fun execute(args: JsonObject): String = execute(args, ToolContext(0))
+    override suspend fun execute(args: JsonObject, ctx: ToolContext): String = buildJsonObject {
+        putJsonArray("skills") { store.list().filter { gate(ctx.taskId, it.id) }.forEach { add(it.summary()) } }
     }.toString()
 }
 
-class SkillGetTool(private val store: SkillStore) : AgentTool {
+class SkillGetTool(private val store: SkillStore, private val gate: SkillGate = ALL_SKILLS) : AgentTool {
     override val name = "skill_get"
     override val description = "Load the full SKILL.md of a saved skill by id. The prompt only lists skill names and descriptions — call this before following a skill."
     override val parameters = schema(listOf("id"), "id" to prop("string", "Skill id from skill_list"))
-    override suspend fun execute(args: JsonObject): String {
+    override suspend fun execute(args: JsonObject): String = execute(args, ToolContext(0))
+    override suspend fun execute(args: JsonObject, ctx: ToolContext): String {
+        args.str("id")?.let { if (!gate(ctx.taskId, it)) return blocked(it) }
         val s = store.get(args.str("id") ?: return errorJson("id is required")) ?: return errorJson("No skill '${args.str("id")}'")
         return JsonObject(s.summary() + ("body" to JsonPrimitive(s.body))).toString()
     }
 }
 
-class SkillSaveTool(private val store: SkillStore) : AgentTool {
+class SkillSaveTool(private val store: SkillStore, private val onSaved: (Long, String) -> Unit = { _, _ -> }) : AgentTool {
     override val name = "skill_save"
     override val description = "Save a new skill: a reusable multi-step procedure worked out with the user (only after they agree). " +
         "description is required: one short line (≤160 chars) — only name + description go into the prompt index. " +
@@ -40,13 +48,15 @@ class SkillSaveTool(private val store: SkillStore) : AgentTool {
         "name" to prop("string", "Short name, e.g. 'Weekly crypto report'"),
         "description" to prop("string", "Required. One short line (≤160 chars): what it does and when to use it — shown in the prompt index"),
         "body" to prop("string", "Markdown instructions (max 20000 chars)"))
-    override suspend fun execute(args: JsonObject): String = skillCall {
+    override suspend fun execute(args: JsonObject): String = execute(args, ToolContext(0))
+    override suspend fun execute(args: JsonObject, ctx: ToolContext): String = skillCall {
         val s = store.save(args.str("name") ?: "", args.str("description") ?: "", args.str("body") ?: "")
+        onSaved(ctx.taskId, s.id)
         JsonObject(mapOf("ok" to JsonPrimitive(true)) + s.summary()).toString()
     }
 }
 
-class SkillEditTool(private val store: SkillStore) : AgentTool {
+class SkillEditTool(private val store: SkillStore, private val gate: SkillGate = ALL_SKILLS) : AgentTool {
     override val name = "skill_edit"
     override val description = "Edit a saved skill: replace name/description/body, or change part of the body with find + replace (find must occur once). " +
         "Keep the one-line description accurate (add one if the skill has none)."
@@ -57,19 +67,23 @@ class SkillEditTool(private val store: SkillStore) : AgentTool {
         "body" to prop("string", "New full body"),
         "find" to prop("string", "Exact text in the body to replace"),
         "replace" to prop("string", "Replacement for find"))
-    override suspend fun execute(args: JsonObject): String = skillCall {
+    override suspend fun execute(args: JsonObject): String = execute(args, ToolContext(0))
+    override suspend fun execute(args: JsonObject, ctx: ToolContext): String = skillCall {
+        args.str("id")?.let { if (!gate(ctx.taskId, it)) return blocked(it) }
         val s = store.edit(args.str("id") ?: return errorJson("id is required"), args.str("name"), args.str("description"),
             args.str("body"), args.str("find"), args.str("replace"))
         JsonObject(mapOf("ok" to JsonPrimitive(true)) + s.summary()).toString()
     }
 }
 
-class SkillDeleteTool(private val store: SkillStore) : AgentTool {
+class SkillDeleteTool(private val store: SkillStore, private val gate: SkillGate = ALL_SKILLS) : AgentTool {
     override val name = "skill_delete"
     override val description = "Delete a saved skill by id (only when the user asks)."
     override val parameters = schema(listOf("id"), "id" to prop("string", "Skill id"))
-    override suspend fun execute(args: JsonObject): String {
+    override suspend fun execute(args: JsonObject): String = execute(args, ToolContext(0))
+    override suspend fun execute(args: JsonObject, ctx: ToolContext): String {
         val id = args.str("id") ?: return errorJson("id is required")
+        if (!gate(ctx.taskId, id)) return blocked(id)
         return if (store.delete(id)) buildJsonObject { put("ok", true); put("deleted", id) }.toString() else errorJson("No skill '$id'")
     }
 }

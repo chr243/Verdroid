@@ -20,6 +20,8 @@ interface MemoryStore {
     suspend fun save(text: String, tags: List<String>, chatId: Long? = null, profileId: String? = null): SaveResult
     /** Long-term memory scope of a chat's profile: null = shared, else that profile's own memory. */
     fun memoryScopeOf(taskId: Long): String? = null
+    /** Long-term memories a chat's profile sees (All memories = unowned ones; Selected only = its selection). */
+    fun longTermFor(all: List<Memory>, taskId: Long): List<Memory> = MemoryText.globalFor(all, memoryScopeOf(taskId))
     suspend fun update(id: Long, text: String, tags: List<String>): Boolean
     suspend fun delete(id: Long): Boolean
     /** [chatId] null = clear all long-term memories; else clear that chat's short-term memory. */
@@ -110,8 +112,9 @@ object MemoryText {
     private fun line(m: Memory) = "- [#${m.id}] ${m.text}" + if (m.tags.isEmpty()) "" else " (${m.tags.joinToString()})"
 
     /** System-prompt block: instructions for both tiers + the long-term selection + this chat's short-term notes. */
-    fun promptBlock(all: List<Memory>, autoSave: Boolean, chatId: Long? = null, profileId: String? = null): String = buildString {
-        val global = globalFor(all, profileId)
+    fun promptBlock(all: List<Memory>, autoSave: Boolean, chatId: Long? = null, profileId: String? = null,
+                    longTerm: List<Memory>? = null): String = buildString {
+        val global = longTerm ?: globalFor(all, profileId)
         appendLine("Memory (tools memory_save, memory_search, memory_delete) has two tiers:")
         appendLine("- Short-term (scope=\"chat\"): this chat's scratchpad. Save task progress, decisions and things you figured out " +
             "(e.g. which approach worked, IDs, partial results) so you can pick up where you left off. It is shown below in every " +

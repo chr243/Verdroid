@@ -41,6 +41,11 @@ class MemoryRepository @Inject constructor(
     override fun memoryScopeOf(taskId: Long): String? =
         com.verdroid.app.data.profiles.Profiles.memoryScope(profiles.profileOf(taskId))
 
+    override fun longTermFor(all: List<Memory>, taskId: Long): List<Memory> {
+        val p = profiles.profileOf(taskId)
+        return all.filter { it.chatId == null && com.verdroid.app.data.profiles.Profiles.memoryVisible(p, it.id, it.profileId) }
+    }
+
     override suspend fun save(text: String, tags: List<String>, chatId: Long?, profileId: String?): SaveResult = mutex.withLock {
         val scope = if (chatId == null) profileId else null
         val t = text.trim().take(MemoryText.MAX_TEXT)
@@ -52,6 +57,7 @@ class MemoryRepository @Inject constructor(
                 MemoryText.tagsString((dup.tags + tags).distinct()), dup.createdAt, now, dup.chatId, dup.profileId))
             SaveResult(dup.id, dup.id)
         } else SaveResult(dao.insert(MemoryEntity(0, t, MemoryText.tagsString(tags), now, now, chatId, scope)), null)
+        if (scope != null) profiles.onMemoryLearned(scope, res.id)
         export(); res
     }
 
@@ -75,7 +81,7 @@ class MemoryRepository @Inject constructor(
 
     /** System-prompt block: long-term (≤ 20 items, ~1.5k tokens) + this chat's short-term notes (~1k tokens). */
     suspend fun promptBlock(chatId: Long? = null): String =
-        MemoryText.promptBlock(all(), autoSave, chatId, chatId?.let { memoryScopeOf(it) })
+        all().let { a -> MemoryText.promptBlock(a, autoSave, chatId, longTerm = longTermFor(a, chatId ?: 0)) }
 
     private suspend fun export() = withContext(Dispatchers.IO) {
         runCatching {

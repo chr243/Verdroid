@@ -88,6 +88,58 @@ class HomeTopBarScreenshotTest {
         File("build/screenshots").apply { mkdirs() }.let { File(it, "$name.png") }.outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }
     }
 
+    private fun rows(name: String, fontScale: Float) {
+        val long = Profile("p1", "Research and long-form investigations", "🔎", tools = setOf("web", "termux"), memories = setOf(1L, 2L),
+            instructions = "x", model = "kilo:some-very-long-model-name/free")
+        rule.setContent {
+            val d = LocalDensity.current
+            CompositionLocalProvider(LocalDensity provides Density(d.density, fontScale)) {
+                MaterialTheme { Surface { Box(Modifier.width(360.dp).testTag("bar")) { androidx.compose.foundation.layout.Column {
+                    com.verdroid.app.ui.profiles.ProfileRow(Profiles.DEFAULT, true, {}, {}, {})
+                    com.verdroid.app.ui.profiles.ProfileRow(long, false, {}, {}, {})
+                } } } }
+            }
+        }
+        val bar = rule.onNodeWithTag("bar").fetchSemanticsNode().boundsInRoot
+        for (cd in listOf("Use ${long.name}", "Edit ${long.name}", "Delete ${long.name}", "Edit Default")) {
+            val b = rule.onNodeWithContentDescription(cd).fetchSemanticsNode().boundsInRoot
+            assertTrue("$name: $cd outside the row $b", b.right <= bar.right + 0.5f && b.width > 20f)
+        }
+        assertTrue(rule.onAllNodesWithContentDescription("Delete Default").fetchSemanticsNodes().isEmpty())
+        shot(name, bar)
+    }
+    @Test fun profileRows() = rows("profile_rows", 1f)
+    @Test fun profileRows_font130() = rows("profile_rows_font130", 1.3f)
+    @Test fun profileRows_font150() = rows("profile_rows_font150", 1.5f)
+
+    private fun sections(name: String, fontScale: Float) {
+        val p = Profile("p1", "Research", "🔎", tools = setOf("web", "termux"), skills = setOf("s1"), memories = setOf(1L))
+        val skills = listOf(com.verdroid.app.ui.profiles.PickItem("s1", "Weekly crypto report", "Backtest summary"),
+            com.verdroid.app.ui.profiles.PickItem("s2", "Deploy", null))
+        val mems = listOf(com.verdroid.app.ui.profiles.PickItem("1", "The user prefers short answers in English and works on an Android app called Verdroid", "style"),
+            com.verdroid.app.ui.profiles.PickItem("2", "Lives in Paris", null))
+        rule.setContent {
+            val d = LocalDensity.current
+            CompositionLocalProvider(LocalDensity provides Density(d.density, fontScale)) {
+                MaterialTheme { Surface { Box(Modifier.width(360.dp).testTag("bar")) { androidx.compose.foundation.layout.Column(Modifier.padding(horizontal = 16.dp)) {
+                    com.verdroid.app.ui.profiles.ToolsSection(p) {}
+                    com.verdroid.app.ui.profiles.SkillsSection(p.copy(skills = null), skills) {}
+                    com.verdroid.app.ui.profiles.MemorySection(p, mems) {}
+                } } } }
+            }
+        }
+        val bar = rule.onNodeWithTag("bar").fetchSemanticsNode().boundsInRoot
+        for (cd in listOf("tools mode", "skills mode", "memories mode", "Add tools", "Add memories", "Remove Web")) {
+            val n = rule.onAllNodesWithContentDescription(cd, substring = true).fetchSemanticsNodes()
+            assertTrue("$name: $cd missing", n.isNotEmpty())
+            assertTrue("$name: $cd outside", n.first().boundsInRoot.right <= bar.right + 0.5f)
+        }
+        assertTrue(rule.onAllNodesWithContentDescription("Add skills").fetchSemanticsNodes().isEmpty()) // All mode: no list
+        shot(name, bar)
+    }
+    @Test fun editorSections() = sections("profile_editor_sections", 1f)
+    @Test fun editorSections_font150() = sections("profile_editor_sections_font150", 1.5f)
+
     @Test fun tiers() {
         assertTrue(HomeBarLayout.level(600f, 1f) == HomeBarLayout.FULL && HomeBarLayout.level(360f, 1f) == HomeBarLayout.SHORT &&
             HomeBarLayout.level(360f, 1.3f) == HomeBarLayout.TIGHT && HomeBarLayout.level(320f, 1.5f) == HomeBarLayout.TIGHT)

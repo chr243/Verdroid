@@ -184,7 +184,11 @@ object AppModule {
                 // v0.9.16: persistent memory
                 MemorySaveTool(memory), MemorySearchTool(memory), MemoryDeleteTool(memory),
                 // Agent-writable skills (reusable procedures; enabled ones are injected into the system prompt)
-                SkillListTool(skills), SkillGetTool(skills), SkillSaveTool(skills), SkillEditTool(skills), SkillDeleteTool(skills),
+                // Profiles: skills left out of a chat's profile are blocked here too (not just hidden from the prompt)
+                *profiles.skillGate().let { g ->
+                    arrayOf<com.verdroid.app.agent.tools.AgentTool>(SkillListTool(skills, g), SkillGetTool(skills, g), SkillSaveTool(skills) { t, id -> profiles.onSkillSaved(t, id) },
+                        SkillEditTool(skills, g), SkillDeleteTool(skills, g))
+                },
                 // v1.0.12: native charts in the chat (+ PNG export for sharing)
                 ChartTool(File(context.filesDir, "charts"), com.verdroid.app.ui.chart.AndroidChartPng()),
                 ShowImageTool(sharedFolder, File(context.filesDir, "charts"), context.cacheDir),

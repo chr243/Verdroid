@@ -198,6 +198,10 @@ interface MemoryDao {
     @Query("UPDATE memories SET profileId = NULL WHERE profileId = :profileId")
     suspend fun unscopeProfile(profileId: String): Int
 
+    /** Long-term memories owned by a profile (migration of the old "separate memory" switch). */
+    @Query("SELECT id, profileId FROM memories WHERE profileId IS NOT NULL AND chatId IS NULL")
+    suspend fun ownedRows(): List<MemoryOwnerRow>
+
     @Query("UPDATE memories SET chatId = :chatId, updatedAt = :now WHERE id = :id")
     suspend fun setChat(id: Long, chatId: Long?, now: Long): Int
 }
@@ -240,3 +244,5 @@ abstract class VerdroidDatabase : RoomDatabase() {
     abstract fun memoryDao(): MemoryDao
     abstract fun scheduleDao(): ScheduleDao
 }
+
+data class MemoryOwnerRow(val id: Long, val profileId: String)

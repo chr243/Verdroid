@@ -16,6 +16,8 @@ import javax.inject.Singleton
 interface ProfileLookup {
     fun profileOf(taskId: Long): Profile
     fun all(): List<Profile>
+    /** A long-term memory was learned in Selected-only profile [profileId]: add it to that profile's selection. */
+    fun onMemoryLearned(profileId: String, memoryId: Long) {}
 
     companion object {
         val DEFAULT_ONLY = object : ProfileLookup {
@@ -56,7 +58,27 @@ class ProfileStore @Inject constructor(
         }
     }
 
+    init {
+        // test4 → test5: "separate memory" profiles become Selected-only with the memories they owned.
+        if (Profiles.needsMemoryMigration(_profiles.value)) runCatching {
+            val owned = runBlocking(Dispatchers.IO) { memoryDao.ownedRows() }.groupBy({ it.profileId }, { it.id })
+            write(Profiles.migrateMemory(_profiles.value, owned))
+        }
+    }
+
     override fun all(): List<Profile> = _profiles.value
+
+    fun skillGate(): (Long, String) -> Boolean = { taskId, skill -> Profiles.skillAllowed(profileOf(taskId), skill) }
+
+    /** A skill saved in a profile with selected skills joins that profile's selection (so the agent can use what it just wrote). */
+    @Synchronized
+    fun onSkillSaved(taskId: Long, skillId: String) {
+        val p = profileOf(taskId)
+        if (p.skills != null && skillId !in p.skills) save(p.copy(skills = p.skills + skillId))
+    }
+
+    @Synchronized
+    override fun onMemoryLearned(profileId: String, memoryId: Long) = write(Profiles.addMemory(_profiles.value, profileId, memoryId))
     fun get(id: String?): Profile = Profiles.resolve(_profiles.value, id)
     fun active(): Profile = get(_active.value)
 

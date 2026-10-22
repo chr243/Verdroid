@@ -6,8 +6,8 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class ProfilesTest {
-    private val coding = Profile("p1", "Coding", "💻", model = "kilo:x", toolGroupsOff = setOf("twitter"), skills = setOf("a"),
-        instructions = "Be terse.", separateMemory = true)
+    private val coding = Profile("p1", "Coding", "💻", model = "kilo:x", tools = Profiles.ALL_TOOL_GROUPS.toSet() - "twitter", skills = setOf("a"),
+        instructions = "Be terse.", memories = setOf(2L))
 
     @Test fun `default always exists first and survives broken data`() {
         assertEquals(listOf(Profiles.DEFAULT), Profiles.decode(null))
@@ -41,7 +41,7 @@ class ProfilesTest {
 
     @Test fun `skills, memory scope, prompt and copy`() {
         assertTrue(Profiles.skillAllowed(coding, "a")); assertFalse(Profiles.skillAllowed(coding, "b"))
-        assertEquals("p1", Profiles.memoryScope(coding)); assertNull(Profiles.memoryScope(coding.copy(separateMemory = false)))
+        assertEquals("p1", Profiles.memoryScope(coding)); assertNull(Profiles.memoryScope(coding.copy(memories = null)))
         val block = Profiles.promptBlock(coding, listOf(Profiles.DEFAULT, coding))
         assertTrue("Coding" in block && "Be terse." in block)
         val copy = Profiles.copyOf(coding, "p2", "New")
@@ -58,6 +58,30 @@ class ProfilesTest {
         assertTrue("own" in MemoryText.promptBlock(all, true, 9, "p1")); assertFalse("shared" in MemoryText.promptBlock(all, true, 9, "p1"))
         assertNull(MemoryText.findDuplicate(all, "own", null, null))
         assertEquals(2L, MemoryText.findDuplicate(all, "own", null, "p1")?.id)
+    }
+
+    @Test fun `selected memories, auto-add and all-memories visibility`() {
+        val all = listOf(Memory(1, "shared", emptyList(), 1, 1), Memory(2, "own", emptyList(), 1, 1, profileId = "p1"),
+            Memory(4, "other", emptyList(), 1, 1, profileId = "p9"))
+        assertEquals(listOf(2L), all.filter { Profiles.memoryVisible(coding, it.id, it.profileId) }.map { it.id })
+        assertEquals(listOf(1L), all.filter { Profiles.memoryVisible(Profiles.DEFAULT, it.id, it.profileId) }.map { it.id })
+        val l = Profiles.addMemory(listOf(Profiles.DEFAULT, coding), "p1", 5)
+        assertEquals(setOf(2L, 5L), l[1].memories); assertNull(l[0].memories)
+        assertEquals(l, Profiles.addMemory(l, "default", 6))
+    }
+
+    @Test fun `test4 profiles migrate`() {
+        val oldSep = Profile("s", "S", separateMemory = true, toolGroupsOff = setOf("git"))
+        val oldShared = Profile("h", "H")
+        val l = Profiles.migrateMemory(Profiles.normalize(listOf(oldSep, oldShared)), mapOf("s" to listOf(3L, 4L)))
+        assertEquals(setOf(3L, 4L), l[1].memories); assertFalse(l[1].separateMemory); assertNull(l[2].memories)
+        assertEquals(Profiles.ALL_TOOL_GROUPS.toSet() - "git", l[1].tools); assertTrue(l[1].toolGroupsOff.isEmpty())
+        assertFalse(Profiles.toolAllowed("git", null, l[1], true)); assertTrue(Profiles.toolAllowed("git", null, l[2], true))
+        assertTrue(Profiles.needsMemoryMigration(listOf(oldSep))); assertFalse(Profiles.needsMemoryMigration(l))
+        // the stored JSON of test4 (no tools/memories keys) still decodes
+        val raw = """[{"id":"s","name":"S","toolGroupsOff":["git"],"separateMemory":true}]"""
+        assertEquals(Profiles.ALL_TOOL_GROUPS.toSet() - "git", Profiles.decode(raw)[1].tools)
+        assertEquals(setOf(9L), Profiles.migrateMemory(Profiles.decode(raw), mapOf("s" to listOf(9L)))[1].memories)
     }
 
     @Test fun `chat filter`() {

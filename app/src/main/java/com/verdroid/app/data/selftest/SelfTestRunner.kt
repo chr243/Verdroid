@@ -247,7 +247,11 @@ class SelfTestRunner @Inject constructor(
             val d = pr.DEFAULT
             check(pr.decode("broken").single() == d) { "Default missing" }
             check(pr.toolAllowed("web", null, d, true) && pr.skillAllowed(d, "x") && pr.memoryScope(d) == null && pr.promptBlock(d, listOf(d)).isEmpty()) { "Default changes behaviour" }
-            val c = com.verdroid.app.data.profiles.Profile("st", "T", toolGroupsOff = setOf("web"), skills = emptySet(), separateMemory = true)
+            val c = com.verdroid.app.data.profiles.Profile("st", "T", tools = pr.ALL_TOOL_GROUPS.toSet() - "web", skills = emptySet(), memories = setOf(7L))
+            check(pr.memoryVisible(c, 7L, null) && !pr.memoryVisible(c, 8L, null) && pr.memoryVisible(d, 8L, null) && !pr.memoryVisible(d, 9L, "st")) { "memory selection" }
+            check(pr.addMemory(listOf(c), "st", 9L).first().memories == setOf(7L, 9L)) { "learned memory not auto-added" }
+            check(pr.migrateMemory(listOf(c.copy(memories = null, separateMemory = true)), mapOf("st" to listOf(3L))).first().memories == setOf(3L)) { "memory migration" }
+            check(pr.migrateTools(com.verdroid.app.data.profiles.Profile("o", "O", toolGroupsOff = setOf("web"))).tools?.contains("web") == false) { "tools migration" }
             check(!pr.toolAllowed("web", null, c, true) && pr.toolAllowed("web", true, c, true)) { "tool rule" }
             check(!pr.skillAllowed(c, "x") && pr.memoryScope(c) == "st") { "skills/memory" }
             check(pr.delete(listOf(d, c), pr.DEFAULT_ID).size == 2) { "Default deletable" }

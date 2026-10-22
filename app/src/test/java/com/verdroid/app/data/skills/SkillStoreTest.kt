@@ -78,4 +78,19 @@ class SkillStoreTest {
         assertEquals(true, obj(SkillDeleteTool(store).execute(buildJsonObject { put("id", "scrape-news") }))["ok"]?.jsonPrimitive?.boolean)
         assertTrue(obj(SkillGetTool(store).execute(buildJsonObject { put("id", "scrape-news") })).containsKey("error"))
     }
+
+    @Test fun `skills outside the profile are blocked in skill tools`() = kotlinx.coroutines.runBlocking {
+        val store = SkillStore(kotlin.io.path.createTempDirectory().toFile())
+        store.save("Alpha", "a", "1. a"); store.save("Beta", "b", "1. b")
+        val gate: (Long, String) -> Boolean = { _, id -> id == "alpha" }
+        val ctx = com.verdroid.app.agent.tools.ToolContext(1)
+        val list = obj(com.verdroid.app.agent.tools.SkillListTool(store, gate).execute(JsonObject(emptyMap()), ctx))["skills"]!!.jsonArray
+        assertEquals(1, list.size)
+        val id = buildJsonObject { put("id", "beta") }
+        assertTrue(obj(com.verdroid.app.agent.tools.SkillGetTool(store, gate).execute(id, ctx))["error"]!!.jsonPrimitive.content.contains("not part of"))
+        assertTrue(obj(com.verdroid.app.agent.tools.SkillEditTool(store, gate).execute(buildJsonObject { put("id", "beta"); put("body", "x") }, ctx)).containsKey("error"))
+        assertTrue(obj(com.verdroid.app.agent.tools.SkillDeleteTool(store, gate).execute(id, ctx)).containsKey("error"))
+        assertNotNull(store.get("beta"))
+        assertEquals("1. a", obj(com.verdroid.app.agent.tools.SkillGetTool(store, gate).execute(buildJsonObject { put("id", "alpha") }, ctx))["body"]!!.jsonPrimitive.content)
+    }
 }

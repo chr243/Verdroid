@@ -62,7 +62,7 @@ class MemorySearchTool(private val store: MemoryStore) : AgentTool {
         val q = args["query"]?.jsonPrimitive?.contentOrNull.orEmpty()
         val limit = (args["limit"]?.jsonPrimitive?.intOrNull ?: 10).coerceIn(1, 50)
         val all = store.all()
-        val pool = MemoryText.globalFor(all, store.memoryScopeOf(ctx.taskId)) + MemoryText.ofChat(all, ctx.taskId.takeIf { it > 0 })
+        val pool = store.longTermFor(all, ctx.taskId) + MemoryText.ofChat(all, ctx.taskId.takeIf { it > 0 })
         val hits = MemoryText.search(pool, q, limit)
         return memJson {
             put("count", hits.size)
