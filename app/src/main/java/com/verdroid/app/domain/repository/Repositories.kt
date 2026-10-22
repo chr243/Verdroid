@@ -24,6 +24,8 @@ interface TaskRepository {
     suspend fun getTask(taskId: Long): Task?
     suspend fun getMessages(taskId: Long): List<ChatMessage>
     suspend fun createTask(title: String, prompt: String, type: TaskType): Long
+    /** Profiles: [profileId] null = the active profile. */
+    suspend fun createTask(title: String, prompt: String, type: TaskType, profileId: String?): Long = createTask(title, prompt, type)
     suspend fun updateStatus(taskId: Long, status: TaskStatus, subtitle: String, resumeAt: Long? = null, error: String? = null)
     suspend fun updateSubtitle(taskId: Long, subtitle: String)
     suspend fun updateCheckpoint(taskId: Long, step: Int, model: String?, checkpointJson: String)

@@ -55,4 +55,14 @@ val MIGRATION_6_7 = object : Migration(6, 7) {
     }
 }
 
-val ALL_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+/** v8 (Profiles): every existing chat → Default; memories/schedules stay shared (NULL). */
+val MIGRATION_7_8 = object : Migration(7, 8) {
+    override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL("ALTER TABLE `tasks` ADD COLUMN `profileId` TEXT NOT NULL DEFAULT 'default'")
+        db.execSQL("CREATE INDEX IF NOT EXISTS `index_tasks_profileId` ON `tasks` (`profileId`)")
+        db.execSQL("ALTER TABLE `memories` ADD COLUMN `profileId` TEXT")
+        db.execSQL("ALTER TABLE `schedules` ADD COLUMN `profileId` TEXT")
+    }
+}
+
+val ALL_MIGRATIONS = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)

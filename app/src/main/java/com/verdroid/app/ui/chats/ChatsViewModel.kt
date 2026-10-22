@@ -30,7 +30,12 @@ class ChatsViewModel @Inject constructor(
     private val client: com.verdroid.app.data.network.OpenRouterClient,
     private val updater: com.verdroid.app.data.update.AppUpdater,
     private val archive: com.verdroid.app.domain.usecase.ChatArchiveUseCase,
+    profileStore: com.verdroid.app.data.profiles.ProfileStore,
 ) : ViewModel() {
+    /** Profiles: chips + badges show once a 2nd profile exists. */
+    val profiles: StateFlow<List<com.verdroid.app.data.profiles.Profile>> = profileStore.profiles
+    /** Chat list filter chip (null = All). */
+    val profileFilter = MutableStateFlow<String?>(null)
     /** v1.0.12: "delete" on the home list = move to the archive; the screen shows a snackbar with Undo. */
     data class Archived(val taskId: Long, val title: String, val stopped: Boolean)
     private val _archived = kotlinx.coroutines.channels.Channel<Archived>(kotlinx.coroutines.channels.Channel.BUFFERED)
@@ -50,7 +55,9 @@ class ChatsViewModel @Inject constructor(
     fun latestCached(): String? = updater.latestCached()
     val query = MutableStateFlow("")
 
-    val conversations: StateFlow<List<Conversation>> = observeConversations(query)
+    val conversations: StateFlow<List<Conversation>> = combine(observeConversations(query), profileFilter, profileStore.profiles) { l, f, p ->
+        com.verdroid.app.data.profiles.Profiles.filterChats(l, f, p) { it.task.profileId }
+    }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     /** "Stories": running / paused / rate-limited / queued tasks plus failures from the last 24h. */

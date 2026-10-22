@@ -211,7 +211,7 @@ class ToolRegistry(val tools: List<AgentTool>, private val switches: com.verdroi
         if (!chatFilter.allowed(taskId, name, globallyOn)) {
             if (!globallyOn) return ToolResult(errorJson("The tool $name is turned off by the user (Settings > Tools). Do not call it; use another approach or tell the user."), true)
             val preset = com.verdroid.app.data.tools.ToolPreset.of(name)?.label ?: "its"
-            return ToolResult(errorJson("The tool $name is turned off in this chat (the $preset tool preset is off; chat menu → Tool presets). Do not call it or work around it; tell the user to turn the preset on if it's needed."), true)
+            return ToolResult(errorJson("The tool $name is turned off in this chat (the $preset tool preset is off, by the chat menu → Tool presets or by this chat's profile in Settings → Profiles). Do not call it or work around it; tell the user to turn the preset on if it's needed."), true)
         }
         val args = runCatching { Json.parseToJsonElement(argumentsJson.ifBlank { "{}" }) as? JsonObject }.getOrNull()
             ?: return ToolResult(errorJson("Arguments must be a JSON object"), true)

@@ -57,6 +57,7 @@ class OpenRouterClient @Inject constructor(
     private val appPrefs: com.verdroid.app.data.prefs.AppPrefs,
     private val vision: ModelCapabilities,
     private val pins: com.verdroid.app.data.settings.ChatModelPinStore,
+    private val profiles: com.verdroid.app.data.profiles.ProfileLookup,
 ) {
     /** Keeps images only for models whose metadata lists image input. */
     private suspend fun forModel(id: String, msgs: List<ApiMessage>): List<ApiMessage> =
@@ -81,7 +82,10 @@ class OpenRouterClient @Inject constructor(
         val global = settings.currentModels().ifEmpty { com.verdroid.app.domain.model.DefaultModels.list }
         // Per-chat pin (chat ⋮ → Model): only that model, unless the pin allows fallback. No silent swap.
         val pin = taskId?.takeIf { it > 0 }?.let { pins.pin(it) }
-        val models = com.verdroid.app.data.settings.ModelPins.resolve(global, pin)
+        // A profile's model goes first, with fallback to Model priority (a chat pin still wins).
+        val profileModel = taskId?.takeIf { it > 0 }?.let { profiles.profileOf(it).model.trim() }.orEmpty()
+        val models = com.verdroid.app.data.settings.ModelPins.resolve(global,
+            pin ?: profileModel.takeIf { it.isNotEmpty() }?.let { com.verdroid.app.data.settings.ModelPin(it, allowFallback = true) })
         val out = completeWith(models, messages, tools, taskId, status)
         return if (pin != null && !pin.allowFallback) PinnedOutcome.map(pin, ModelIds.label(pin.model), out) else out
     }

@@ -4,7 +4,9 @@ package com.verdroid.app.data.memory
  * A memory. [chatId] null = long-term (global: lasting facts about the user and their preferences);
  * otherwise the short-term scratchpad of that chat (task progress, decisions, findings), deleted with the chat.
  */
-data class Memory(val id: Long, val text: String, val tags: List<String>, val createdAt: Long, val updatedAt: Long, val chatId: Long? = null) {
+data class Memory(val id: Long, val text: String, val tags: List<String>, val createdAt: Long, val updatedAt: Long, val chatId: Long? = null,
+    /** Long-term memory of a profile with separate memory (Settings → Profiles); null = shared by all profiles. */
+    val profileId: String? = null) {
     val scope: String get() = if (chatId == null) MemoryText.SCOPE_GLOBAL else MemoryText.SCOPE_CHAT
 }
 
@@ -15,7 +17,9 @@ data class SaveResult(val id: Long, val duplicateOf: Long?)
 interface MemoryStore {
     suspend fun all(): List<Memory>
     /** [chatId] null = long-term; else that chat's short-term memory. Duplicates are merged within the same scope. */
-    suspend fun save(text: String, tags: List<String>, chatId: Long? = null): SaveResult
+    suspend fun save(text: String, tags: List<String>, chatId: Long? = null, profileId: String? = null): SaveResult
+    /** Long-term memory scope of a chat's profile: null = shared, else that profile's own memory. */
+    fun memoryScopeOf(taskId: Long): String? = null
     suspend fun update(id: Long, text: String, tags: List<String>): Boolean
     suspend fun delete(id: Long): Boolean
     /** [chatId] null = clear all long-term memories; else clear that chat's short-term memory. */
@@ -38,6 +42,8 @@ object MemoryText {
     const val SCOPE_GLOBAL = "global"
 
     fun global(all: List<Memory>) = all.filter { it.chatId == null }
+    /** Long-term memories one profile scope sees (null = the shared ones). */
+    fun globalFor(all: List<Memory>, profileId: String?) = all.filter { it.chatId == null && it.profileId == profileId }
     fun ofChat(all: List<Memory>, chatId: Long?) = if (chatId == null) emptyList() else all.filter { it.chatId == chatId }
 
     /** Short-term notes for the prompt: the newest that fit in [CHAT_PROMPT_CHARS], shown oldest → newest. */
@@ -72,8 +78,8 @@ object MemoryText {
     }
 
     /** Duplicate in the same scope ([chatId] null = long-term). */
-    fun findDuplicate(existing: List<Memory>, text: String, chatId: Long? = null): Memory? =
-        existing.firstOrNull { it.chatId == chatId && isDuplicate(it.text, text) }
+    fun findDuplicate(existing: List<Memory>, text: String, chatId: Long? = null, profileId: String? = null): Memory? =
+        existing.firstOrNull { it.chatId == chatId && (chatId != null || it.profileId == profileId) && isDuplicate(it.text, text) }
 
     /** Memories matching any word of [query] (text or tags), best matches first; blank query = most recent. */
     fun search(all: List<Memory>, query: String, limit: Int = 20): List<Memory> {
@@ -104,8 +110,8 @@ object MemoryText {
     private fun line(m: Memory) = "- [#${m.id}] ${m.text}" + if (m.tags.isEmpty()) "" else " (${m.tags.joinToString()})"
 
     /** System-prompt block: instructions for both tiers + the long-term selection + this chat's short-term notes. */
-    fun promptBlock(all: List<Memory>, autoSave: Boolean, chatId: Long? = null): String = buildString {
-        val global = global(all)
+    fun promptBlock(all: List<Memory>, autoSave: Boolean, chatId: Long? = null, profileId: String? = null): String = buildString {
+        val global = globalFor(all, profileId)
         appendLine("Memory (tools memory_save, memory_search, memory_delete) has two tiers:")
         appendLine("- Short-term (scope=\"chat\"): this chat's scratchpad. Save task progress, decisions and things you figured out " +
             "(e.g. which approach worked, IDs, partial results) so you can pick up where you left off. It is shown below in every " +

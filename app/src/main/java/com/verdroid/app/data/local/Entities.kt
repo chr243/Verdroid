@@ -6,7 +6,7 @@ import androidx.room.*
  * Schema designed for Phase 3 durable pause/resume: tasks carry status, current step,
  * a checkpoint JSON blob and resumeAt; messages and tool calls are persisted individually.
  */
-@Entity(tableName = "tasks", indices = [Index("status"), Index("updatedAt"), Index("archivedAt")])
+@Entity(tableName = "tasks", indices = [Index("status"), Index("updatedAt"), Index("archivedAt"), Index("profileId")])
 data class TaskEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val title: String,
@@ -27,6 +27,8 @@ data class TaskEntity(
     val pauseReason: String? = null,
     /** v5 (v1.0.12): when the chat was moved to the archive; null = on the home list. */
     val archivedAt: Long? = null,
+    /** v8 (Profiles): the profile this chat runs with; "default" for every chat created before profiles. */
+    @ColumnInfo(defaultValue = "default") val profileId: String = "default",
 )
 
 @Entity(
@@ -113,6 +115,8 @@ data class MemoryEntity(
     val updatedAt: Long,
     /** v4: null = long-term (global); a chat/task id = that chat's short-term scratchpad (deleted with the chat). */
     val chatId: Long? = null,
+    /** v8: long-term memory of a profile with separate memory; null = shared by all profiles. */
+    val profileId: String? = null,
 )
 
 /** v7 (v1.0.58): reminders and scheduled agent runs (see domain/schedule). Times are epoch ms. */
@@ -139,4 +143,6 @@ data class ScheduleEntity(
     /** "ok", "no change", "skipped: …", "failed: …", "paused: …". */
     val lastStatus: String? = null,
     val createdAt: Long,
+    /** v8: profile the runs use (the creating chat's profile); null = Default / the run chat's own profile. */
+    val profileId: String? = null,
 )

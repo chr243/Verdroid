@@ -28,6 +28,7 @@ class TaskRepositoryImpl @Inject constructor(
     private val messageDao: MessageDao,
     private val toolCallDao: ToolCallDao,
     private val memoryDao: MemoryDao,
+    private val profiles: com.verdroid.app.data.profiles.ProfileStore,
     @dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context,
 ) : TaskRepository {
     private fun now() = System.currentTimeMillis()
@@ -44,10 +45,14 @@ class TaskRepositoryImpl @Inject constructor(
     override suspend fun getTask(taskId: Long) = taskDao.get(taskId)?.toDomain()
     override suspend fun getMessages(taskId: Long) = messageDao.getAll(taskId).map { it.toDomain() }
 
-    override suspend fun createTask(title: String, prompt: String, type: TaskType): Long {
+    override suspend fun createTask(title: String, prompt: String, type: TaskType): Long = createTask(title, prompt, type, null)
+
+    override suspend fun createTask(title: String, prompt: String, type: TaskType, profileId: String?): Long {
         val t = now()
+        val pid = profiles.get(profileId ?: profiles.activeId.value).id
         val id = taskDao.insert(TaskEntity(title = title, prompt = prompt, type = type.name, status = TaskStatus.QUEUED.name,
-            subtitle = "Queued", createdAt = t, updatedAt = t, lastOpenedAt = t))
+            subtitle = "Queued", createdAt = t, updatedAt = t, lastOpenedAt = t, profileId = pid))
+        profiles.onChatCreated(id, pid)
         runCatching { com.verdroid.app.data.feedback.StarPromptStore.get(context).onChatCreated() } // lifetime count for the star prompt
         return id
     }

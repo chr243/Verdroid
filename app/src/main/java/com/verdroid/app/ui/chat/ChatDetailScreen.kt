@@ -186,6 +186,17 @@ fun ChatDetailScreen(onBack: () -> Unit, onChatMemory: (Long) -> Unit = {}, vm: 
                                 .joinToString(" · ")
                             if (sub.isNotEmpty()) Text(sub, maxLines = 1, overflow = TextOverflow.Ellipsis,
                                 style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            // Profiles: tap the profile name → quick picker (only once a 2nd profile exists).
+                            val profiles by vm.profiles.collectAsStateWithLifecycle()
+                            val profile by vm.chatProfile.collectAsStateWithLifecycle()
+                            if (com.verdroid.app.data.profiles.Profiles.visible(profiles)) {
+                                var pick by remember { mutableStateOf(false) }
+                                Text(profile.label + " ▾", maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                    style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.clickable { pick = true }.padding(vertical = 2.dp))
+                                if (pick) com.verdroid.app.ui.profiles.ProfilePickerDialog(profiles, profile.id,
+                                    onPick = { vm.setProfile(it); pick = false }) { pick = false }
+                            }
                         }
                     }
                 },

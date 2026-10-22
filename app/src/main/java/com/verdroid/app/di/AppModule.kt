@@ -134,6 +134,7 @@ object AppModule {
         git: GitManager,
         toolPrefs: com.verdroid.app.data.tools.ToolPrefs,
         chatPresets: com.verdroid.app.data.tools.ChatToolPresets,
+        profiles: com.verdroid.app.data.profiles.ProfileStore,
         mcp: com.verdroid.app.data.mcp.McpManager,
         memory: com.verdroid.app.data.memory.MemoryRepository,
         @ApplicationContext context: Context,
@@ -209,7 +210,11 @@ object AppModule {
             StubTool.all(),
         toolPrefs,
         dynamic = mcp::agentTools,
-        chatFilter = chatPresets,
+        // Chat preset override → the chat's profile → Settings → Tools
+        chatFilter = com.verdroid.app.data.tools.ChatToolFilter { id, tool, g ->
+            val p = com.verdroid.app.data.tools.ToolPreset.of(tool)
+            com.verdroid.app.data.profiles.Profiles.toolAllowed(p?.groupId ?: "", p?.let { chatPresets.overrides(id)[it] }, profiles.profileOf(id), g)
+        },
         // Yes/No dialog before agent-driven deletes/moves/renames and overwrites outside Internal/
         fileGuard = com.verdroid.app.agent.tools.FileChangeGuard(fileConsent, shared = sharedFolder.root, overwritePolicy = fileConsent.overwrite, privateRoot = sandbox.root,
             deletePolicy = fileConsent.deletes) { tool, a ->
@@ -241,6 +246,7 @@ abstract class BindingsModule {
     @Binds abstract fun taskRepo(impl: TaskRepositoryImpl): TaskRepository
     @Binds abstract fun keyRepo(impl: SecureApiKeyRepository): ApiKeyRepository
     @Binds abstract fun settingsRepo(impl: SettingsDataStoreRepository): SettingsRepository
+    @Binds abstract fun profileLookup(impl: com.verdroid.app.data.profiles.ProfileStore): com.verdroid.app.data.profiles.ProfileLookup
     @Binds abstract fun modelPins(impl: com.verdroid.app.data.settings.ChatModelPins): com.verdroid.app.data.settings.ChatModelPinStore
     @Binds abstract fun rateLimitRepo(impl: RateLimitRepositoryImpl): RateLimitRepository
     @Binds abstract fun notificationRepo(impl: NotificationRepositoryImpl): NotificationRepository

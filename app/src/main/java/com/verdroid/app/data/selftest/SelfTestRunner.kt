@@ -52,6 +52,7 @@ class SelfTestRunner @Inject constructor(
     private val cookieVault: com.verdroid.app.data.cookies.CookieVault,
     private val schedules: javax.inject.Provider<com.verdroid.app.data.schedule.ScheduleManager>,
     private val taskRepo: javax.inject.Provider<com.verdroid.app.domain.repository.TaskRepository>,
+    private val profileStore: com.verdroid.app.data.profiles.ProfileStore,
 ) {
     private val http = OkHttpClient.Builder().connectTimeout(8, TimeUnit.SECONDS).readTimeout(10, TimeUnit.SECONDS).build()
     private fun tool(name: String): AgentTool = registry.tools.firstOrNull { it.name == name } ?: throw IllegalStateException("$name not registered")
@@ -240,6 +241,19 @@ class SelfTestRunner @Inject constructor(
             check(com.verdroid.app.data.network.PinnedOutcome.map(com.verdroid.app.data.settings.ModelPin("paid/x"), "paid/x",
                 com.verdroid.app.data.network.ChatOutcome.Failure("HTTP 500")).let { it is com.verdroid.app.data.network.ChatOutcome.Failure && "pinned" in it.message }) { "pinned failure message" }
             "inherit / pinned / fallback resolution ok"
+        },
+        "profiles" to {
+            val pr = com.verdroid.app.data.profiles.Profiles
+            val d = pr.DEFAULT
+            check(pr.decode("broken").single() == d) { "Default missing" }
+            check(pr.toolAllowed("web", null, d, true) && pr.skillAllowed(d, "x") && pr.memoryScope(d) == null && pr.promptBlock(d, listOf(d)).isEmpty()) { "Default changes behaviour" }
+            val c = com.verdroid.app.data.profiles.Profile("st", "T", toolGroupsOff = setOf("web"), skills = emptySet(), separateMemory = true)
+            check(!pr.toolAllowed("web", null, c, true) && pr.toolAllowed("web", true, c, true)) { "tool rule" }
+            check(!pr.skillAllowed(c, "x") && pr.memoryScope(c) == "st") { "skills/memory" }
+            check(pr.delete(listOf(d, c), pr.DEFAULT_ID).size == 2) { "Default deletable" }
+            val ps = profileStore.all()
+            check(ps.firstOrNull()?.isDefault == true) { "store lacks Default" }
+            "rules ok; ${ps.size} profile(s), active ${profileStore.active().name}"
         },
         "crash_log" to {
             check(Thread.getDefaultUncaughtExceptionHandler() != null) { "no crash handler installed" }

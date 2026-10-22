@@ -44,6 +44,8 @@ fun ChatsScreen(
     val query by vm.query.collectAsStateWithLifecycle()
     val conversations by vm.conversations.collectAsStateWithLifecycle()
     val stories by vm.stories.collectAsStateWithLifecycle()
+    val profiles by vm.profiles.collectAsStateWithLifecycle()
+    val profileFilter by vm.profileFilter.collectAsStateWithLifecycle()
     val quotaDot by vm.quotaDot.collectAsStateWithLifecycle()
     val hasKeys by vm.hasKeys.collectAsStateWithLifecycle()
     val updateAvailable by vm.updateAvailable.collectAsStateWithLifecycle()
@@ -99,6 +101,16 @@ fun ChatsScreen(
             item("search") {
                 SearchBar(query, onChange = { vm.query.value = it })
             }
+            if (com.verdroid.app.data.profiles.Profiles.visible(profiles)) {
+                item("profile_chips") {
+                    LazyRow(contentPadding = PaddingValues(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        item { FilterChip(selected = profileFilter == null, onClick = { vm.profileFilter.value = null }, label = { Text("All") }) }
+                        items(profiles, key = { it.id }) { p ->
+                            FilterChip(selected = profileFilter == p.id, onClick = { vm.profileFilter.value = p.id }, label = { Text(p.label) })
+                        }
+                    }
+                }
+            }
             if (stories.isNotEmpty()) {
                 item("stories") {
                     LazyRow(contentPadding = PaddingValues(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -117,7 +129,9 @@ fun ChatsScreen(
                 }
             }
             items(conversations, key = { it.task.id }) { c ->
-                ArchivableRow(c, onOpen = { onOpenChat(c.task.id) }, onArchive = { vm.archive(c) })
+                val badge = if (com.verdroid.app.data.profiles.Profiles.visible(profiles))
+                    com.verdroid.app.data.profiles.Profiles.resolve(profiles, c.task.profileId).label else null
+                ArchivableRow(c, badge, onOpen = { onOpenChat(c.task.id) }, onArchive = { vm.archive(c) })
             }
         }
     }
@@ -222,7 +236,7 @@ private fun Story(c: Conversation, now: Long, onClick: () -> Unit) {
 /** v1.0.12: swipe left/right or long-press > Delete moves the chat to the archive (Undo in the snackbar). */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun ArchivableRow(c: Conversation, onOpen: () -> Unit, onArchive: () -> Unit) {
+private fun ArchivableRow(c: Conversation, badge: String?, onOpen: () -> Unit, onArchive: () -> Unit) {
     val state = rememberSwipeToDismissBoxState(confirmValueChange = { v ->
         if (v != SwipeToDismissBoxValue.Settled) { onArchive(); true } else false
     })
@@ -238,7 +252,7 @@ private fun ArchivableRow(c: Conversation, onOpen: () -> Unit, onArchive: () -> 
         }
     }) {
         Box(Modifier.chatContainer(c.task.id).background(MaterialTheme.colorScheme.surface)) {
-            ConversationRow(c, onClick = onOpen, onLongClick = { menu = true })
+            ConversationRow(c, badge = badge, onClick = onOpen, onLongClick = { menu = true })
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
                 DropdownMenuItem(text = { Text("Open") }, onClick = { menu = false; onOpen() })
                 DropdownMenuItem(text = { Text("Delete") }, onClick = { menu = false; onArchive() })
@@ -252,7 +266,7 @@ val CHAT_ROW_AVATAR = 64.dp
 
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
-fun ConversationRow(c: Conversation, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
+fun ConversationRow(c: Conversation, badge: String? = null, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
     Row(
         Modifier.fillMaxWidth().combinedClickable(onClick = onClick, onLongClick = onLongClick).padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -263,6 +277,8 @@ fun ConversationRow(c: Conversation, onLongClick: (() -> Unit)? = null, onClick:
         Column(Modifier.weight(1f)) {
             Text(c.task.title, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 fontWeight = if (c.hasUnread) FontWeight.Bold else FontWeight.Medium, style = MaterialTheme.typography.titleMedium)
+            if (badge != null) Text(badge, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.primary)
             Text(c.task.subtitle, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium,
                 fontWeight = if (c.hasUnread) FontWeight.SemiBold else FontWeight.Normal,
                 color = if (c.hasUnread) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)

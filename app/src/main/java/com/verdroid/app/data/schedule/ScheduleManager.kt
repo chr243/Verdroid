@@ -64,6 +64,7 @@ class ScheduleManager @Inject constructor(
     private val agent: AgentController,
     private val alerts: com.verdroid.app.data.notify.AlertNotifier,
     private val keepAlive: com.verdroid.app.keepalive.KeepAliveController,
+    private val profiles: com.verdroid.app.data.profiles.ProfileStore,
 ) {
     private val zone: ZoneId get() = ZoneId.systemDefault()
     /** Serialises firing (boot receiver + app start + alarms may overlap) so a due run fires once. */
@@ -117,7 +118,10 @@ class ScheduleManager @Inject constructor(
         val (type, value) = ScheduleSpec.encode(spec)
         val e = ScheduleEntity(kind = kind.name, name = name.trim().ifEmpty { text.take(40) }.take(60), message = text.take(4000),
             specType = type, specValue = value, onlyIfChanged = onlyIfChanged && kind == ScheduleKind.TASK,
-            chatTaskId = chatTaskId, sourceTaskId = sourceTaskId, nextRunAt = ScheduleMath.nextRun(spec, now, zone), createdAt = now)
+            chatTaskId = chatTaskId, sourceTaskId = sourceTaskId,
+            // Runs use the profile of the chat it came from (else the active one).
+            profileId = profiles.profileIdOf(chatTaskId ?: sourceTaskId ?: 0L),
+            nextRunAt = ScheduleMath.nextRun(spec, now, zone), createdAt = now)
         val saved = e.copy(id = dao.insert(e))
         arm(saved)
         return saved
@@ -218,7 +222,7 @@ class ScheduleManager @Inject constructor(
         val e = dao.get(id) ?: return
         val now = System.currentTimeMillis()
         val chat: Long = e.chatTaskId?.takeIf { tasks.getTask(it) != null }
-            ?: tasks.createTask("$DEDICATED_PREFIX${e.name}".take(80), e.message, TaskType.infer(e.message)).also { c ->
+            ?: tasks.createTask("$DEDICATED_PREFIX${e.name}".take(80), e.message, TaskType.infer(e.message), e.profileId ?: com.verdroid.app.data.profiles.Profiles.DEFAULT_ID).also { c ->
                 // A new chat starts out QUEUED ("Queued"): that is not a stuck run (v1.0.58 skipped on it forever).
                 tasks.updateStatus(c, TaskStatus.IDLE, "Scheduled")
                 dao.get(id)?.let { dao.update(it.copy(chatTaskId = c)) }

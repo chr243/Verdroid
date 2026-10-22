@@ -21,6 +21,7 @@ import javax.inject.Singleton
 class MemoryRepository @Inject constructor(
     @ApplicationContext context: Context,
     private val dao: MemoryDao,
+    private val profiles: com.verdroid.app.data.profiles.ProfileLookup,
 ) : MemoryStore {
     private val prefs = context.getSharedPreferences("memory", Context.MODE_PRIVATE)
     private val mutex = Mutex()
@@ -33,20 +34,24 @@ class MemoryRepository @Inject constructor(
 
     val memories: Flow<List<Memory>> = dao.observeAll().map { l -> l.map(::toModel) }
 
-    private fun toModel(e: MemoryEntity) = Memory(e.id, e.text, MemoryText.parseTags(e.tags), e.createdAt, e.updatedAt, e.chatId)
+    private fun toModel(e: MemoryEntity) = Memory(e.id, e.text, MemoryText.parseTags(e.tags), e.createdAt, e.updatedAt, e.chatId, e.profileId)
 
     override suspend fun all(): List<Memory> = dao.all().map(::toModel)
 
-    override suspend fun save(text: String, tags: List<String>, chatId: Long?): SaveResult = mutex.withLock {
+    override fun memoryScopeOf(taskId: Long): String? =
+        com.verdroid.app.data.profiles.Profiles.memoryScope(profiles.profileOf(taskId))
+
+    override suspend fun save(text: String, tags: List<String>, chatId: Long?, profileId: String?): SaveResult = mutex.withLock {
+        val scope = if (chatId == null) profileId else null
         val t = text.trim().take(MemoryText.MAX_TEXT)
         require(t.isNotBlank()) { "text is empty" }
         val now = System.currentTimeMillis()
-        val dup = MemoryText.findDuplicate(all(), t, chatId)
+        val dup = MemoryText.findDuplicate(all(), t, chatId, scope)
         val res = if (dup != null) {
             dao.update(MemoryEntity(dup.id, if (t.length > dup.text.length) t else dup.text,
-                MemoryText.tagsString((dup.tags + tags).distinct()), dup.createdAt, now, dup.chatId))
+                MemoryText.tagsString((dup.tags + tags).distinct()), dup.createdAt, now, dup.chatId, dup.profileId))
             SaveResult(dup.id, dup.id)
-        } else SaveResult(dao.insert(MemoryEntity(0, t, MemoryText.tagsString(tags), now, now, chatId)), null)
+        } else SaveResult(dao.insert(MemoryEntity(0, t, MemoryText.tagsString(tags), now, now, chatId, scope)), null)
         export(); res
     }
 
@@ -63,13 +68,14 @@ class MemoryRepository @Inject constructor(
     /** Short-term → long-term (chatId null) or into a chat; a long-term duplicate is merged instead. */
     override suspend fun move(id: Long, chatId: Long?): Boolean = mutex.withLock {
         val e = dao.get(id) ?: return false
-        val dup = MemoryText.findDuplicate(all().filter { it.id != id }, e.text, chatId)
+        val dup = MemoryText.findDuplicate(all().filter { it.id != id }, e.text, chatId, e.profileId)
         if (dup != null) dao.delete(id) else dao.setChat(id, chatId, System.currentTimeMillis())
         export(); true
     }
 
     /** System-prompt block: long-term (≤ 20 items, ~1.5k tokens) + this chat's short-term notes (~1k tokens). */
-    suspend fun promptBlock(chatId: Long? = null): String = MemoryText.promptBlock(all(), autoSave, chatId)
+    suspend fun promptBlock(chatId: Long? = null): String =
+        MemoryText.promptBlock(all(), autoSave, chatId, chatId?.let { memoryScopeOf(it) })
 
     private suspend fun export() = withContext(Dispatchers.IO) {
         runCatching {

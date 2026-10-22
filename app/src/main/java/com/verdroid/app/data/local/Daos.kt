@@ -30,6 +30,16 @@ interface TaskDao {
     @Query("UPDATE tasks SET archivedAt = NULL WHERE id = :id")
     suspend fun restore(id: Long): Int
 
+    /** Profiles: chats that are not on Default (id → profileId). */
+    @Query("SELECT id, profileId FROM tasks WHERE profileId != 'default'")
+    suspend fun profileRows(): List<TaskProfileRow>
+
+    @Query("UPDATE tasks SET profileId = :profileId WHERE id = :id")
+    suspend fun setProfile(id: Long, profileId: String): Int
+
+    @Query("UPDATE tasks SET profileId = 'default' WHERE profileId = :profileId")
+    suspend fun resetProfile(profileId: String): Int
+
     @Query("SELECT * FROM tasks WHERE id = :id")
     fun observe(id: Long): Flow<TaskEntity?>
 
@@ -67,6 +77,8 @@ interface TaskDao {
     @Query("SELECT * FROM tasks WHERE status IN (:statuses) AND archivedAt IS NULL ORDER BY updatedAt ASC")
     suspend fun withStatus(statuses: List<String>): List<TaskEntity>
 }
+
+data class TaskProfileRow(val id: Long, val profileId: String)
 
 @Dao
 interface MessageDao {
@@ -182,6 +194,10 @@ interface MemoryDao {
     @Query("DELETE FROM memories WHERE chatId IS NOT NULL AND chatId NOT IN (SELECT id FROM tasks)")
     suspend fun deleteOrphans(): Int
 
+    /** Deleted profile: its separate long-term memories become shared. */
+    @Query("UPDATE memories SET profileId = NULL WHERE profileId = :profileId")
+    suspend fun unscopeProfile(profileId: String): Int
+
     @Query("UPDATE memories SET chatId = :chatId, updatedAt = :now WHERE id = :id")
     suspend fun setChat(id: Long, chatId: Long?, now: Long): Int
 }
@@ -212,7 +228,7 @@ interface ScheduleDao {
 
 @Database(
     entities = [TaskEntity::class, MessageEntity::class, ToolCallEntity::class, RateLimitEventEntity::class, NotificationEntity::class, MemoryEntity::class, ScheduleEntity::class],
-    version = 7,
+    version = 8,
     exportSchema = true,
 )
 abstract class VerdroidDatabase : RoomDatabase() {

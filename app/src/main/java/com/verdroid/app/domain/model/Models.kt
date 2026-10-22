@@ -43,6 +43,8 @@ data class Task(
     val pauseReason: String? = null,
     /** v1.0.12: set while the chat is in the archive (read-only, hidden from the home list). */
     val archivedAt: Long? = null,
+    /** Profiles: the profile this chat runs with. */
+    val profileId: String = "default",
 ) {
     val archived: Boolean get() = archivedAt != null
 }

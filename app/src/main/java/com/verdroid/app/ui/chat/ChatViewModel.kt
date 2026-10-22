@@ -41,6 +41,7 @@ class ChatViewModel @Inject constructor(
     private val settingsRepo: com.verdroid.app.domain.repository.SettingsRepository,
     private val toolPrefs: com.verdroid.app.data.tools.ToolPrefs,
     private val toolRegistry: com.verdroid.app.agent.tools.ToolRegistry,
+    private val profileStore: com.verdroid.app.data.profiles.ProfileStore,
     @ApplicationContext private val appContext: Context,
 ) : ViewModel() {
     /** 0 = a brand-new conversation that is created on the first send. */
@@ -65,6 +66,26 @@ class ChatViewModel @Inject constructor(
     fun loadEarlier() { if (com.verdroid.app.domain.model.ChatWindow.hasMore(messages.value.size, window.value)) window.value += com.verdroid.app.domain.model.ChatWindow.PAGE }
     val isGenerating: StateFlow<Boolean> = combine(taskId, agent.runningTaskIds) { id, running -> id in running }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+
+    /** Profiles: all profiles (the header picker only shows once there are 2+). */
+    val profiles: StateFlow<List<com.verdroid.app.data.profiles.Profile>> = profileStore.profiles
+
+    /** This chat's profile (a new chat: the active profile). */
+    val chatProfile: StateFlow<com.verdroid.app.data.profiles.Profile> =
+        combine(task, profileStore.activeId, profileStore.profiles) { t, active, list ->
+            com.verdroid.app.data.profiles.Profiles.resolve(list, t?.profileId ?: active)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), profileStore.active())
+
+    init {
+        // Opening an old chat switches to its profile (new chats then start with it too).
+        viewModelScope.launch {
+            task.filterNotNull().map { it.id to it.profileId }.distinctUntilChanged().collect { (_, pid) ->
+                if (profileStore.activeId.value != pid) profileStore.setActive(pid)
+            }
+        }
+    }
+
+    fun setProfile(id: String) { viewModelScope.launch { profileStore.setChatProfile(taskId.value, id) } }
 
     /** Model pinned on a brand-new chat (taskId 0), saved when the first message creates it. */
     private val draftPin = MutableStateFlow<com.verdroid.app.data.settings.ModelPin?>(null)

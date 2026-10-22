@@ -127,7 +127,7 @@ class ArchiveDaoTest {
             assertEquals(listOf(7L), migrated.taskDao().observeConversations().first().map { it.task.id })
             migrated.openHelper.readableDatabase.query("SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'index_tasks_archivedAt'")
                 .use { assertTrue(it.moveToFirst()) }
-            assertEquals(7, migrated.openHelper.readableDatabase.version)
+            assertEquals(8, migrated.openHelper.readableDatabase.version)
         } finally { migrated.close() }
     }
 
@@ -139,7 +139,7 @@ class ArchiveDaoTest {
         }
         val migrated = openMigrated(DB)
         try {
-            assertEquals(7, migrated.openHelper.writableDatabase.version)
+            assertEquals(8, migrated.openHelper.writableDatabase.version)
             assertEquals("Chat", migrated.taskDao().get(9)!!.title)
             val d = migrated.scheduleDao()
             assertTrue(d.all().isEmpty())
@@ -155,7 +155,7 @@ class ArchiveDaoTest {
         createFromSchema(DB, 1)
         val migrated = openMigrated(DB)
         try {
-            assertEquals(7, migrated.openHelper.writableDatabase.version) // Room throws here if a migration left a schema mismatch
+            assertEquals(8, migrated.openHelper.writableDatabase.version) // Room throws here if a migration left a schema mismatch
             assertTrue(migrated.taskDao().archivedIds().isEmpty())
         } finally { migrated.close() }
     }
@@ -173,6 +173,32 @@ class ArchiveDaoTest {
             assertEquals("hi", old.content); assertNull(old.reasoning)
             val id = migrated.messageDao().insert(old.copy(id = 0, content = "ok", reasoning = "Let me think"))
             assertEquals("Let me think", migrated.messageDao().getAll(7).first { it.id == id }.reasoning)
+        } finally { migrated.close() }
+    }
+
+    @Test fun `migration 7 to 8 puts every chat on Default and keeps memories and schedules shared`() = runBlocking {
+        createFromSchema(DB, 7)
+        SQLiteDatabase.openDatabase(ApplicationProvider.getApplicationContext<Application>().getDatabasePath(DB).path, null, SQLiteDatabase.OPEN_READWRITE).use {
+            it.execSQL("INSERT INTO tasks (id, title, prompt, type, status, subtitle, currentStep, createdAt, updatedAt, lastOpenedAt, attempt) " +
+                "VALUES (5, 'Old chat', 'p', 'CHAT', 'COMPLETED', 's', 0, 1, 2, 0, 0)")
+            it.execSQL("INSERT INTO memories (id, text, tags, createdAt, updatedAt) VALUES (1, 'likes tea', '', 1, 1)")
+            it.execSQL("INSERT INTO schedules (id, kind, name, message, specType, specValue, enabled, onlyIfChanged, createdAt) " +
+                "VALUES (2, 'TASK', 'n', 'm', 'DAILY', 600, 1, 0, 1)")
+        }
+        val migrated = openMigrated(DB)
+        try {
+            assertEquals(8, migrated.openHelper.writableDatabase.version)
+            assertEquals("default", migrated.taskDao().get(5)!!.profileId)
+            assertTrue(migrated.taskDao().profileRows().isEmpty())
+            assertNull(migrated.memoryDao().get(1)!!.profileId)
+            assertNull(migrated.scheduleDao().get(2)!!.profileId)
+            // switching a chat, then deleting its profile, brings it back to Default
+            assertEquals(1, migrated.taskDao().setProfile(5, "p1"))
+            assertEquals(listOf(TaskProfileRow(5, "p1")), migrated.taskDao().profileRows())
+            migrated.memoryDao().insert(MemoryEntity(text = "own", createdAt = 1, updatedAt = 1, profileId = "p1"))
+            assertEquals(1, migrated.taskDao().resetProfile("p1")); assertEquals(1, migrated.memoryDao().unscopeProfile("p1"))
+            assertEquals("default", migrated.taskDao().get(5)!!.profileId)
+            assertTrue(migrated.memoryDao().all().all { it.profileId == null })
         } finally { migrated.close() }
     }
 

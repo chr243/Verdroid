@@ -37,7 +37,7 @@ class MemorySaveTool(private val store: MemoryStore) : AgentTool {
             MemoryText.SCOPE_CHAT, "short-term", "short_term" -> ctx.taskId.takeIf { it > 0 } ?: return errorJson("scope=chat needs a chat (none active)")
             else -> return errorJson("scope must be \"global\" or \"chat\"")
         }
-        val r = store.save(text, tags, chatId)
+        val r = store.save(text, tags, chatId, if (chatId == null) store.memoryScopeOf(ctx.taskId) else null)
         return memJson {
             put("ok", true); put("id", r.id); put("scope", if (chatId == null) MemoryText.SCOPE_GLOBAL else MemoryText.SCOPE_CHAT)
             if (r.duplicateOf != null) put("note", "Already remembered as #${r.duplicateOf}; updated it instead of adding a duplicate.")
@@ -62,7 +62,7 @@ class MemorySearchTool(private val store: MemoryStore) : AgentTool {
         val q = args["query"]?.jsonPrimitive?.contentOrNull.orEmpty()
         val limit = (args["limit"]?.jsonPrimitive?.intOrNull ?: 10).coerceIn(1, 50)
         val all = store.all()
-        val pool = MemoryText.global(all) + MemoryText.ofChat(all, ctx.taskId.takeIf { it > 0 })
+        val pool = MemoryText.globalFor(all, store.memoryScopeOf(ctx.taskId)) + MemoryText.ofChat(all, ctx.taskId.takeIf { it > 0 })
         val hits = MemoryText.search(pool, q, limit)
         return memJson {
             put("count", hits.size)

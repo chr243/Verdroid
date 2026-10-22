@@ -47,13 +47,15 @@ class AgentLoop internal constructor(
     /** v0.9.16: persistent memory block (instructions + up to ~20 memories, ~1.5k tokens). */
     private val memoryPrompt: suspend (taskId: Long) -> String = { "" },
     /** Enabled skills: index + full text (disabled skills are never sent). */
-    private val skillsPrompt: suspend () -> String = { "" },
+    private val skillsPrompt: suspend (taskId: Long) -> String = { "" },
     /** Attached image (path under Documents/Verdroid) → data URL for vision models; null if unreadable. */
     private val imageData: suspend (relativePath: String) -> String? = { null },
     /** The user's AGENTS.md (Settings); "" when empty. */
     private val userInstructions: suspend () -> String = { "" },
     /** Per-chat tool presets note ("" when every preset is on). */
     private val presetNote: suspend (taskId: Long) -> String = { "" },
+    /** Profiles: active profile line + the profile's instructions ("" for Default with only one profile). */
+    private val profileNote: suspend (taskId: Long) -> String = { "" },
 ) {
     @Inject constructor(
         tasks: TaskRepository,
@@ -69,6 +71,7 @@ class AgentLoop internal constructor(
         sharedFolder: com.verdroid.app.data.storage.SharedFolder,
         agentsMd: com.verdroid.app.data.instructions.AgentsMdStore,
         presets: com.verdroid.app.data.tools.ChatToolPresets,
+        profiles: com.verdroid.app.data.profiles.ProfileStore,
     ) : this(
         tasks, settings, registry, notifications,
         model = { m, t, id, st -> com.verdroid.app.data.crash.CrashBreadcrumbs.add("chat #$id model $m"); client.complete(m, t, id, st) },
@@ -76,7 +79,7 @@ class AgentLoop internal constructor(
         notifyOnFinish = { prefs.notifyOnFinish.value },
         systemNotify = { id, title, body -> alerts.notify(FINISH_NOTIFICATION_BASE + (id % 10_000).toInt(), title, body, id) },
         memoryPrompt = { id -> try { memory.promptBlock(id) } catch (e: Exception) { "" } },
-        skillsPrompt = { try { skills.promptBlock() } catch (e: Exception) { "" } },
+        skillsPrompt = { id -> try { profiles.profileOf(id).let { p -> skills.promptBlock(allowed = { s -> com.verdroid.app.data.profiles.Profiles.skillAllowed(p, s) }) } } catch (e: Exception) { "" } },
         imageData = { rel ->
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 com.verdroid.app.data.storage.AttachmentImages.dataUrl(sharedFolder, rel)
@@ -84,12 +87,14 @@ class AgentLoop internal constructor(
         },
         userInstructions = { agentsMd.promptBlock() },
         presetNote = { id -> com.verdroid.app.data.tools.ToolPreset.promptNote(presets.overrides(id)) },
+        profileNote = { id -> com.verdroid.app.data.profiles.Profiles.promptBlock(profiles.profileOf(id), profiles.all()) },
     )
 
     private suspend fun fullSystemPrompt(taskId: Long): String = systemPrompt(registry.namesFor(taskId)) +
         presetNote(taskId).let { if (it.isBlank()) "" else "\n\n" + it } +
+        profileNote(taskId).let { if (it.isBlank()) "" else "\n\n" + it } +
         userInstructions().let { if (it.isBlank()) "" else "\n\n" + it } +
-        skillsPrompt().let { if (it.isBlank()) "" else "\n\n" + it } +
+        skillsPrompt(taskId).let { if (it.isBlank()) "" else "\n\n" + it } +
         memoryPrompt(taskId).let { if (it.isBlank()) "" else "\n\n" + com.verdroid.app.data.network.MemoryRedaction.wrap(it) }
 
     /**

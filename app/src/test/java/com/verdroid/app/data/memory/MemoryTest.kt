@@ -11,7 +11,7 @@ class MemoryTest {
     private class FakeStore(override var autoSave: Boolean = true) : MemoryStore {
         val items = mutableListOf<Memory>(); var next = 1L; var clock = 1_000L
         override suspend fun all() = items.toList()
-        override suspend fun save(text: String, tags: List<String>, chatId: Long?): SaveResult {
+        override suspend fun save(text: String, tags: List<String>, chatId: Long?, profileId: String?): SaveResult {
             val now = clock++
             MemoryText.findDuplicate(items, text, chatId)?.let { d ->
                 items[items.indexOf(d)] = d.copy(tags = (d.tags + tags).distinct(), updatedAt = now); return SaveResult(d.id, d.id)

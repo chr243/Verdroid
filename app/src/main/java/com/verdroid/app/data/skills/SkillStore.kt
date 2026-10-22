@@ -80,8 +80,8 @@ class SkillStore(root: File) {
      * System-prompt block: only an index of enabled skills — id, name and one-line description each. The full SKILL.md
      * stays on disk and is loaded with skill_get. Empty when nothing is enabled; capped at [maxChars].
      */
-    fun promptBlock(maxChars: Int = DEFAULT_PROMPT_CHARS): String {
-        val on = list().filter { it.enabled }
+    fun promptBlock(maxChars: Int = DEFAULT_PROMPT_CHARS, allowed: (String) -> Boolean = { true }): String {
+        val on = list().filter { it.enabled && allowed(it.id) }
         if (on.isEmpty()) return ""
         val sb = StringBuilder("## Saved skills (enabled)\nIndex only — call skill_get with the id to load the full steps before following a skill.\n")
         var shown = 0
