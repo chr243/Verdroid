@@ -63,6 +63,7 @@ object Routes {
     const val TOOLS = "settings/tools"
     const val SKILLS = "settings/skills"
     const val PROFILES = "settings/profiles"
+    const val PROFILES_NEW = "settings/profiles/new"
     const val AGENTS_MD = "settings/agents-md"
     const val PERMISSIONS = "settings/permissions"
     const val THEME = "settings/theme"
@@ -174,6 +175,8 @@ fun VerdroidRoot(
                     onOpenSettings = { nav.navigate(Routes.SETTINGS) { launchSingleTop = true } },
                     onOpenKeys = { nav.navigate(Routes.KEYS) },
                     onOpenModels = { nav.navigate(Routes.MODELS) },
+                    onNewProfile = { nav.navigate(Routes.PROFILES_NEW) },
+                    onManageProfiles = { nav.navigate(Routes.PROFILES) },
                 )
               }
             }
@@ -207,6 +210,7 @@ fun VerdroidRoot(
                 com.verdroid.app.ui.permissions.PermissionsScreen(onBack = { nav.popBackStack() }, onTermuxSetup = { nav.navigate(Routes.TOOLS) })
             }
             composable(Routes.AGENTS_MD) { com.verdroid.app.ui.instructions.AgentsMdScreen(onBack = { nav.popBackStack() }) }
+            composable(Routes.PROFILES_NEW) { com.verdroid.app.ui.profiles.ProfilesScreen(onBack = { nav.popBackStack() }, startNew = true) }
             composable(Routes.PROFILES) { com.verdroid.app.ui.profiles.ProfilesScreen(onBack = { nav.popBackStack() }) }
             composable(Routes.SKILLS) { com.verdroid.app.ui.skills.SkillsScreen(onBack = { nav.popBackStack() }) }
             composable(Routes.MEMORY, arguments = listOf(navArgument("chat") { type = NavType.LongType; defaultValue = -1L })) {

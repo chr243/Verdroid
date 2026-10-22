@@ -36,7 +36,11 @@ class MemoryViewModel @Inject constructor(
     savedState: SavedStateHandle,
     private val repo: MemoryRepository,
     tasks: TaskRepository,
+    profiles: com.verdroid.app.data.profiles.ProfileStore,
 ) : ViewModel() {
+    /** Profile id → label, to mark long-term memories of a profile with separate memory. */
+    val profileNames = profiles.profiles.map { l -> l.associate { it.id to it.label } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
     /** Opened from a chat's overflow menu: that chat, "This chat" tab first. */
     val openedFromChat: Long? = savedState.get<Long>("chat")?.takeIf { it > 0 }
     val selectedChat = MutableStateFlow(openedFromChat)
@@ -65,8 +69,16 @@ class MemoryViewModel @Inject constructor(
 }
 
 /** Settings > Memory (or a chat's overflow menu): "This chat" short-term notes and long-term memory. Text-only UI. */
+private val LocalProfileNames = androidx.compose.runtime.staticCompositionLocalOf<Map<String, String>> { emptyMap() }
+
 @Composable
 fun MemoryScreen(onBack: () -> Unit, vm: MemoryViewModel = hiltViewModel()) {
+    val names by vm.profileNames.collectAsStateWithLifecycle()
+    CompositionLocalProvider(LocalProfileNames provides names) { MemoryScreenContent(onBack, vm) }
+}
+
+@Composable
+private fun MemoryScreenContent(onBack: () -> Unit, vm: MemoryViewModel) {
     var tab by remember { mutableIntStateOf(if (vm.openedFromChat != null) 0 else 1) }
     var editing by remember { mutableStateOf<Memory?>(null) }
     var adding by remember { mutableStateOf(false) }
@@ -177,6 +189,8 @@ private fun MemoryCard(m: Memory, onEdit: (Memory) -> Unit, onDelete: (Memory) -
     ElevatedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp)) {
             Text(m.text, style = MaterialTheme.typography.bodyMedium)
+            val profileName = m.profileId?.let { LocalProfileNames.current[it] ?: "deleted profile" }
+            if (profileName != null) Text("Only in profile $profileName", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
             Text("#${m.id}" + (if (m.tags.isNotEmpty()) " · " + m.tags.joinToString(", ") else "") + " · updated " +
                 java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.SHORT).format(java.util.Date(m.updatedAt)),
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

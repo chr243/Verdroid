@@ -53,15 +53,16 @@ class ProfilesViewModel @Inject constructor(
 
 /** Settings → Profiles: list, new (copy of the current one or a template), edit, delete (Default stays). */
 @Composable
-fun ProfilesScreen(onBack: () -> Unit, vm: ProfilesViewModel = hiltViewModel()) {
+fun ProfilesScreen(onBack: () -> Unit, startNew: Boolean = false, vm: ProfilesViewModel = hiltViewModel()) {
     val profiles by vm.profiles.collectAsStateWithLifecycle()
     val active by vm.activeId.collectAsStateWithLifecycle()
     var editing by remember { mutableStateOf<Profile?>(null) }
     var confirmDelete by remember { mutableStateOf<Profile?>(null) }
-    var newMenu by remember { mutableStateOf(false) }
+    var newMenu by remember { mutableStateOf(startNew) }
 
     editing?.let { p ->
-        ProfileEditor(p, vm, onDone = { saved -> saved?.let(vm::save); editing = null })
+        // A profile created from the main screen's "+ Add new" becomes the active one.
+        ProfileEditor(p, vm, onDone = { saved -> saved?.let { vm.save(it); if (startNew) vm.activate(it.id) }; editing = null })
         return
     }
 

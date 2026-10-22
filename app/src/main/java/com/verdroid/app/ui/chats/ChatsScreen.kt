@@ -39,13 +39,16 @@ fun ChatsScreen(
     onOpenSettings: () -> Unit,
     onOpenKeys: () -> Unit,
     onOpenModels: () -> Unit = onOpenSettings,
+    onNewProfile: () -> Unit = onOpenSettings,
+    onManageProfiles: () -> Unit = onOpenSettings,
     vm: ChatsViewModel = hiltViewModel(),
 ) {
     val query by vm.query.collectAsStateWithLifecycle()
     val conversations by vm.conversations.collectAsStateWithLifecycle()
     val stories by vm.stories.collectAsStateWithLifecycle()
     val profiles by vm.profiles.collectAsStateWithLifecycle()
-    val profileFilter by vm.profileFilter.collectAsStateWithLifecycle()
+    val activeProfile by vm.activeProfile.collectAsStateWithLifecycle()
+    val showAll by vm.showAllProfiles.collectAsStateWithLifecycle()
     val quotaDot by vm.quotaDot.collectAsStateWithLifecycle()
     val hasKeys by vm.hasKeys.collectAsStateWithLifecycle()
     val updateAvailable by vm.updateAvailable.collectAsStateWithLifecycle()
@@ -73,6 +76,8 @@ fun ChatsScreen(
                 },
                 actions = {
                     quotaDot?.let { QuotaDotButton(it, onDetails = onOpenModels) }
+                    ProfileMenu(profiles, activeProfile, showAll, onSelect = vm::selectProfile,
+                        onShowAll = { vm.showAllProfiles.value = !vm.showAllProfiles.value }, onNew = onNewProfile, onManage = onManageProfiles)
                     IconButton(onClick = onOpenSettings) {
                         Box {
                             Icon(Icons.Filled.Settings, contentDescription = if (updateAvailable) "Settings (update available)" else "Settings")
@@ -101,16 +106,6 @@ fun ChatsScreen(
             item("search") {
                 SearchBar(query, onChange = { vm.query.value = it })
             }
-            if (com.verdroid.app.data.profiles.Profiles.visible(profiles)) {
-                item("profile_chips") {
-                    LazyRow(contentPadding = PaddingValues(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        item { FilterChip(selected = profileFilter == null, onClick = { vm.profileFilter.value = null }, label = { Text("All") }) }
-                        items(profiles, key = { it.id }) { p ->
-                            FilterChip(selected = profileFilter == p.id, onClick = { vm.profileFilter.value = p.id }, label = { Text(p.label) })
-                        }
-                    }
-                }
-            }
             if (stories.isNotEmpty()) {
                 item("stories") {
                     LazyRow(contentPadding = PaddingValues(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -129,7 +124,8 @@ fun ChatsScreen(
                 }
             }
             items(conversations, key = { it.task.id }) { c ->
-                val badge = if (com.verdroid.app.data.profiles.Profiles.visible(profiles))
+                // "Show all profiles": mark which profile each chat belongs to.
+                val badge = if (showAll && com.verdroid.app.data.profiles.Profiles.visible(profiles))
                     com.verdroid.app.data.profiles.Profiles.resolve(profiles, c.task.profileId).label else null
                 ArchivableRow(c, badge, onOpen = { onOpenChat(c.task.id) }, onArchive = { vm.archive(c) })
             }
@@ -289,6 +285,36 @@ fun ConversationRow(c: Conversation, badge: String? = null, onLongClick: (() -> 
             Spacer(Modifier.height(6.dp))
             if (c.hasUnread) Box(Modifier.size(12.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary))
             else Spacer(Modifier.size(12.dp))
+        }
+    }
+}
+
+/** Top-bar profile switcher: the active profile (compact); the list shows only its chats. Always shown, so "+ Add new" is reachable. */
+@Composable
+private fun ProfileMenu(
+    profiles: List<com.verdroid.app.data.profiles.Profile>, active: com.verdroid.app.data.profiles.Profile, showAll: Boolean,
+    onSelect: (String) -> Unit, onShowAll: () -> Unit, onNew: () -> Unit, onManage: () -> Unit,
+) {
+    var open by remember { mutableStateOf(false) }
+    val multi = com.verdroid.app.data.profiles.Profiles.visible(profiles)
+    Box {
+        TextButton(onClick = { open = true }, contentPadding = PaddingValues(horizontal = 8.dp),
+            modifier = Modifier.semantics { contentDescription = "Profile: ${active.name}" }) {
+            Text(if (multi) active.emoji + " " + active.name.take(12) else active.emoji, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Icon(Icons.Filled.ArrowDropDown, null, Modifier.size(18.dp))
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            profiles.forEach { p ->
+                DropdownMenuItem(text = { Text(p.label) }, onClick = { open = false; onSelect(p.id) },
+                    trailingIcon = { if (p.id == active.id && !showAll) Icon(Icons.Filled.Check, "Active") })
+            }
+            HorizontalDivider()
+            DropdownMenuItem(text = { Text("+ Add new") }, onClick = { open = false; onNew() })
+            if (multi) {
+                DropdownMenuItem(text = { Text("Show all profiles") }, onClick = { open = false; onShowAll() },
+                    trailingIcon = { if (showAll) Icon(Icons.Filled.Check, null) })
+                DropdownMenuItem(text = { Text("Manage profiles") }, onClick = { open = false; onManage() })
+            }
         }
     }
 }

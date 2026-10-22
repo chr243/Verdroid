@@ -34,8 +34,13 @@ class ChatsViewModel @Inject constructor(
 ) : ViewModel() {
     /** Profiles: chips + badges show once a 2nd profile exists. */
     val profiles: StateFlow<List<com.verdroid.app.data.profiles.Profile>> = profileStore.profiles
-    /** Chat list filter chip (null = All). */
-    val profileFilter = MutableStateFlow<String?>(null)
+    val activeProfile: StateFlow<com.verdroid.app.data.profiles.Profile> =
+        combine(profileStore.profiles, profileStore.activeId) { l, id -> com.verdroid.app.data.profiles.Profiles.resolve(l, id) }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, profileStore.active())
+    /** "Show all profiles" (top-bar menu): the list is otherwise limited to the active profile. */
+    val showAllProfiles = MutableStateFlow(false)
+    private val store = profileStore
+    fun selectProfile(id: String) { store.setActive(id); showAllProfiles.value = false }
     /** v1.0.12: "delete" on the home list = move to the archive; the screen shows a snackbar with Undo. */
     data class Archived(val taskId: Long, val title: String, val stopped: Boolean)
     private val _archived = kotlinx.coroutines.channels.Channel<Archived>(kotlinx.coroutines.channels.Channel.BUFFERED)
@@ -55,8 +60,8 @@ class ChatsViewModel @Inject constructor(
     fun latestCached(): String? = updater.latestCached()
     val query = MutableStateFlow("")
 
-    val conversations: StateFlow<List<Conversation>> = combine(observeConversations(query), profileFilter, profileStore.profiles) { l, f, p ->
-        com.verdroid.app.data.profiles.Profiles.filterChats(l, f, p) { it.task.profileId }
+    val conversations: StateFlow<List<Conversation>> = combine(observeConversations(query), profileStore.activeId, showAllProfiles, profileStore.profiles) { l, active, all, p ->
+        com.verdroid.app.data.profiles.Profiles.filterChats(l, if (all) null else active, p) { it.task.profileId }
     }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
