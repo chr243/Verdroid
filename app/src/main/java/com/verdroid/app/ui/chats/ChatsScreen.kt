@@ -16,6 +16,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -67,25 +68,11 @@ fun ChatsScreen(
     Scaffold(
         snackbarHost = { SnackbarHost(snackbar) },
         topBar = {
-            TopAppBar(
-                title = {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Verdroid", fontWeight = FontWeight.Bold, fontSize = 26.sp)
-                        UpdateHint(vm, updateAvailable)
-                    }
-                },
-                actions = {
-                    quotaDot?.let { QuotaDotButton(it, onDetails = onOpenModels) }
-                    ProfileMenu(profiles, activeProfile, showAll, onSelect = vm::selectProfile,
-                        onShowAll = { vm.showAllProfiles.value = !vm.showAllProfiles.value }, onNew = onNewProfile, onManage = onManageProfiles)
-                    IconButton(onClick = onOpenSettings) {
-                        Box {
-                            Icon(Icons.Filled.Settings, contentDescription = if (updateAvailable) "Settings (update available)" else "Settings")
-                            if (updateAvailable) com.verdroid.app.ui.menu.UpdateDot(Modifier.align(Alignment.TopEnd))
-                        }
-                    }
-                },
-            )
+            HomeTopBar(updateHintLatest(vm, updateAvailable), updateAvailable,
+                quota = quotaDot?.let { d -> { QuotaDotButton(d, onDetails = onOpenModels) } },
+                profiles = profiles, active = activeProfile, showAll = showAll, onSelect = vm::selectProfile,
+                onShowAll = { vm.showAllProfiles.value = !vm.showAllProfiles.value }, onNew = onNewProfile, onManage = onManageProfiles,
+                onOpenSettings = onOpenSettings)
         },
         floatingActionButton = {
             LargeFloatingActionButton(onClick = onNewChat, shape = CircleShape) {
@@ -136,19 +123,67 @@ fun ChatsScreen(
 /** Small theme-aware status dot for the OpenRouter daily free quota; tap shows the numbers and a Details link. */
 /** Small "New version on GitHub" pill (v1.0.56). Non-blocking; tap opens the release page. Hidden when up to date/offline. */
 @Composable
-private fun UpdateHint(vm: ChatsViewModel, updateAvailable: Boolean) {
+internal fun updateHintLatest(vm: ChatsViewModel, updateAvailable: Boolean): String? {
     val enabled by vm.updateChecksEnabled.collectAsStateWithLifecycle()
     val online = rememberOnline()
     val latest = remember(updateAvailable, enabled) { vm.latestCached() }
-    if (!com.verdroid.app.data.update.UpdateLogic.showHint(enabled, latest, vm.currentVersion, online)) return
+    return latest.takeIf { com.verdroid.app.data.update.UpdateLogic.showHint(enabled, it, vm.currentVersion, online) }
+}
+
+@Composable
+internal fun UpdatePill(latest: String, label: String = "New version on GitHub", modifier: Modifier = Modifier) {
     val uri = androidx.compose.ui.platform.LocalUriHandler.current
-    Spacer(Modifier.width(10.dp))
     Surface(shape = RoundedCornerShape(50), color = MaterialTheme.colorScheme.primaryContainer,
         contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-        modifier = Modifier.clip(RoundedCornerShape(50)).clickable { runCatching { uri.openUri(com.verdroid.app.data.update.UpdateLogic.RELEASES_PAGE) } }
+        modifier = modifier.clip(RoundedCornerShape(50)).clickable { runCatching { uri.openUri(com.verdroid.app.data.update.UpdateLogic.RELEASES_PAGE) } }
             .semantics { contentDescription = "New version v$latest on GitHub. Opens the release page." }) {
-        Text("New version on GitHub", style = MaterialTheme.typography.labelMedium, maxLines = 1,
+        Text(label, style = MaterialTheme.typography.labelMedium, maxLines = 1, softWrap = false,
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp))
+    }
+}
+
+/** Home top bar (stateless; rendered by HomeTopBarScreenshotTest). */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun HomeTopBar(
+    updateLatest: String?, updateAvailable: Boolean, quota: (@Composable () -> Unit)?,
+    profiles: List<com.verdroid.app.data.profiles.Profile>, active: com.verdroid.app.data.profiles.Profile, showAll: Boolean,
+    onSelect: (String) -> Unit, onShowAll: () -> Unit, onNew: () -> Unit, onManage: () -> Unit, onOpenSettings: () -> Unit,
+) {
+    // Small screens / big fonts: shorter update pill, then an emoji-only profile button, so the title and gear always fit.
+    androidx.compose.foundation.layout.BoxWithConstraints {
+    val level = HomeBarLayout.level(maxWidth.value, LocalDensity.current.fontScale)
+    TopAppBar(
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Verdroid", fontWeight = FontWeight.Bold, fontSize = 26.sp, maxLines = 1, softWrap = false)
+                if (updateLatest != null) {
+                    Spacer(Modifier.width(8.dp))
+                    UpdatePill(updateLatest, if (level == HomeBarLayout.FULL) "New version on GitHub" else if (level == HomeBarLayout.SHORT) "Update" else "⬆")
+                }
+            }
+        },
+        actions = {
+            quota?.invoke()
+            ProfileMenu(profiles, active, showAll, onSelect, onShowAll, onNew, onManage,
+                emojiOnly = level == HomeBarLayout.TIGHT || (updateLatest != null && level != HomeBarLayout.FULL),
+                nameMax = if (level == HomeBarLayout.FULL) 120.dp else 72.dp)
+            IconButton(onClick = onOpenSettings) {
+                Box {
+                    Icon(Icons.Filled.Settings, contentDescription = if (updateAvailable) "Settings (update available)" else "Settings")
+                    if (updateAvailable) com.verdroid.app.ui.menu.UpdateDot(Modifier.align(Alignment.TopEnd))
+                }
+            }
+        },
+    )
+    }
+}
+
+/** Width tiers of the home top bar by width in "font-scaled dp" (pure, unit-tested). */
+internal object HomeBarLayout {
+    const val FULL = 0; const val SHORT = 1; const val TIGHT = 2
+    fun level(widthDp: Float, fontScale: Float): Int = (widthDp / fontScale.coerceAtLeast(0.5f)).let { w ->
+        when { w >= 480f -> FULL; w >= 300f -> SHORT; else -> TIGHT }
     }
 }
 
@@ -293,14 +328,17 @@ fun ConversationRow(c: Conversation, badge: String? = null, onLongClick: (() -> 
 @Composable
 private fun ProfileMenu(
     profiles: List<com.verdroid.app.data.profiles.Profile>, active: com.verdroid.app.data.profiles.Profile, showAll: Boolean,
-    onSelect: (String) -> Unit, onShowAll: () -> Unit, onNew: () -> Unit, onManage: () -> Unit,
+    onSelect: (String) -> Unit, onShowAll: () -> Unit, onNew: () -> Unit, onManage: () -> Unit, emojiOnly: Boolean = false,
+    nameMax: androidx.compose.ui.unit.Dp = 88.dp,
 ) {
     var open by remember { mutableStateOf(false) }
     val multi = com.verdroid.app.data.profiles.Profiles.visible(profiles)
     Box {
         TextButton(onClick = { open = true }, contentPadding = PaddingValues(horizontal = 8.dp),
             modifier = Modifier.semantics { contentDescription = "Profile: ${active.name}" }) {
-            Text(if (multi) active.emoji + " " + active.name.take(12) else active.emoji, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Text(active.emoji, maxLines = 1, softWrap = false)
+            if (multi && !emojiOnly) Text(" " + active.name, maxLines = 1, softWrap = false, overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.widthIn(max = nameMax))
             Icon(Icons.Filled.ArrowDropDown, null, Modifier.size(18.dp))
         }
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
