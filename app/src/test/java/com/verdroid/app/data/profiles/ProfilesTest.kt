@@ -37,6 +37,10 @@ class ProfilesTest {
         assertTrue(Profiles.toolAllowed("twitter", true, coding, false))
         assertFalse(Profiles.toolAllowed("web", false, coding, true))
         assertTrue(Profiles.toolAllowed("web", null, coding, true))
+        // Issue #4: ungrouped always-on tools (skill_*/memory_*/chart/self-test/MCP map to "") must follow
+        // Settings only, never be switched off by a profile that selects a subset of tool groups.
+        assertTrue("ungrouped tool stays on in a selected-tools profile", Profiles.toolAllowed("", null, coding, true))
+        assertFalse("ungrouped tool still obeys Settings off", Profiles.toolAllowed("", null, coding, false))
     }
 
     @Test fun `skills, memory scope, prompt and copy`() {

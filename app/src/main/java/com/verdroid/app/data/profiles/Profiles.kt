@@ -102,7 +102,10 @@ object Profiles {
 
     /** Effective state of a tool in a chat: the chat's preset override wins, then the profile, then Settings → Tools. */
     fun toolAllowed(group: String, override: Boolean?, profile: Profile, globallyOn: Boolean): Boolean =
-        override ?: if (group in profile.toolGroupsOff || profile.tools?.contains(group) == false) false else globallyOn
+        // Tools with no preset group (memory & skills, charts, self-test, MCP) are always-on: a profile's
+        // selected tool groups must never turn them off — they follow Settings → Tools only.
+        if (group.isBlank()) globallyOn
+        else override ?: if (group in profile.toolGroupsOff || profile.tools?.contains(group) == false) false else globallyOn
 
     /**
      * Tool presets dialog baseline: Settings → Tools state, with groups the profile leaves out shown as off.
