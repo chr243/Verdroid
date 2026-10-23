@@ -1,6 +1,7 @@
 package com.verdroid.app.ui.menu
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.*
@@ -105,6 +106,9 @@ private fun Status(text: String, error: Boolean = false) {
 @Composable
 private fun Notes(md: String) {
     if (md.isBlank()) return
-    Text(md.take(3_000), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(top = 4.dp).heightIn(max = 240.dp))
+    // Long notes scroll inside the card (bounded height, so it nests inside the Settings scroll); rendered as Markdown.
+    androidx.compose.foundation.layout.Box(Modifier.padding(top = 4.dp).fillMaxWidth().heightIn(max = 300.dp)
+        .verticalScroll(androidx.compose.foundation.rememberScrollState())) {
+        com.verdroid.app.ui.components.MarkdownText(md.take(20_000), MaterialTheme.colorScheme.onSurfaceVariant)
+    }
 }

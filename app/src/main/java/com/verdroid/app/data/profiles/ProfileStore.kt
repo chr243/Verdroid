@@ -7,6 +7,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
@@ -39,10 +40,22 @@ class ProfileStore @Inject constructor(
 ) : ProfileLookup {
     private val prefs = context.getSharedPreferences("profiles", Context.MODE_PRIVATE)
     private val _profiles = MutableStateFlow(Profiles.decode(prefs.getString(KEY_LIST, null)))
-    val profiles: StateFlow<List<Profile>> = _profiles
+    private val _enabled = MutableStateFlow(prefs.getBoolean(KEY_ENABLED, true))
+    /** Settings → Profiles on/off (default on). Off = everything behaves as the Default profile; stored profiles are kept. */
+    val enabled: StateFlow<Boolean> = _enabled
+    private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.Default)
+    private fun defaultOf(l: List<Profile>) = Profiles.resolve(l, Profiles.DEFAULT_ID)
+    /** Raw stored list (for the profiles editor). */
+    val allProfiles: StateFlow<List<Profile>> = _profiles
+    /** Effective list: only Default while profiles are off (so every picker hides). */
+    val profiles: StateFlow<List<Profile>> = kotlinx.coroutines.flow.combine(_profiles, _enabled) { l, on -> if (on) l else listOf(defaultOf(l)) }
+        .stateIn(scope, kotlinx.coroutines.flow.SharingStarted.Eagerly, if (_enabled.value) _profiles.value else listOf(defaultOf(_profiles.value)))
     private val _active = MutableStateFlow(Profiles.resolve(_profiles.value, prefs.getString(KEY_ACTIVE, null)).id)
-    /** Profile new chats start with (and the one shown in the chat header picker). */
-    val activeId: StateFlow<String> = _active
+    /** Profile new chats start with (and the one shown in the chat header picker). Default while profiles are off. */
+    val activeId: StateFlow<String> = kotlinx.coroutines.flow.combine(_active, _enabled) { a, on -> if (on) a else Profiles.DEFAULT_ID }
+        .stateIn(scope, kotlinx.coroutines.flow.SharingStarted.Eagerly, if (_enabled.value) _active.value else Profiles.DEFAULT_ID)
+
+    fun setEnabled(on: Boolean) { prefs.edit().putBoolean(KEY_ENABLED, on).apply(); _enabled.value = on }
 
     private val _chats = MutableStateFlow<Map<Long, String>>(emptyMap())
     /** Chat id → profile id for chats that are not on Default. */
@@ -66,7 +79,7 @@ class ProfileStore @Inject constructor(
         }
     }
 
-    override fun all(): List<Profile> = _profiles.value
+    override fun all(): List<Profile> = if (_enabled.value) _profiles.value else listOf(defaultOf(_profiles.value))
 
     fun skillGate(): (Long, String) -> Boolean = { taskId, skill -> Profiles.skillAllowed(profileOf(taskId), skill) }
 
@@ -80,9 +93,10 @@ class ProfileStore @Inject constructor(
     @Synchronized
     override fun onMemoryLearned(profileId: String, memoryId: Long) = write(Profiles.addMemory(_profiles.value, profileId, memoryId))
     fun get(id: String?): Profile = Profiles.resolve(_profiles.value, id)
-    fun active(): Profile = get(_active.value)
+    fun active(): Profile = if (_enabled.value) get(_active.value) else defaultOf(_profiles.value)
 
     override fun profileOf(taskId: Long): Profile {
+        if (!_enabled.value) return defaultOf(_profiles.value)
         if (taskId <= 0) return active()
         if (_profiles.value.size == 1) return _profiles.value.first()
         ensureLoaded()
@@ -104,6 +118,7 @@ class ProfileStore @Inject constructor(
     }
 
     suspend fun setChatProfile(taskId: Long, profileId: String) {
+        if (!_enabled.value) return
         if (taskId <= 0) { setActive(profileId); return }
         val id = get(profileId).id
         withContext(Dispatchers.IO) { taskDao.setProfile(taskId, id) }
@@ -134,5 +149,5 @@ class ProfileStore @Inject constructor(
         _profiles.value = n
     }
 
-    private companion object { const val KEY_LIST = "list"; const val KEY_ACTIVE = "active" }
+    private companion object { const val KEY_LIST = "list"; const val KEY_ACTIVE = "active"; const val KEY_ENABLED = "enabled" }
 }

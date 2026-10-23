@@ -50,6 +50,7 @@ fun ChatsScreen(
     val profiles by vm.profiles.collectAsStateWithLifecycle()
     val activeProfile by vm.activeProfile.collectAsStateWithLifecycle()
     val showAll by vm.showAllProfiles.collectAsStateWithLifecycle()
+    val profilesOn by vm.profilesEnabled.collectAsStateWithLifecycle()
     val quotaDot by vm.quotaDot.collectAsStateWithLifecycle()
     val hasKeys by vm.hasKeys.collectAsStateWithLifecycle()
     val updateAvailable by vm.updateAvailable.collectAsStateWithLifecycle()
@@ -70,7 +71,7 @@ fun ChatsScreen(
         topBar = {
             HomeTopBar(updateHintLatest(vm, updateAvailable), updateAvailable,
                 quota = quotaDot?.let { d -> { QuotaDotButton(d, onDetails = onOpenModels) } },
-                profiles = profiles, active = activeProfile, showAll = showAll, onSelect = vm::selectProfile,
+                profilesOn = profilesOn, profiles = profiles, active = activeProfile, showAll = showAll, onSelect = vm::selectProfile, onTurnOff = vm::turnOffProfiles,
                 onShowAll = { vm.showAllProfiles.value = !vm.showAllProfiles.value }, onNew = onNewProfile, onManage = onManageProfiles,
                 onOpenSettings = onOpenSettings)
         },
@@ -147,8 +148,8 @@ internal fun UpdatePill(latest: String, label: String = "New version on GitHub",
 @Composable
 internal fun HomeTopBar(
     updateLatest: String?, updateAvailable: Boolean, quota: (@Composable () -> Unit)?,
-    profiles: List<com.verdroid.app.data.profiles.Profile>, active: com.verdroid.app.data.profiles.Profile, showAll: Boolean,
-    onSelect: (String) -> Unit, onShowAll: () -> Unit, onNew: () -> Unit, onManage: () -> Unit, onOpenSettings: () -> Unit,
+    profilesOn: Boolean = true, profiles: List<com.verdroid.app.data.profiles.Profile>, active: com.verdroid.app.data.profiles.Profile, showAll: Boolean,
+    onSelect: (String) -> Unit, onShowAll: () -> Unit, onNew: () -> Unit, onManage: () -> Unit, onOpenSettings: () -> Unit, onTurnOff: () -> Unit = {},
 ) {
     // Small screens / big fonts: shorter update pill, so the title, profile icon and gear always fit.
     androidx.compose.foundation.layout.BoxWithConstraints {
@@ -165,7 +166,7 @@ internal fun HomeTopBar(
         },
         actions = {
             quota?.invoke()
-            ProfileMenu(profiles, active, showAll, onSelect, onShowAll, onNew, onManage)
+            if (profilesOn) ProfileMenu(profiles, active, showAll, onSelect, onShowAll, onNew, onManage, onTurnOff)
             IconButton(onClick = onOpenSettings) {
                 Box {
                     Icon(Icons.Filled.Settings, contentDescription = if (updateAvailable) "Settings (update available)" else "Settings")
@@ -326,7 +327,7 @@ fun ConversationRow(c: Conversation, badge: String? = null, onLongClick: (() -> 
 @Composable
 private fun ProfileMenu(
     profiles: List<com.verdroid.app.data.profiles.Profile>, active: com.verdroid.app.data.profiles.Profile, showAll: Boolean,
-    onSelect: (String) -> Unit, onShowAll: () -> Unit, onNew: () -> Unit, onManage: () -> Unit,
+    onSelect: (String) -> Unit, onShowAll: () -> Unit, onNew: () -> Unit, onManage: () -> Unit, onTurnOff: () -> Unit = {},
 ) {
     var open by remember { mutableStateOf(false) }
     val multi = com.verdroid.app.data.profiles.Profiles.visible(profiles)
@@ -349,6 +350,8 @@ private fun ProfileMenu(
                     trailingIcon = { if (showAll) Icon(Icons.Filled.Check, null) })
                 DropdownMenuItem(text = { Text("Manage profiles") }, onClick = { open = false; onManage() })
             }
+            HorizontalDivider()
+            DropdownMenuItem(text = { Text("Turn off profiles") }, onClick = { open = false; onTurnOff() })
         }
     }
 }

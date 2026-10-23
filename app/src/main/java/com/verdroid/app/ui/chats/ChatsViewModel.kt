@@ -40,6 +40,8 @@ class ChatsViewModel @Inject constructor(
     /** "Show all profiles" (top-bar menu): the list is otherwise limited to the active profile. */
     val showAllProfiles = MutableStateFlow(false)
     private val store = profileStore
+    val profilesEnabled: StateFlow<Boolean> = profileStore.enabled
+    fun turnOffProfiles() { store.setEnabled(false); showAllProfiles.value = false }
     fun selectProfile(id: String) { store.setActive(id); showAllProfiles.value = false }
     /** v1.0.12: "delete" on the home list = move to the archive; the screen shows a snackbar with Undo. */
     data class Archived(val taskId: Long, val title: String, val stopped: Boolean)

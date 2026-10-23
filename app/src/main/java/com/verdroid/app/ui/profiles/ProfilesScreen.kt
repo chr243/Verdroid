@@ -40,7 +40,9 @@ class ProfilesViewModel @Inject constructor(
     memoryRepo: com.verdroid.app.data.memory.MemoryRepository,
     settings: com.verdroid.app.domain.repository.SettingsRepository,
 ) : ViewModel() {
-    val profiles = store.profiles
+    val profiles = store.allProfiles
+    val enabled = store.enabled
+    fun setEnabled(on: Boolean) = store.setEnabled(on)
     val activeId = store.activeId
     val skills = skillStore.skills
     /** Long-term memories (pickable in a Selected-only profile). */
@@ -48,7 +50,7 @@ class ProfilesViewModel @Inject constructor(
     val models = settings.modelPriority.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     init { skillStore.refresh() }
 
-    fun newId(): String = Profiles.newId(store.all().map { it.id })
+    fun newId(): String = Profiles.newId(store.allProfiles.value.map { it.id })
     /** "New profile": a copy of the active one. */
     fun draftCopy(): Profile = Profiles.copyOf(store.active(), newId(), "New profile")
     fun templates(): List<Profile> = Profiles.templates { newId() + "_" + it }
@@ -62,10 +64,12 @@ class ProfilesViewModel @Inject constructor(
 fun ProfilesScreen(onBack: () -> Unit, startNew: Boolean = false, vm: ProfilesViewModel = hiltViewModel()) {
     val profiles by vm.profiles.collectAsStateWithLifecycle()
     val active by vm.activeId.collectAsStateWithLifecycle()
+    val enabled by vm.enabled.collectAsStateWithLifecycle()
     var editing by remember { mutableStateOf<Profile?>(null) }
     var confirmDelete by remember { mutableStateOf<Profile?>(null) }
     var newMenu by remember { mutableStateOf(startNew) }
 
+    if (!enabled) editing = null
     editing?.let { p ->
         // A profile created from the main screen's "+ Add new" becomes the active one.
         ProfileEditor(p, vm, onDone = { saved -> saved?.let { vm.save(it); if (startNew) vm.activate(it.id) }; editing = null })
@@ -74,6 +78,18 @@ fun ProfilesScreen(onBack: () -> Unit, startNew: Boolean = false, vm: ProfilesVi
 
     BackScaffold("Profiles", onBack) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding)) {
+            item("toggle") {
+                androidx.compose.foundation.layout.Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    androidx.compose.foundation.layout.Column(Modifier.weight(1f)) {
+                        Text("Profiles", style = MaterialTheme.typography.titleMedium)
+                        Text(if (enabled) "On: profile switcher shown on the main screen" else "Off: everything uses Default; your profiles are kept",
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    androidx.compose.material3.Switch(checked = enabled, onCheckedChange = { vm.setEnabled(it) })
+                }
+            }
+            if (enabled) {
             item {
                 Text("A profile bundles tools, skills, a model, instructions and memory, so you can switch with one tap at the top of a chat. " +
                     "Each chat remembers its profile. With only Default, nothing changes.",
@@ -98,6 +114,7 @@ fun ProfilesScreen(onBack: () -> Unit, startNew: Boolean = false, vm: ProfilesVi
                 Text(Profiles.SHARED_NOTE, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 16.dp))
                 Spacer(Modifier.height(24.dp))
+            }
             }
         }
     }
