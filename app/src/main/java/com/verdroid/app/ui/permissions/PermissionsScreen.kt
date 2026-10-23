@@ -119,7 +119,8 @@ fun PermissionsScreen(onBack: () -> Unit, onTermuxSetup: () -> Unit, vm: Permiss
     val rows by vm.rows.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val runtime = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { vm.refresh() }
-    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { vm.refresh() }
+    var assistantRefresh by remember { mutableIntStateOf(0) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { vm.refresh(); assistantRefresh++ }
 
     fun grant(id: String) {
         when {
@@ -147,6 +148,25 @@ fun PermissionsScreen(onBack: () -> Unit, onTermuxSetup: () -> Unit, vm: Permiss
                         }
                         if (!r.granted && r.action != null) OutlinedButton(onClick = { grant(r.id) }) { Text(r.action) }
                     }
+                }
+            }
+            Spacer(Modifier.height(8.dp))
+            val assistant = remember(assistantRefresh) {
+                runCatching { context.getSystemService(android.app.role.RoleManager::class.java).isRoleHeld(android.app.role.RoleManager.ROLE_ASSISTANT) }.getOrDefault(false)
+            }
+            Text("Digital assistant", style = MaterialTheme.typography.titleSmall)
+            Text("Set Verdroid as the default assistant (Settings → Apps → Default apps → Digital assistant app) to open a quick " +
+                "prompt from long-press Home/power or the assistant gesture. Replies show as a chat head (needs \"Display over other apps\"), otherwise in the app.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            ElevatedCard(Modifier.fillMaxWidth()) {
+                Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text((if (assistant) "✅ " else "❌ ") + if (assistant) "Default assistant: Verdroid" else "Default assistant: not Verdroid",
+                        style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                    OutlinedButton(onClick = {
+                        val opened = listOf(android.provider.Settings.ACTION_VOICE_INPUT_SETTINGS, android.provider.Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS)
+                            .any { a -> runCatching { context.startActivity(android.content.Intent(a)) }.isSuccess }
+                        if (!opened) context.startActivity(android.content.Intent(android.provider.Settings.ACTION_SETTINGS))
+                    }) { Text(if (assistant) "Settings" else "Set") }
                 }
             }
             Spacer(Modifier.height(8.dp))
