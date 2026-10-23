@@ -79,7 +79,7 @@ class AgentLoop internal constructor(
         notifyOnFinish = { prefs.notifyOnFinish.value },
         systemNotify = { id, title, body -> alerts.notify(FINISH_NOTIFICATION_BASE + (id % 10_000).toInt(), title, body, id) },
         memoryPrompt = { id -> try { memory.promptBlock(id) } catch (e: Exception) { "" } },
-        skillsPrompt = { id -> try { profiles.profileOf(id).let { p -> skills.promptBlock(allowed = { s -> com.verdroid.app.data.profiles.Profiles.skillAllowed(p, s) }) } } catch (e: Exception) { "" } },
+        skillsPrompt = { id -> try { profiles.profileOf(id).let { p -> listOf(skills.promptBlock(allowed = { s -> com.verdroid.app.data.profiles.Profiles.skillAllowed(p, s) }), com.verdroid.app.data.profiles.Profiles.skillCreationNote(p)).filter { it.isNotBlank() }.joinToString("\n\n") } } catch (e: Exception) { "" } },
         imageData = { rel ->
             kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
                 com.verdroid.app.data.storage.AttachmentImages.dataUrl(sharedFolder, rel)

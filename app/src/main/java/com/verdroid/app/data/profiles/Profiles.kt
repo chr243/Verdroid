@@ -113,6 +113,15 @@ object Profiles {
 
     fun skillAllowed(profile: Profile, skillId: String): Boolean = profile.skills?.contains(skillId) ?: true
 
+    /**
+     * Note added to the skills prompt so the agent knows skill creation is never blocked by a profile.
+     * A profile's skills selection only limits which *existing* skills it may use; saving a new one always
+     * works and the new skill is auto-added to this profile (see ProfileStore.onSkillSaved). "" for All-skills.
+     */
+    fun skillCreationNote(profile: Profile): String =
+        if (profile.skills == null) ""
+        else "You can always create a new skill here with skill_save even though this profile (\"${profile.name}\") only lists some skills — a skill you save is added to this profile automatically. The profile only blocks *using* existing skills left out of it, never saving a new one."
+
     /** Owner stamped on long-term memories learned in [profile]: null = unowned (All memories), else the Selected-only profile's id. */
     fun memoryScope(profile: Profile): String? = if (profile.memories != null && !profile.isDefault) profile.id else null
 

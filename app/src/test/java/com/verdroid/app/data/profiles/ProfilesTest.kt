@@ -50,6 +50,15 @@ class ProfilesTest {
         assertNotEquals("p5", Profiles.newId(listOf("p5"), 5))
     }
 
+    @Test fun `skill creation is never blocked by a selected-skills profile`() {
+        // Selected-skills profile: note tells the agent saving still works.
+        val note = Profiles.skillCreationNote(coding)
+        assertTrue(note.contains("skill_save") && note.contains("Coding"))
+        // All-skills (incl. Default) profiles need no note.
+        assertEquals("", Profiles.skillCreationNote(coding.copy(skills = null)))
+        assertEquals("", Profiles.skillCreationNote(Profiles.DEFAULT))
+    }
+
     @Test fun `separate memory only sees its own long-term items`() {
         val all = listOf(Memory(1, "shared", emptyList(), 1, 1), Memory(2, "own", emptyList(), 1, 1, profileId = "p1"),
             Memory(3, "note", emptyList(), 1, 1, chatId = 9))
