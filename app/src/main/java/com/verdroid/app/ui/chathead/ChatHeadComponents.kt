@@ -21,6 +21,7 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.Image
 import androidx.compose.ui.res.painterResource
@@ -52,7 +53,7 @@ import com.verdroid.app.ui.components.TaskAvatar
  * bubble in the 6 dp margin around it (fades in/out; the animation only exists while it is shown).
  */
 @Composable
-fun ChatHeadAvatar(task: Task?, unread: Int, running: Boolean = false, transparent: Boolean = true) {
+fun ChatHeadAvatar(task: Task?, unread: Int, running: Boolean = false) {
     Box {
         androidx.compose.animation.AnimatedVisibility(
             visible = running,
@@ -62,7 +63,7 @@ fun ChatHeadAvatar(task: Task?, unread: Int, running: Boolean = false, transpare
         ) {
             ChatHeadProgressRing(Modifier.fillMaxSize())
         }
-        ChatHeadBubble(task, unread, running, transparent)
+        ChatHeadBubble(task, unread, running)
     }
 }
 
@@ -88,30 +89,26 @@ private fun ChatHeadProgressRing(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun ChatHeadBubble(task: Task?, unread: Int, running: Boolean, transparent: Boolean) {
-    val resId = when {
-        transparent && running -> R.raw.chathead_running
-        transparent -> R.raw.chathead_idle
-        running -> R.raw.chathead_running_white
-        else -> R.raw.chathead_idle_white
-    }
-    val gif = rememberChatHeadGif(resId)
+private fun ChatHeadBubble(task: Task?, unread: Int, running: Boolean) {
+    val resId = if (running) R.raw.chathead_running else R.raw.chathead_idle
+    // Animated character only with the Miku theme; every other theme keeps the normal icon/avatar.
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val palette by remember { com.verdroid.app.ui.theme.ThemeStore.get(ctx).palette }.collectAsState()
+    // TEMP: remove after user picks — custom picked file overrides the bundled default
+    val customVer by com.verdroid.app.chathead.ChatHeadCustomGif.version.collectAsState()
+    val slot = if (running) com.verdroid.app.chathead.ChatHeadCustomGif.Slot.RUNNING else com.verdroid.app.chathead.ChatHeadCustomGif.Slot.IDLE
+    val gif = if (palette == com.verdroid.app.ui.theme.Palette.MIKU) rememberChatHeadGif(resId, slot, customVer) else null
     Box(Modifier.padding(6.dp)) {
-        if (gif != null && transparent) {
-            // Frameless: same 60 dp footprint as the framed bubble (54 dp + 3 dp padding + border) so size never changes.
-            Box(Modifier.size(64.dp), contentAlignment = Alignment.Center) { ChatHeadGifView(gif, Modifier.size(64.dp)) }
-        } else {
-            Surface(shape = CircleShape, shadowElevation = 6.dp, color = MaterialTheme.colorScheme.surface,
-                border = androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary)) {
-                Box(Modifier.padding(3.dp)) {
-                    if (gif != null) {
-                        ChatHeadGifView(gif, Modifier.size(54.dp).clip(CircleShape))
-                    } else if (task == null) {
-                        // No task attached yet: show the Verdroid mark instead of a generic chat avatar.
-                        Image(painterResource(R.drawable.ic_verdroid_logo), contentDescription = "Verdroid", modifier = Modifier.size(54.dp))
-                    } else {
-                        TaskAvatar(task, size = 54.dp, showStatusDot = false) // no status dot on the chat head; progress ring stays
-                    }
+        Surface(shape = CircleShape, shadowElevation = 6.dp, color = if (gif != null) Color.White else MaterialTheme.colorScheme.surface,
+            border = androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary)) {
+            Box(Modifier.padding(3.dp)) {
+                if (gif != null) {
+                    ChatHeadGifView(gif, Modifier.size(54.dp).clip(CircleShape))
+                } else if (task == null) {
+                    // No task attached yet: show the Verdroid mark instead of a generic chat avatar.
+                    Image(painterResource(R.drawable.ic_verdroid_logo), contentDescription = "Verdroid", modifier = Modifier.size(54.dp))
+                } else {
+                    TaskAvatar(task, size = 54.dp, showStatusDot = false) // no status dot on the chat head; progress ring stays
                 }
             }
         }
@@ -170,15 +167,21 @@ fun OverlayPermissionDialog(onOpenSettings: () -> Unit, onDismiss: () -> Unit) {
     )
 }
 
-/** Decodes an animated WebP from res/raw (API 28+ AnimatedImageDrawable); null on failure so the icon is the fallback. */
+/** Decodes the custom file (TEMP) or the bundled res/raw default, downsampled to fit ~160 px; null → icon fallback. */
 @Composable
-private fun rememberChatHeadGif(resId: Int): android.graphics.drawable.AnimatedImageDrawable? {
+private fun rememberChatHeadGif(resId: Int, slot: com.verdroid.app.chathead.ChatHeadCustomGif.Slot, customVer: Int): android.graphics.drawable.AnimatedImageDrawable? {
     val ctx = androidx.compose.ui.platform.LocalContext.current
-    val d = remember(resId) {
-        runCatching {
-            android.graphics.ImageDecoder.decodeDrawable(android.graphics.ImageDecoder.createSource(ctx.resources, resId))
-                as? android.graphics.drawable.AnimatedImageDrawable
+    val d = remember(resId, slot, customVer) {
+        fun decode(src: android.graphics.ImageDecoder.Source) = runCatching {
+            android.graphics.ImageDecoder.decodeDrawable(src) { decoder, info, _ ->
+                val w = info.size.width; val h = info.size.height
+                val scale = minOf(1f, 160f / maxOf(w, h))
+                if (scale < 1f) decoder.setTargetSize(maxOf(1, (w * scale).toInt()), maxOf(1, (h * scale).toInt()))
+            } as? android.graphics.drawable.AnimatedImageDrawable
         }.getOrNull()
+        // TEMP: remove after user picks — custom file first
+        com.verdroid.app.chathead.ChatHeadCustomGif.custom(ctx, slot)?.let { decode(android.graphics.ImageDecoder.createSource(it)) }
+            ?: decode(android.graphics.ImageDecoder.createSource(ctx.resources, resId))
     }
     androidx.compose.runtime.DisposableEffect(d) { d?.start(); onDispose { d?.stop() } }
     return d

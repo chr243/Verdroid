@@ -89,15 +89,12 @@ fun ChatHeadSettingsScreen(onBack: () -> Unit, vm: SettingsViewModel = hiltViewM
                 }
                 androidx.compose.material3.Switch(checked = autoHead, onCheckedChange = vm.appPrefs::setAutoChatHeadOnHome)
             }
-            // TEMP: remove after user picks
-            val headTransparent by vm.appPrefs.chatHeadTransparent.collectAsStateWithLifecycle()
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) {
-                    Text("Transparent chat head background (test)", style = MaterialTheme.typography.bodyLarge)
-                    Text("On: the animated character floats with no bubble frame. Off: white-background version inside the round bubble.",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                androidx.compose.material3.Switch(checked = headTransparent, onCheckedChange = vm.appPrefs::setChatHeadTransparent)
+            // TEMP: remove after user picks — custom chat head GIFs (Miku theme only)
+            val palette by remember { com.verdroid.app.ui.theme.ThemeStore.get(context).palette }.collectAsStateWithLifecycle()
+            if (palette == com.verdroid.app.ui.theme.Palette.MIKU) {
+                HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                CustomGifRow("On-task GIF (test)", com.verdroid.app.chathead.ChatHeadCustomGif.Slot.RUNNING)
+                CustomGifRow("Idle GIF (test)", com.verdroid.app.chathead.ChatHeadCustomGif.Slot.IDLE)
             }
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
             val assistant = remember(refresh) {
@@ -151,5 +148,24 @@ private fun StatusRow(label: String, ok: Boolean, onFix: () -> Unit) {
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(label + if (ok) " — granted" else " — needed", modifier = Modifier.weight(1f))
         OutlinedButton(onClick = onFix) { Text(if (ok) "Settings" else "Grant") }
+    }
+}
+
+// TEMP: remove after user picks
+@Composable
+private fun CustomGifRow(label: String, slot: com.verdroid.app.chathead.ChatHeadCustomGif.Slot) {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val ver by com.verdroid.app.chathead.ChatHeadCustomGif.version.collectAsStateWithLifecycle()
+    val hasCustom = remember(ver) { com.verdroid.app.chathead.ChatHeadCustomGif.custom(ctx, slot) != null }
+    val picker = androidx.activity.compose.rememberLauncherForActivityResult(
+        androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
+    ) { uri -> if (uri != null) com.verdroid.app.chathead.ChatHeadCustomGif.set(ctx, slot, uri) }
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text(label, style = MaterialTheme.typography.bodyLarge)
+            Text(if (hasCustom) "Custom file" else "Default", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        androidx.compose.material3.TextButton(onClick = { picker.launch(arrayOf("image/gif", "image/webp")) }) { Text("Pick") }
+        androidx.compose.material3.TextButton(onClick = { com.verdroid.app.chathead.ChatHeadCustomGif.reset(ctx, slot) }, enabled = hasCustom) { Text("Reset") }
     }
 }

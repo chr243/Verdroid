@@ -24,12 +24,6 @@ class AppPrefs @Inject constructor(@ApplicationContext context: Context) {
     val autoChatHeadOnHome: StateFlow<Boolean> = _autoChatHead.asStateFlow()
     fun setAutoChatHeadOnHome(v: Boolean) { prefs.edit().putBoolean(KEY_AUTO_HEAD, v).apply(); _autoChatHead.value = v }
 
-    // TEMP: remove after user picks (chat head transparent-vs-white comparison)
-    private val _headTransparent = MutableStateFlow(prefs.getBoolean("chat_head_transparent", true))
-    /** "Transparent chat head background" (test) — default ON: frameless transparent GIF; OFF: white-background GIF in the bubble. */
-    val chatHeadTransparent: StateFlow<Boolean> = _headTransparent.asStateFlow()
-    fun setChatHeadTransparent(v: Boolean) { prefs.edit().putBoolean("chat_head_transparent", v).apply(); _headTransparent.value = v }
-
     private val _memKilo = MutableStateFlow(prefs.getBoolean(KEY_MEM_KILO, true))
     /** "Send memories to Kilo models" — default ON (Kilo Auto Free may log prompts; the user is informed once). */
     val sendMemoriesToKilo: StateFlow<Boolean> = _memKilo.asStateFlow()

@@ -77,7 +77,6 @@ class ChatHeadService : Service(), LifecycleOwner, SavedStateRegistryOwner, View
     @Inject lateinit var agent: AgentController
     @Inject lateinit var sendMessage: SendMessageUseCase
     @Inject lateinit var notifier: BubbleNotifier
-    @Inject lateinit var appPrefs: com.verdroid.app.data.prefs.AppPrefs
 
     // Own lifecycle (LifecycleService never goes past STARTED); driven to RESUMED so Compose input/frames run normally.
     private val lifecycleRegistry = LifecycleRegistry(this)
@@ -340,10 +339,7 @@ class ChatHeadService : Service(), LifecycleOwner, SavedStateRegistryOwner, View
             val conversations by remember { tasks.observeConversations() }.collectAsState(initial = emptyList<Conversation>())
             val running by agent.runningTaskIds.collectAsState()
             val current = conversations.firstOrNull { it.task.id == taskIdState.longValue }
-            // TEMP: remove after user picks
-            val transparent by appPrefs.chatHeadTransparent.collectAsState()
             ChatHeadAvatar(
-                transparent = transparent,
                 task = current?.task,
                 unread = if (expandedState.value) 0 else current?.unreadCount ?: 0,
                 running = taskIdState.longValue in running,
