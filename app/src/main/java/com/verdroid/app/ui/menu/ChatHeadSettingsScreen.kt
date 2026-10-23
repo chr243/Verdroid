@@ -66,10 +66,15 @@ fun ChatHeadSettingsScreen(onBack: () -> Unit, vm: SettingsViewModel = hiltViewM
                 }
                 androidx.compose.material3.Switch(checked = autoHead, onCheckedChange = vm.appPrefs::setAutoChatHeadOnHome)
             }
-            // Custom chat head GIFs (any theme; without one, Miku uses its bundled GIFs and other themes the normal bubble)
+            // Custom chat head GIFs, per theme (without one, Miku uses its bundled GIFs and other themes the normal bubble)
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
-            CustomGifRow("On-task GIF", com.verdroid.app.chathead.ChatHeadCustomGif.Slot.RUNNING)
-            CustomGifRow("Idle GIF", com.verdroid.app.chathead.ChatHeadCustomGif.Slot.IDLE)
+            val gifCtx = androidx.compose.ui.platform.LocalContext.current
+            val theme by remember { com.verdroid.app.ui.theme.ThemeStore.get(gifCtx).palette }.collectAsStateWithLifecycle()
+            Text("Chat head GIFs for the ${theme.label} theme", style = MaterialTheme.typography.titleSmall)
+            Text("Picks apply only to the current theme; switch themes to set different ones.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            CustomGifRow("On-task GIF", theme, com.verdroid.app.chathead.ChatHeadCustomGif.Slot.RUNNING)
+            CustomGifRow("Idle GIF", theme, com.verdroid.app.chathead.ChatHeadCustomGif.Slot.IDLE)
         }
     }
 }
@@ -91,19 +96,19 @@ private fun ModeRow(value: ChatHeadMode, selected: ChatHeadMode, title: String, 
 }
 
 @Composable
-private fun CustomGifRow(label: String, slot: com.verdroid.app.chathead.ChatHeadCustomGif.Slot) {
+private fun CustomGifRow(label: String, theme: com.verdroid.app.ui.theme.Palette, slot: com.verdroid.app.chathead.ChatHeadCustomGif.Slot) {
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val ver by com.verdroid.app.chathead.ChatHeadCustomGif.version.collectAsStateWithLifecycle()
-    val hasCustom = remember(ver) { com.verdroid.app.chathead.ChatHeadCustomGif.custom(ctx, slot) != null }
+    val hasCustom = remember(ver, theme) { com.verdroid.app.chathead.ChatHeadCustomGif.custom(ctx, theme, slot) != null }
     val picker = androidx.activity.compose.rememberLauncherForActivityResult(
         androidx.activity.result.contract.ActivityResultContracts.OpenDocument()
-    ) { uri -> if (uri != null) com.verdroid.app.chathead.ChatHeadCustomGif.set(ctx, slot, uri) }
+    ) { uri -> if (uri != null) com.verdroid.app.chathead.ChatHeadCustomGif.set(ctx, theme, slot, uri) }
     Row(verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(label, style = MaterialTheme.typography.bodyLarge)
-            Text(if (hasCustom) "Custom file" else "Default", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text((if (hasCustom) "Custom file" else "Default") + " for the ${theme.label} theme", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         androidx.compose.material3.TextButton(onClick = { picker.launch(arrayOf("image/gif", "image/webp")) }) { Text("Pick") }
-        androidx.compose.material3.TextButton(onClick = { com.verdroid.app.chathead.ChatHeadCustomGif.reset(ctx, slot) }, enabled = hasCustom) { Text("Reset") }
+        androidx.compose.material3.TextButton(onClick = { com.verdroid.app.chathead.ChatHeadCustomGif.reset(ctx, theme, slot) }, enabled = hasCustom) { Text("Reset") }
     }
 }

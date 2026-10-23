@@ -91,14 +91,14 @@ private fun ChatHeadProgressRing(modifier: Modifier = Modifier) {
 @Composable
 private fun ChatHeadBubble(task: Task?, unread: Int, running: Boolean) {
     val resId = if (running) R.raw.chathead_running else R.raw.chathead_idle
-    // Custom picked GIF on any theme; otherwise the bundled Miku GIFs only with the Miku theme, else the normal icon/avatar.
+    // The active theme's custom GIF if picked; otherwise the bundled Miku GIFs only with the Miku theme, else the normal icon/avatar.
     val ctx = androidx.compose.ui.platform.LocalContext.current
     val palette by remember { com.verdroid.app.ui.theme.ThemeStore.get(ctx).palette }.collectAsState()
     // A custom picked file overrides the bundled default
     val customVer by com.verdroid.app.chathead.ChatHeadCustomGif.version.collectAsState()
     val slot = if (running) com.verdroid.app.chathead.ChatHeadCustomGif.Slot.RUNNING else com.verdroid.app.chathead.ChatHeadCustomGif.Slot.IDLE
-    val gif = if (palette == com.verdroid.app.ui.theme.Palette.MIKU) rememberChatHeadGif(resId, slot, customVer, allowDefault = true)
-        else rememberChatHeadGif(resId, slot, customVer, allowDefault = false)
+    val gif = if (palette == com.verdroid.app.ui.theme.Palette.MIKU) rememberChatHeadGif(resId, palette, slot, customVer, allowDefault = true)
+        else rememberChatHeadGif(resId, palette, slot, customVer, allowDefault = false)
     Box(Modifier.padding(6.dp)) {
         Surface(shape = CircleShape, shadowElevation = 6.dp, color = if (gif != null) Color.White else MaterialTheme.colorScheme.surface,
             border = androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary)) {
@@ -170,9 +170,9 @@ fun OverlayPermissionDialog(onOpenSettings: () -> Unit, onDismiss: () -> Unit) {
 
 /** Decodes the custom file or the bundled res/raw default, downsampled to fit ~160 px; null → icon fallback. */
 @Composable
-private fun rememberChatHeadGif(resId: Int, slot: com.verdroid.app.chathead.ChatHeadCustomGif.Slot, customVer: Int, allowDefault: Boolean): android.graphics.drawable.AnimatedImageDrawable? {
+private fun rememberChatHeadGif(resId: Int, theme: com.verdroid.app.ui.theme.Palette, slot: com.verdroid.app.chathead.ChatHeadCustomGif.Slot, customVer: Int, allowDefault: Boolean): android.graphics.drawable.AnimatedImageDrawable? {
     val ctx = androidx.compose.ui.platform.LocalContext.current
-    val d = remember(resId, slot, customVer, allowDefault) {
+    val d = remember(resId, theme, slot, customVer, allowDefault) {
         fun decode(src: android.graphics.ImageDecoder.Source) = runCatching {
             android.graphics.ImageDecoder.decodeDrawable(src) { decoder, info, _ ->
                 val w = info.size.width; val h = info.size.height
@@ -181,7 +181,7 @@ private fun rememberChatHeadGif(resId: Int, slot: com.verdroid.app.chathead.Chat
             } as? android.graphics.drawable.AnimatedImageDrawable
         }.getOrNull()
         // Custom file first
-        com.verdroid.app.chathead.ChatHeadCustomGif.custom(ctx, slot)?.let { decode(android.graphics.ImageDecoder.createSource(it)) }
+        com.verdroid.app.chathead.ChatHeadCustomGif.custom(ctx, theme, slot)?.let { decode(android.graphics.ImageDecoder.createSource(it)) }
             ?: if (allowDefault) decode(android.graphics.ImageDecoder.createSource(ctx.resources, resId)) else null
     }
     androidx.compose.runtime.DisposableEffect(d) { d?.start(); onDispose { d?.stop() } }
