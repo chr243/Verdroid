@@ -89,6 +89,16 @@ fun ChatHeadSettingsScreen(onBack: () -> Unit, vm: SettingsViewModel = hiltViewM
                 }
                 androidx.compose.material3.Switch(checked = autoHead, onCheckedChange = vm.appPrefs::setAutoChatHeadOnHome)
             }
+            // TEMP: remove after user picks
+            val headTransparent by vm.appPrefs.chatHeadTransparent.collectAsStateWithLifecycle()
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Transparent chat head background (test)", style = MaterialTheme.typography.bodyLarge)
+                    Text("On: the animated character floats with no bubble frame. Off: white-background version inside the round bubble.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                androidx.compose.material3.Switch(checked = headTransparent, onCheckedChange = vm.appPrefs::setChatHeadTransparent)
+            }
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
             val assistant = remember(refresh) {
                 runCatching { context.getSystemService(android.app.role.RoleManager::class.java).isRoleHeld(android.app.role.RoleManager.ROLE_ASSISTANT) }.getOrDefault(false)

@@ -51,6 +51,7 @@ enum class Palette(val label: String, val description: String, val seed: Long) {
     PURPLE("Purple", "Violet tones", 0xFF7E57C2),
     ROSE("Rose", "Soft pinks", 0xFFD81B60),
     OCEAN("Ocean", "Teal and sea blue", 0xFF00897B),
+    MIKU("Miku", "Miku teal with pink accents", 0xFF39C5BB),
 }
 
 /** Chat bubble colors that follow the theme. */
@@ -153,7 +154,34 @@ object Palettes {
             surfaceContainerLow = Color(0xFF0A0A0A), surfaceContainer = Color(0xFF121212), surfaceContainerHigh = Color(0xFF1C1C1C),
             surfaceContainerHighest = Color(0xFF262626), surfaceBright = Color(0xFF2C2C2C), surfaceVariant = Color(0xFF1C1C1C),
         ) else fromSeed(p.seed, false)
+        Palette.MIKU -> miku(dark)
         else -> fromSeed(p.seed, dark)
+    }
+
+    /** Miku: teal #39C5BB primary, pink #E12885 secondary/tertiary; dark grey surfaces in dark, teal on near-white in light. */
+    private fun miku(dark: Boolean): ColorScheme {
+        val base = fromSeed(0xFF39C5BB, dark)
+        return if (dark) base.copy(
+            primary = Color(0xFF39C5BB), onPrimary = Color(0xFF00201E),
+            primaryContainer = Color(0xFF1F5F5A), onPrimaryContainer = Color(0xFFC8F2EE), inversePrimary = Color(0xFF00796F),
+            secondary = Color(0xFFFF8FC4), onSecondary = Color(0xFF3E0021),
+            secondaryContainer = Color(0xFF8C1352), onSecondaryContainer = Color(0xFFFFD9E6),
+            tertiary = Color(0xFFFF8FC4), onTertiary = Color(0xFF3E0021),
+            tertiaryContainer = Color(0xFF8C1352), onTertiaryContainer = Color(0xFFFFD9E6),
+            background = Color(0xFF1E2328), onBackground = Color(0xFFE3E7EA),
+            surface = Color(0xFF1E2328), onSurface = Color(0xFFE3E7EA), surfaceDim = Color(0xFF1A1E22),
+            surfaceContainerLowest = Color(0xFF181C20), surfaceContainerLow = Color(0xFF22272C), surfaceContainer = Color(0xFF262C31),
+            surfaceContainerHigh = Color(0xFF2B3137), surfaceContainerHighest = Color(0xFF353C43), surfaceBright = Color(0xFF3A4148),
+            surfaceVariant = Color(0xFF2B3137), onSurfaceVariant = Color(0xFFBCC8C6), surfaceTint = Color(0xFF39C5BB),
+        ) else base.copy(
+            primary = Color(0xFF00796F), onPrimary = Color.White,
+            primaryContainer = Color(0xFF86CECB), onPrimaryContainer = Color(0xFF00201E), inversePrimary = Color(0xFF39C5BB),
+            secondary = Color(0xFFB0145F), onSecondary = Color.White,
+            secondaryContainer = Color(0xFFFFD9E6), onSecondaryContainer = Color(0xFF3E0021),
+            tertiary = Color(0xFFE12885), onTertiary = Color.White,
+            tertiaryContainer = Color(0xFFFFD9E6), onTertiaryContainer = Color(0xFF3E0021),
+            background = Color(0xFFF8FBFB), surface = Color(0xFFF8FBFB), surfaceTint = Color(0xFF39C5BB),
+        )
     }
 
     /** Sent = primary / onPrimary, received = surfaceContainerHigh / onSurface — for every palette. */

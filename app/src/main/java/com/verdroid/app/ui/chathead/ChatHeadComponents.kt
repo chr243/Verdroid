@@ -52,7 +52,7 @@ import com.verdroid.app.ui.components.TaskAvatar
  * bubble in the 6 dp margin around it (fades in/out; the animation only exists while it is shown).
  */
 @Composable
-fun ChatHeadAvatar(task: Task?, unread: Int, running: Boolean = false) {
+fun ChatHeadAvatar(task: Task?, unread: Int, running: Boolean = false, transparent: Boolean = true) {
     Box {
         androidx.compose.animation.AnimatedVisibility(
             visible = running,
@@ -62,7 +62,7 @@ fun ChatHeadAvatar(task: Task?, unread: Int, running: Boolean = false) {
         ) {
             ChatHeadProgressRing(Modifier.fillMaxSize())
         }
-        ChatHeadBubble(task, unread)
+        ChatHeadBubble(task, unread, running, transparent)
     }
 }
 
@@ -88,16 +88,30 @@ private fun ChatHeadProgressRing(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun ChatHeadBubble(task: Task?, unread: Int) {
+private fun ChatHeadBubble(task: Task?, unread: Int, running: Boolean, transparent: Boolean) {
+    val resId = when {
+        transparent && running -> R.raw.chathead_running
+        transparent -> R.raw.chathead_idle
+        running -> R.raw.chathead_running_white
+        else -> R.raw.chathead_idle_white
+    }
+    val gif = rememberChatHeadGif(resId)
     Box(Modifier.padding(6.dp)) {
-        Surface(shape = CircleShape, shadowElevation = 6.dp, color = MaterialTheme.colorScheme.surface,
-            border = androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary)) {
-            Box(Modifier.padding(3.dp)) {
-                if (task == null) {
-                    // No task attached yet: show the Verdroid mark instead of a generic chat avatar.
-                    Image(painterResource(R.drawable.ic_verdroid_logo), contentDescription = "Verdroid", modifier = Modifier.size(54.dp))
-                } else {
-                    TaskAvatar(task, size = 54.dp, showStatusDot = false) // no status dot on the chat head; progress ring stays
+        if (gif != null && transparent) {
+            // Frameless: same 60 dp footprint as the framed bubble (54 dp + 3 dp padding + border) so size never changes.
+            Box(Modifier.size(64.dp), contentAlignment = Alignment.Center) { ChatHeadGifView(gif, Modifier.size(64.dp)) }
+        } else {
+            Surface(shape = CircleShape, shadowElevation = 6.dp, color = MaterialTheme.colorScheme.surface,
+                border = androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary)) {
+                Box(Modifier.padding(3.dp)) {
+                    if (gif != null) {
+                        ChatHeadGifView(gif, Modifier.size(54.dp).clip(CircleShape))
+                    } else if (task == null) {
+                        // No task attached yet: show the Verdroid mark instead of a generic chat avatar.
+                        Image(painterResource(R.drawable.ic_verdroid_logo), contentDescription = "Verdroid", modifier = Modifier.size(54.dp))
+                    } else {
+                        TaskAvatar(task, size = 54.dp, showStatusDot = false) // no status dot on the chat head; progress ring stays
+                    }
                 }
             }
         }
@@ -153,5 +167,28 @@ fun OverlayPermissionDialog(onOpenSettings: () -> Unit, onDismiss: () -> Unit) {
         },
         confirmButton = { TextButton(onClick = onOpenSettings) { Text("Open settings") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Not now") } },
+    )
+}
+
+/** Decodes an animated WebP from res/raw (API 28+ AnimatedImageDrawable); null on failure so the icon is the fallback. */
+@Composable
+private fun rememberChatHeadGif(resId: Int): android.graphics.drawable.AnimatedImageDrawable? {
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val d = remember(resId) {
+        runCatching {
+            android.graphics.ImageDecoder.decodeDrawable(android.graphics.ImageDecoder.createSource(ctx.resources, resId))
+                as? android.graphics.drawable.AnimatedImageDrawable
+        }.getOrNull()
+    }
+    androidx.compose.runtime.DisposableEffect(d) { d?.start(); onDispose { d?.stop() } }
+    return d
+}
+
+@Composable
+private fun ChatHeadGifView(gif: android.graphics.drawable.AnimatedImageDrawable, modifier: Modifier) {
+    androidx.compose.ui.viewinterop.AndroidView(
+        factory = { ctx -> android.widget.ImageView(ctx).apply { scaleType = android.widget.ImageView.ScaleType.FIT_CENTER } },
+        update = { iv -> if (iv.drawable !== gif) { iv.setImageDrawable(gif); gif.start() } },
+        modifier = modifier,
     )
 }
