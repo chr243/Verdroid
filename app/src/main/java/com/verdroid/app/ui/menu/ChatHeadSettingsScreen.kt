@@ -1,10 +1,5 @@
 package com.verdroid.app.ui.menu
 
-import android.Manifest
-import android.content.pm.PackageManager
-import android.os.Build
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -23,25 +18,19 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.verdroid.app.domain.model.ChatHeadMode
 
@@ -50,18 +39,6 @@ import com.verdroid.app.domain.model.ChatHeadMode
 fun ChatHeadSettingsScreen(onBack: () -> Unit, vm: SettingsViewModel = hiltViewModel()) {
     val context = LocalContext.current
     val mode by vm.chatHeadMode.collectAsStateWithLifecycle()
-    // Bumped on every resume so permission states are re-read after returning from system settings.
-    var refresh by remember { mutableIntStateOf(0) }
-    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { refresh++ }
-    val notificationLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { _ -> refresh++ }
-
-    val overlayGranted = remember(refresh) { vm.chatHeads.canDrawOverlays() }
-    val bubblesAllowed = remember(refresh) { vm.chatHeads.bubblesAllowed() }
-    val notificationsOn = remember(refresh) { vm.chatHeads.notificationsEnabled() }
-    val notificationPermissionMissing = remember(refresh) {
-        Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
-    }
     val xiaomi = remember { vm.chatHeads.isXiaomiFamily() }
 
     Scaffold(topBar = {
@@ -89,40 +66,10 @@ fun ChatHeadSettingsScreen(onBack: () -> Unit, vm: SettingsViewModel = hiltViewM
                 }
                 androidx.compose.material3.Switch(checked = autoHead, onCheckedChange = vm.appPrefs::setAutoChatHeadOnHome)
             }
-            // TEMP: remove after user picks — custom chat head GIFs (Miku theme only)
-            val palette by remember { com.verdroid.app.ui.theme.ThemeStore.get(context).palette }.collectAsStateWithLifecycle()
-            if (palette == com.verdroid.app.ui.theme.Palette.MIKU) {
-                HorizontalDivider(Modifier.padding(vertical = 8.dp))
-                CustomGifRow("On-task GIF (test)", com.verdroid.app.chathead.ChatHeadCustomGif.Slot.RUNNING)
-                CustomGifRow("Idle GIF (test)", com.verdroid.app.chathead.ChatHeadCustomGif.Slot.IDLE)
-            }
+            // Custom chat head GIFs (any theme; without one, Miku uses its bundled GIFs and other themes the normal bubble)
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
-            val assistant = remember(refresh) {
-                runCatching { context.getSystemService(android.app.role.RoleManager::class.java).isRoleHeld(android.app.role.RoleManager.ROLE_ASSISTANT) }.getOrDefault(false)
-            }
-            Text("Digital assistant", style = MaterialTheme.typography.titleSmall)
-            Text("Set Verdroid as the default assistant (Settings → Apps → Default apps → Digital assistant app) to open a quick " +
-                "prompt from long-press Home/power or the assistant gesture. Replies show as a chat head (needs \"Display over other apps\"), otherwise in the app.",
-                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            StatusRow(if (assistant) "Default assistant: Verdroid" else "Default assistant: not Verdroid", assistant) {
-                val opened = listOf(android.provider.Settings.ACTION_VOICE_INPUT_SETTINGS, android.provider.Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS)
-                    .any { a -> runCatching { context.startActivity(android.content.Intent(a)) }.isSuccess }
-                if (!opened) context.startActivity(android.content.Intent(android.provider.Settings.ACTION_SETTINGS))
-            }
-            HorizontalDivider(Modifier.padding(vertical = 8.dp))
-            Text("Permissions", style = MaterialTheme.typography.titleSmall)
-            StatusRow("Display over other apps", overlayGranted) { context.startActivity(vm.chatHeads.overlayPermissionIntent()) }
-            if (notificationPermissionMissing) {
-                StatusRow("Notification permission", false) { notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS) }
-            } else {
-                StatusRow("Notifications", notificationsOn) { context.startActivity(vm.chatHeads.notificationSettingsIntent()) }
-            }
-            StatusRow("Bubbles allowed", bubblesAllowed) { context.startActivity(vm.chatHeads.bubbleSettingsIntent()) }
-            if (xiaomi) {
-                Text("HyperOS tip: in App info → Other permissions, also allow \"Display pop-up windows while running in the background\", " +
-                    "and set Battery saver to \"No restrictions\" so the chat head isn't killed.",
-                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+            CustomGifRow("On-task GIF", com.verdroid.app.chathead.ChatHeadCustomGif.Slot.RUNNING)
+            CustomGifRow("Idle GIF", com.verdroid.app.chathead.ChatHeadCustomGif.Slot.IDLE)
         }
     }
 }
@@ -143,15 +90,6 @@ private fun ModeRow(value: ChatHeadMode, selected: ChatHeadMode, title: String, 
     }
 }
 
-@Composable
-private fun StatusRow(label: String, ok: Boolean, onFix: () -> Unit) {
-    Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-        Text(label + if (ok) " — granted" else " — needed", modifier = Modifier.weight(1f))
-        OutlinedButton(onClick = onFix) { Text(if (ok) "Settings" else "Grant") }
-    }
-}
-
-// TEMP: remove after user picks
 @Composable
 private fun CustomGifRow(label: String, slot: com.verdroid.app.chathead.ChatHeadCustomGif.Slot) {
     val ctx = androidx.compose.ui.platform.LocalContext.current

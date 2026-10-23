@@ -70,9 +70,4 @@ class ChatHeadController @Inject constructor(
         Intent(Settings.ACTION_APP_NOTIFICATION_BUBBLE_SETTINGS)
             .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-
-    fun notificationSettingsIntent(): Intent =
-        Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS)
-            .putExtra(Settings.EXTRA_APP_PACKAGE, context.packageName)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
 }

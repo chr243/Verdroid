@@ -1,6 +1,6 @@
 package com.verdroid.app.chathead
 
-// TEMP: remove after user picks — user-picked chat head GIFs for testing (Miku theme only).
+// User-picked chat head GIFs (any theme).
 
 import android.content.Context
 import android.net.Uri
