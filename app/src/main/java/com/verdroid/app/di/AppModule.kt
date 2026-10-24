@@ -140,6 +140,8 @@ object AppModule {
         @ApplicationContext context: Context,
         termux: com.verdroid.app.data.termux.TermuxManager,
         selfTest: javax.inject.Provider<com.verdroid.app.data.selftest.SelfTestRunner>,
+        subAgents: javax.inject.Provider<com.verdroid.app.agent.subagents.SubAgentService>,
+        subAgentPrefs: javax.inject.Provider<com.verdroid.app.agent.subagents.SubAgentPrefs>,
         fileConsent: com.verdroid.app.data.consent.FileChangeConsent,
         cookieVault: com.verdroid.app.data.cookies.CookieVault,
         xPostConsent: com.verdroid.app.data.consent.XPostConsent,
@@ -194,6 +196,8 @@ object AppModule {
                 ShowImageTool(sharedFolder, File(context.filesDir, "charts"), context.cacheDir),
                 // On-device self-test (same checks as Settings → Self-test); runner resolved lazily (it needs this registry)
                 com.verdroid.app.agent.tools.SelfTestTool { selfTest.get() },
+                // Sub-agents (parallel read-only research); service resolved lazily (it needs this registry)
+                com.verdroid.app.agent.subagents.SpawnSubagentsTool({ subAgentPrefs.get().perCall.value }, { subAgentPrefs.get().tools.value }) { id, t, m -> subAgents.get().runAll(id, t, m) },
             ) +
             // v1.0.58: reminders + scheduled (unattended) agent runs; manager resolved lazily (it depends on the agent → this registry)
             com.verdroid.app.agent.tools.LazyScheduleBackend { schedules.get().toolBackend }.let { b ->

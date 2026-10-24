@@ -39,7 +39,8 @@ class MemoryViewModel @Inject constructor(
     profiles: com.verdroid.app.data.profiles.ProfileStore,
 ) : ViewModel() {
     /** Profile id → label, to mark long-term memories of a profile with separate memory. */
-    val profileNames = profiles.profiles.map { l -> l.associate { it.id to it.label } }
+    /** Null when Profiles are off: no "Only in profile …" tags then (the list collapses to Default, so ids would read "deleted profile"). */
+    val profileNames = kotlinx.coroutines.flow.combine(profiles.profiles, profiles.enabled) { l, on -> if (on) l.associate { it.id to it.label } else null }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyMap())
     /** Opened from a chat's overflow menu: that chat, "This chat" tab first. */
     val openedFromChat: Long? = savedState.get<Long>("chat")?.takeIf { it > 0 }
@@ -69,7 +70,7 @@ class MemoryViewModel @Inject constructor(
 }
 
 /** Settings > Memory (or a chat's overflow menu): "This chat" short-term notes and long-term memory. Text-only UI. */
-private val LocalProfileNames = androidx.compose.runtime.staticCompositionLocalOf<Map<String, String>> { emptyMap() }
+private val LocalProfileNames = androidx.compose.runtime.staticCompositionLocalOf<Map<String, String>?> { emptyMap() }
 
 @Composable
 fun MemoryScreen(onBack: () -> Unit, vm: MemoryViewModel = hiltViewModel()) {
@@ -189,7 +190,8 @@ private fun MemoryCard(m: Memory, onEdit: (Memory) -> Unit, onDelete: (Memory) -
     ElevatedCard(Modifier.fillMaxWidth()) {
         Column(Modifier.padding(12.dp)) {
             Text(m.text, style = MaterialTheme.typography.bodyMedium)
-            val profileName = m.profileId?.let { LocalProfileNames.current[it] ?: "deleted profile" }
+            val names = LocalProfileNames.current
+            val profileName = if (names == null) null else m.profileId?.let { names[it] ?: "deleted profile" }
             if (profileName != null) Text("Only in profile $profileName", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
             Text("#${m.id}" + (if (m.tags.isNotEmpty()) " · " + m.tags.joinToString(", ") else "") + " · updated " +
                 java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.SHORT).format(java.util.Date(m.updatedAt)),

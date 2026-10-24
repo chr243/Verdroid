@@ -18,7 +18,7 @@ import javax.inject.Singleton
  * Groups added later (Crypto) start ON for existing chats — the same as before, when those tools were not gated.
  */
 enum class ToolPreset(val groupId: String) {
-    FILES("files"), WEB("web"), TWITTER("twitter"), TERMUX("termux"), PDF("pdf"), SYSTEM("system"), GIT("git"), CRYPTO("crypto"), SCHEDULING("scheduling");
+    FILES("files"), WEB("web"), TWITTER("twitter"), TERMUX("termux"), PDF("pdf"), SYSTEM("system"), GIT("git"), CRYPTO("crypto"), SCHEDULING("scheduling"), AGENTS("agents");
 
     /** Same one-line description as the Settings > Tools group (shared in [ToolGroups.ORDER]). */
     val description: String get() = ToolGroups.ORDER.first { it.id == groupId }.description

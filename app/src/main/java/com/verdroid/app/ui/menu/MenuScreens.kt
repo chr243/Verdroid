@@ -69,6 +69,7 @@ fun SettingsScreen(onNavigate: (String) -> Unit, onBack: () -> Unit, unreadNotif
             ))
             SettingsGroup("Agent tools", listOf(
                 item("Tools", "Built-in agent tools (status, on/off), Documents/Verdroid folder access, Termux setup and add-ons", Routes.TOOLS),
+                item("Sub-agents", "Parallel read-only research (spawn_subagents): on/off, model, concurrency, limits, allowed tools", Routes.SUBAGENTS),
                 item("Profiles", "On/off (on by default). Switchable bundles of tools, skills, model, instructions and memory; filter chats by profile", Routes.PROFILES),
                 item("AGENTS.md", "Your standing instructions for the agent, added to every chat", Routes.AGENTS_MD),
                 item("Skills", "Procedures the agent saved: enable/disable (only enabled ones go into the prompt), view, delete", Routes.SKILLS),
@@ -325,4 +326,67 @@ private fun CrashLogRow(index: Int) {
             }
         },
         dismissButton = { TextButton(onClick = { open = false }) { Text("Close") } })
+}
+
+/** Settings → Sub-agents: everything about spawn_subagents in one place. */
+@Composable
+fun SubAgentSettingsScreen(onBack: () -> Unit, vm: SettingsViewModel = hiltViewModel()) {
+    val P = com.verdroid.app.agent.subagents.SubAgentPolicy
+    val sa = vm.subAgents
+    val disabled by vm.toolPrefs.disabled.collectAsStateWithLifecycle()
+    val enabled = P.TOOL_NAME !in disabled
+    val models by vm.models.collectAsStateWithLifecycle()
+    val pin by sa.model.collectAsStateWithLifecycle()
+    val conc by sa.concurrency.collectAsStateWithLifecycle()
+    val perCall by sa.perCall.collectAsStateWithLifecycle()
+    val steps by sa.maxSteps.collectAsStateWithLifecycle()
+    val timeout by sa.timeoutSec.collectAsStateWithLifecycle()
+    val tools by sa.tools.collectAsStateWithLifecycle()
+    var pick by remember { mutableStateOf(false) }
+    @Composable fun slider(label: String, value: Int, range: IntRange, set: (Int) -> Unit) {
+        Text(label, style = MaterialTheme.typography.bodyLarge)
+        Slider(value = value.toFloat(), onValueChange = { set(Math.round(it)) }, enabled = enabled,
+            valueRange = range.first.toFloat()..range.last.toFloat(), steps = (range.last - range.first - 1).coerceAtLeast(0))
+    }
+    SubScreen("Sub-agents", onBack) { padding ->
+        Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("The agent can split broad research into tasks run in parallel by sub-agents (spawn_subagents). Sub-agents only get the " +
+                "read-only tools selected below, cannot start other sub-agents, and stop when the main task is cancelled.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Enable sub-agents", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                Switch(checked = enabled, onCheckedChange = { vm.toolPrefs.setEnabled(P.TOOL_NAME, it) })
+            }
+            Row(Modifier.fillMaxWidth().clickable(enabled = enabled) { pick = true }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Model", style = MaterialTheme.typography.bodyLarge)
+                    Text(pin?.let { com.verdroid.app.data.network.ModelIds.label(it.model) + if (it.allowFallback) " (+fallback)" else "" }
+                        ?: "Same as main model", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Text("Change", color = MaterialTheme.colorScheme.primary)
+            }
+            slider("Max concurrent: $conc (extra tasks wait in a queue)", conc, P.MIN_CONCURRENCY..P.MAX_CONCURRENCY, sa::setConcurrency)
+            slider("Max sub-agents per call: $perCall", perCall, 1..P.MAX_TASKS, sa::setPerCall)
+            slider("Max steps per sub-agent: $steps", steps, P.STEPS_RANGE, sa::setMaxSteps)
+            slider("Timeout per sub-agent: ${timeout}s", timeout, P.TIMEOUT_SEC_RANGE) { sa.setTimeoutSec((it / 30) * 30) }
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 12.dp)) {
+                Text("Tools sub-agents may use", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                TextButton(onClick = sa::resetTools) { Text("Default") }
+            }
+            Text("Read-only tools only; a tool also has to be on for the chat (Settings → Tools, Tool presets, profile).",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            com.verdroid.app.data.tools.ToolGroups.group(P.READ_ONLY_TOOLS.sorted()) { it }.forEach { (g, names) ->
+                Text(g.title, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp))
+                names.forEach { n ->
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Checkbox(checked = n in tools, onCheckedChange = { sa.setTool(n, it) }, enabled = enabled)
+                        Text(n, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodyMedium)
+                    }
+                }
+            }
+        }
+    }
+    if (pick) com.verdroid.app.ui.chat.ChatModelDialog(pin, models,
+        onPick = { sa.setModel(it); pick = false }, onUpdate = { sa.setModel(it) }, onDismiss = { pick = false },
+        title = "Sub-agent model", defaultLabel = "Same as main model (default)")
 }

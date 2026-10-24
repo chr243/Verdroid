@@ -70,6 +70,8 @@ class ChatViewModel @Inject constructor(
     /** Profiles: all profiles (the header picker only shows once there are 2+). */
     val profiles: StateFlow<List<com.verdroid.app.data.profiles.Profile>> = profileStore.profiles
 
+    val profilesEnabled: StateFlow<Boolean> = profileStore.enabled
+
     /** This chat's profile (a new chat: the active profile). */
     val chatProfile: StateFlow<com.verdroid.app.data.profiles.Profile> =
         combine(task, profileStore.activeId, profileStore.profiles) { t, active, list ->

@@ -32,7 +32,7 @@ class ToolsLayoutTest {
         assertFalse(ToolsLayout.allOff(listOf("web_search"), emptySet()) { it.startsWith("cookie_") })
         assertEquals("2 of 8 installed", ToolsLayout.installedLabel(2, 8))
         // group ids unchanged; X ToS warning still gates turning X tools on
-        assertEquals(listOf("files", "web", "twitter", "termux", "pdf", "system", "git", "crypto", "scheduling", "memory", "other", "mcp"), ToolGroups.ORDER.map { it.id })
+        assertEquals(listOf("files", "web", "twitter", "termux", "pdf", "system", "git", "crypto", "scheduling", "agents", "memory", "other", "mcp"), ToolGroups.ORDER.map { it.id })
         assertTrue(ToolGroups.needsTosWarning("twitter", false, true)); assertFalse(ToolGroups.needsTosWarning("twitter", true, true))
     }
 

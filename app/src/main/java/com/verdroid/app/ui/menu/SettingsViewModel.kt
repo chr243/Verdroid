@@ -26,6 +26,8 @@ class SettingsViewModel @Inject constructor(
     val appPrefs: com.verdroid.app.data.prefs.AppPrefs,
     private val kiloUsage: com.verdroid.app.data.network.KiloUsage,
     val updater: com.verdroid.app.data.update.AppUpdater,
+    val subAgents: com.verdroid.app.agent.subagents.SubAgentPrefs,
+    val toolPrefs: com.verdroid.app.data.tools.ToolPrefs,
 ) : ViewModel() {
     /** Kilo requests in the last hour (in-app counter, refreshed every 5 s while visible). */
     val kiloUsedThisHour: StateFlow<Int> = kotlinx.coroutines.flow.flow {

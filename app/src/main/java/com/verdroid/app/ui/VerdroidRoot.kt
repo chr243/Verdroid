@@ -56,6 +56,7 @@ object Routes {
     const val KEYS = "settings/keys"
     const val MODELS = "settings/models"
     const val LIMITS = "settings/limits"
+    const val SUBAGENTS = "settings/subagents"
     const val SHIZUKU = "shizuku"
     const val CHAT_HEADS = "settings/chatheads"
     const val KEEP_ALIVE = "settings/keepalive"
@@ -198,6 +199,7 @@ fun VerdroidRoot(
             composable(Routes.KEYS) { com.verdroid.app.ui.provider.ProviderScreen(onBack = { nav.popBackStack() }, initial = "openrouter", onOpenModels = { nav.navigate(Routes.MODELS) }) }
             composable(Routes.MODELS) { ModelPriorityScreen(onBack = { nav.popBackStack() }) }
             composable(Routes.LIMITS) { RateLimitSettingsScreen(onBack = { nav.popBackStack() }) }
+            composable(Routes.SUBAGENTS) { com.verdroid.app.ui.menu.SubAgentSettingsScreen(onBack = { nav.popBackStack() }) }
             composable(Routes.SHIZUKU) { DeviceControlScreen(onBack = { nav.popBackStack() }) }
             composable(Routes.KEEP_ALIVE) { KeepAliveScreen(onBack = { nav.popBackStack() }) }
             composable(Routes.SCHEDULES) {

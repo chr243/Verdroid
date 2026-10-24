@@ -210,7 +210,7 @@ fun ChatDetailScreen(onBack: () -> Unit, onChatMemory: (Long) -> Unit = {}, vm: 
                         if (showModel) {
                             val pin by vm.modelPin.collectAsStateWithLifecycle()
                             val global by vm.globalModels.collectAsStateWithLifecycle()
-                            ChatModelDialog(pin, global, onPick = { vm.setModelPin(it); showModel = false }, onUpdate = { vm.setModelPin(it) }) { showModel = false }
+                            ChatModelDialog(pin, global, onPick = { vm.setModelPin(it); showModel = false }, onUpdate = { vm.setModelPin(it) }, onDismiss = { showModel = false })
                         }
                         if (showPresets) {
                             val off by vm.presetOverrides.collectAsStateWithLifecycle()
@@ -227,7 +227,7 @@ fun ChatDetailScreen(onBack: () -> Unit, onChatMemory: (Long) -> Unit = {}, vm: 
                                         tosPending = { vm.setPreset(tw, true) }
                                     } else vm.setAllPresets(on)
                                 }, { showPresets = false }, profileLabel = vm.chatProfile.collectAsStateWithLifecycle().value.label,
-                                onReset = { vm.resetPresets() })
+                                onReset = { vm.resetPresets() }, profilesOn = vm.profilesEnabled.collectAsStateWithLifecycle().value)
                             tosPending?.let { act -> com.verdroid.app.ui.consent.TwitterTosDialog(onConfirm = { act(); tosPending = null }, onCancel = { tosPending = null }) }
                         }
                         Box {
@@ -398,13 +398,15 @@ internal fun ToolPresetsDialog(
     onDismiss: () -> Unit,
     profileLabel: String = "",
     onReset: () -> Unit = {},
+    /** Profiles off (ProfileStore.enabled=false): no profile label; the reset button reads "Reset to Settings". */
+    profilesOn: Boolean = true,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
         confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
-        dismissButton = { TextButton(onClick = onReset, enabled = off.isNotEmpty()) { Text("Reset to profile") } },
+        dismissButton = { TextButton(onClick = onReset, enabled = off.isNotEmpty()) { Text(toolPresetsResetLabel(profilesOn)) } },
         title = { Text("Tool presets") },
-        text = { ToolPresetsContent(off, global, onSet, onSetAll, profileLabel) },
+        text = { ToolPresetsContent(off, global, onSet, onSetAll, if (profilesOn) profileLabel else "", profilesOn) },
     )
 }
 
@@ -416,12 +418,12 @@ internal fun ToolPresetsContent(
     onSet: (com.verdroid.app.data.tools.ToolPreset, Boolean) -> Unit,
     onSetAll: (Boolean) -> Unit,
     profileLabel: String,
+    profilesOn: Boolean = true,
 ) {
             Column(Modifier.verticalScroll(rememberScrollState())) {
-                if (profileLabel.isNotBlank()) Text("From profile: $profileLabel", style = MaterialTheme.typography.labelLarge,
+                if (profilesOn && profileLabel.isNotBlank()) Text("From profile: $profileLabel", style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.primary)
-                Text("Starts from this chat's profile and Settings → Tools; changes here apply only to this chat. Memory & skills, " +
-                    "charts & other (incl. self-test) and MCP follow Settings.", style = MaterialTheme.typography.bodySmall,
+                Text(toolPresetsIntro(profilesOn), style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(8.dp))
                 PresetRow("All", "Every tool category", com.verdroid.app.data.tools.ToolPreset.allOn(off, global)) { onSetAll(it) }
@@ -553,6 +555,13 @@ internal fun ToolCallCard(call: ToolCallRecord) {
                 Spacer(Modifier.width(6.dp))
                 Text(if (expanded) "▲" else "▼", fontSize = 12.sp)
             }
+            if (call.name == com.verdroid.app.agent.subagents.SubAgentPolicy.TOOL_NAME) {
+                val live by com.verdroid.app.agent.subagents.SubAgentLive.progress.collectAsState()
+                val line = if (call.status == ToolCallStatus.PENDING) live[call.taskId]?.label ?: "Sub-agents starting…"
+                    else remember(call.resultJson) { com.verdroid.app.agent.subagents.SpawnSubagentsTool.summary(call.resultJson) }
+                line?.let { Text("🤖 $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp)) }
+            }
             if (call.name == com.verdroid.app.agent.tools.ChartTool.NAME && call.status == ToolCallStatus.SUCCESS) {
                 remember(call.resultJson) { com.verdroid.app.agent.tools.ChartSpecs.fromResult(call.resultJson) }
                     ?.let { (spec, png) -> com.verdroid.app.ui.chart.ChartCard(spec, png) }
@@ -613,17 +622,19 @@ internal fun AttachmentThumb(relativePath: String, size: androidx.compose.ui.uni
  * model id (OpenRouter free/paid, kilo:…, prov:<provider>:…). A pinned chat uses only that model unless "Allow fallback".
  */
 @Composable
-private fun ChatModelDialog(
+internal fun ChatModelDialog(
     pin: com.verdroid.app.data.settings.ModelPin?,
     global: List<String>,
     onPick: (com.verdroid.app.data.settings.ModelPin?) -> Unit,
     onUpdate: (com.verdroid.app.data.settings.ModelPin?) -> Unit,
     onDismiss: () -> Unit,
+    title: String = "Model for this chat",
+    defaultLabel: String = "Use global (default)",
 ) {
     var fallback by remember { mutableStateOf(pin?.allowFallback ?: false) }
     var custom by remember { mutableStateOf("") }
     AlertDialog(onDismissRequest = onDismiss,
-        title = { Text("Model for this chat") },
+        title = { Text(title) },
         text = {
             Column(Modifier.heightIn(max = 480.dp).verticalScroll(androidx.compose.foundation.rememberScrollState())) {
                 @Composable fun row(label: String, selected: Boolean, onClick: () -> Unit) {
@@ -632,7 +643,7 @@ private fun ChatModelDialog(
                         Text(label, style = MaterialTheme.typography.bodyMedium)
                     }
                 }
-                row("Use global (default)", pin == null) { onPick(null) }
+                row(defaultLabel, pin == null) { onPick(null) }
                 Text("Pin one model (only it is used; a failure shows an error instead of switching):",
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
                 (global + listOfNotNull(pin?.model)).distinct().forEach { m ->
@@ -655,3 +666,11 @@ private fun ChatModelDialog(
         },
         confirmButton = { TextButton(onClick = onDismiss) { Text("Close") } })
 }
+
+/** Intro text of the Tool presets dialog; never mentions profiles when they are off. */
+internal fun toolPresetsIntro(profilesOn: Boolean): String =
+    (if (profilesOn) "Starts from this chat's profile and Settings → Tools" else "Starts from Settings → Tools") +
+        "; changes here apply only to this chat. Memory & skills, charts & other (incl. self-test) and MCP follow Settings."
+
+/** Reset button of the Tool presets dialog: drops this chat's overrides (back to the profile, or Settings → Tools when Profiles are off). */
+internal fun toolPresetsResetLabel(profilesOn: Boolean): String = if (profilesOn) "Reset to profile" else "Reset to Settings"

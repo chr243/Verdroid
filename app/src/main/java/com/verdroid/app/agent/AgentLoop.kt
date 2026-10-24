@@ -531,6 +531,11 @@ class AgentLoop internal constructor(
               (battery optimisation, exact alarms). Scheduled runs have no user present: tools that need confirmation are
               blocked there (BLOCKED_IN_SCHEDULED_RUN) — never work around that; say what you'd like to do instead. x_post
               works in scheduled runs only when the user enabled Always allow for X posts (the post limit, if on, and the log still apply).
+            - Sub-agents: spawn_subagents runs several self-contained research tasks in parallel (read-only tools, own short
+              context each) and returns findings with sources. Use it for broad research that splits cleanly (several products,
+              sources or pages); not for one quick lookup or anything that changes files/devices. Combine and check the findings
+              yourself before answering. ALWAYS give each task a minimal "tools" list (only what it needs: a known site/URL →
+              ["web_fetch"]; general research → ["web_search","web_fetch"]); never hand sub-agents every tool.
             - Diagnostics: self_test runs safe on-device checks of every feature and returns a pass/fail/skip report
               (optional only="termux,pdf"). Use it when tools misbehave or the user asks what works on this phone.
             - Skills: skill_list, skill_get, skill_save, skill_edit, skill_delete. "Saved skills" below is only an index (name +

@@ -90,6 +90,21 @@ class OpenRouterClient @Inject constructor(
         return if (pin != null && !pin.allowFallback) PinnedOutcome.map(pin, ModelIds.label(pin.model), out) else out
     }
 
+    /**
+     * Sub-agents (spawn_subagents): [pin] = Settings → Sub-agent model or the call's model override; null = same models as
+     * the main agent of [parentTaskId] ([complete]). A pin without fallback uses only that model.
+     */
+    suspend fun completeSubAgent(
+        messages: List<ApiMessage>,
+        tools: JsonArray?,
+        parentTaskId: Long,
+        pin: com.verdroid.app.data.settings.ModelPin?,
+    ): ChatOutcome {
+        if (pin == null || pin.model.isBlank()) return complete(messages, tools, parentTaskId)
+        val global = settings.currentModels().ifEmpty { com.verdroid.app.domain.model.DefaultModels.list }
+        return completeWith(com.verdroid.app.data.settings.ModelPins.resolve(global, pin), messages, tools, parentTaskId) {}
+    }
+
     private suspend fun completeWith(
         models: List<String>,
         messages: List<ApiMessage>,
