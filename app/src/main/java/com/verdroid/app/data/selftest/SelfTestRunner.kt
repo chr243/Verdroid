@@ -523,7 +523,6 @@ class SelfTestRunner @Inject constructor(
             // Offline: the whole pipeline with a fake model and fake workers (no network, no model requests).
             tool(com.verdroid.app.agent.research.ResearchPolicy.TOOL_NAME)
             val R = com.verdroid.app.agent.research.ResearchPolicy
-            check(R.parseCommand("/deep solar panels")?.first == com.verdroid.app.agent.research.ResearchMode.DEEP) { "/deep command" }
             check(R.dedupe(listOf("https://www.a.com/x?utm_source=1", "https://a.com/x/", "https://www.google.com/search?q=a", "https://b.org/y"), 10) ==
                 listOf("https://www.a.com/x?utm_source=1", "https://b.org/y")) { "URL dedupe/filter" }
             fun ok(t: String) = com.verdroid.app.data.network.ChatOutcome.Success(
@@ -536,7 +535,7 @@ class SelfTestRunner @Inject constructor(
                 sleep = {},
             ).run("self-test topic", com.verdroid.app.agent.research.ResearchMode.STANDARD, com.verdroid.app.agent.research.ResearchLimits(2, 1, 10, 2))
             check(out.sources.size == 2 && !out.reportFallback && out.report.contains("## Sources")) { "pipeline: ${out.sources} fallback=${out.reportFallback}" }
-            "pipeline ok (plan → 2 workers → ${out.sources.size} deduped sources → report); /research + /deep commands"
+            "pipeline ok (plan → 2 workers → ${out.sources.size} deduped sources → report)"
         },
         "key_wipe_notice" to {
             check(com.verdroid.app.data.secure.KeyWipeNotice.message(setOf("Git token")).contains("Git token")) { "wipe message" }

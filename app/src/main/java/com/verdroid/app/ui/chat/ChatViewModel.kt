@@ -172,9 +172,7 @@ class ChatViewModel @Inject constructor(
     fun send(text: String) {
         val pending = _pendingAttach.value
         val raw = text.trim()
-        // /research <topic> · /deep <topic>: ask the agent to run deep_research (Settings → Sub-agents → Deep research)
-        val t = com.verdroid.app.agent.research.ResearchPolicy.parseCommand(raw)?.let { (m, topic) ->
-            com.verdroid.app.agent.research.ResearchPolicy.commandMessage(m, topic) } ?: raw
+        val t = raw
         if (t.isEmpty() && pending == null) return
         if (task.value?.archived == true) return
         val body = if (pending != null) ChatAttachment.messagePrefix(pending) + t.ifEmpty { ChatAttachment.DEFAULT_PROMPT } else t

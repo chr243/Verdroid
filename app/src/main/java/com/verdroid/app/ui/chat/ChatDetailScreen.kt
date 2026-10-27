@@ -247,11 +247,6 @@ fun ChatDetailScreen(onBack: () -> Unit, onChatMemory: (Long) -> Unit = {}, vm: 
                                 DropdownMenuItem(text = { Text("Tool presets") }, onClick = {
                                     overflow = false; showPresets = true
                                 })
-                                DropdownMenuItem(text = { Text("Deep research…") }, onClick = {
-                                    overflow = false
-                                    if (!input.trimStart().startsWith("/")) input = "/research " + input.trimStart()
-                                    Toast.makeText(context, "Type a topic after /research (or /deep for the deep mode) and send.", Toast.LENGTH_LONG).show()
-                                })
                             }
                         }
                     }

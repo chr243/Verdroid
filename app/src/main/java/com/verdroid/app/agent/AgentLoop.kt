@@ -538,7 +538,7 @@ class AgentLoop internal constructor(
               ["web_fetch"]; general research → ["web_search","web_fetch"]); never hand sub-agents every tool.
             - Deep research: deep_research(topic, mode="standard"|"deep") writes a long cited Markdown report from many web
               sources (parallel workers, saved to Documents/Verdroid/Output/Research). Use it when the user asks for research /
-              a report / an in-depth comparison or sends /research or /deep; call it ONCE per topic, then show the report
+              a report / an in-depth comparison; pick mode="deep" when they say deep/thorough/exhaustive, else "standard"; call it ONCE per topic, then show the report
               (key sections if very long) and the saved path. Not for quick facts.
             - Diagnostics: self_test runs safe on-device checks of every feature and returns a pass/fail/skip report
               (optional only="termux,pdf"). Use it when tools misbehave or the user asks what works on this phone.

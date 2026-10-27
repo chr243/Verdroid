@@ -69,7 +69,7 @@ fun SettingsScreen(onNavigate: (String) -> Unit, onBack: () -> Unit, unreadNotif
             ))
             SettingsGroup("Agent tools", listOf(
                 item("Tools", "Built-in agent tools (status, on/off), Documents/Verdroid folder access, Termux setup and add-ons", Routes.TOOLS),
-                item("Sub-agents", "Parallel read-only research (spawn_subagents) and Deep research (/research, /deep): on/off, models, concurrency, limits, tools", Routes.SUBAGENTS),
+                item("Sub-agents", "Parallel read-only research (spawn_subagents) and Deep research (deep_research tool): on/off, models, concurrency, limits, tools", Routes.SUBAGENTS),
                 item("Profiles", "On/off (on by default). Switchable bundles of tools, skills, model, instructions and memory; filter chats by profile", Routes.PROFILES),
                 item("AGENTS.md", "Your standing instructions for the agent, added to every chat", Routes.AGENTS_MD),
                 item("Skills", "Procedures the agent saved: enable/disable (only enabled ones go into the prompt), view, delete", Routes.SKILLS),
@@ -385,8 +385,8 @@ fun SubAgentSettingsScreen(onBack: () -> Unit, vm: SettingsViewModel = hiltViewM
             slider("Timeout per sub-agent: ${timeout}s", timeout, P.TIMEOUT_SEC_RANGE) { sa.setTimeoutSec((it / 30) * 30) }
             Text("Deep research", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 12.dp))
             Text("deep_research plans sub-questions with the main model, runs parallel workers (web_search + web_fetch) on the worker " +
-                "model, dedupes and filters URLs, then writes a long cited report to Documents/Verdroid/Output/Research. In a chat send " +
-                "/research <topic> (standard) or /deep <topic>, or pick ⋮ → Deep research…. Stop cancels every worker.",
+                "model, dedupes and filters URLs, then writes a long cited report to Documents/Verdroid/Output/Research. The agent calls it " +
+                "when you ask for research or a report (say \"deep\" or \"thorough\" for deep mode). Stop cancels every worker.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Enable deep research", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))

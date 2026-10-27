@@ -27,7 +27,7 @@ class DeepResearchTool(private val backend: DeepResearchBackend) : AgentTool {
             "Documents/Verdroid/Output/Research/. Plans sub-questions, runs parallel sub-agent workers (web_search + web_fetch) that read and " +
             "summarize many pages, filters/dedupes URLs, then writes the report. mode=standard (~25 sources, one round, a few minutes) or " +
             "mode=deep (more sub-questions, follow-up rounds, up to ~100 sources, slow). Use it when the user asks for research, a report or an " +
-            "in-depth comparison, or sends /research or /deep; not for a quick fact. Call it once per topic; after it returns, show the user " +
+            "in-depth comparison; choose mode=deep when they ask for deep/thorough/exhaustive/comprehensive research, otherwise standard. Not for a quick fact. Call it once per topic; after it returns, show the user " +
             "the report (or its key sections if very long) and the saved file path. Never call it again for the same topic in a loop."
     override val parameters: JsonObject = buildJsonObject {
         put("type", "object")

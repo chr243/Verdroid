@@ -16,7 +16,7 @@ object ToolGroups {
         Group("git", "Git", "Repos in Documents/Verdroid/Repos (git_*, built-in JGit)"),
         Group("crypto", "Crypto backtesting", "Backtesting: history download, backtests, scripts"),
         Group("scheduling", "Scheduling", "Reminders and scheduled agent runs (schedule_*): once, daily or every N minutes; manage in Settings → Schedules"),
-        Group("agents", "Sub-agents & research", "spawn_subagents: parallel research tasks with read-only tools; deep_research: long cited reports (/research, /deep); configure in Settings → Sub-agents"),
+        Group("agents", "Sub-agents & research", "spawn_subagents: parallel research tasks with read-only tools; deep_research: long cited web research reports (standard/deep); configure in Settings → Sub-agents"),
         Group("memory", "Memory & skills", "memory_*, skill_*"),
         Group("other", "Charts & other", "chart, self_test"),
         Group("mcp", "MCP servers", "Tools from your MCP servers (mcp__*)"),

@@ -24,16 +24,6 @@ class DeepResearchTest {
     private fun ok(t: String) = ChatOutcome.Success(ParsedCompletion(t, emptyList(), "stop", "m"), "m", "k")
     private fun res(i: Int, vararg urls: String) = SubAgentResult(i, "t", SubAgentResult.Status.OK, "### P$i\nURL: ${urls.firstOrNull()}\n- fact $i", sources = urls.toList())
 
-    @Test fun commands() {
-        assertEquals(ResearchMode.STANDARD to "solar panels", ResearchPolicy.parseCommand("/research solar panels"))
-        assertEquals(ResearchMode.DEEP to "solar panels", ResearchPolicy.parseCommand("/deep solar panels"))
-        assertEquals(ResearchMode.DEEP to "x y", ResearchPolicy.parseCommand("/research deep x y"))
-        assertNull(ResearchPolicy.parseCommand("/research"))
-        assertNull(ResearchPolicy.parseCommand("research this"))
-        assertNull(ResearchPolicy.parseCommand("/researcher x"))
-        assertTrue(ResearchPolicy.commandMessage(ResearchMode.DEEP, "t").contains("mode=\"deep\""))
-    }
-
     @Test fun urlFilterAndDedupe() {
         assertFalse(ResearchPolicy.usable("https://www.google.com/search?q=x"))
         assertFalse(ResearchPolicy.usable("https://www.pinterest.com/pin/1"))

@@ -167,20 +167,6 @@ object ResearchPolicy {
         val slug = topic.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-').take(50).trimEnd('-').ifEmpty { "research" }
         return "$stamp-$slug.md"
     }
-
-    /** "/research topic" → standard, "/deep topic" or "/research deep topic" → deep; anything else → null. */
-    fun parseCommand(text: String): Pair<ResearchMode, String>? {
-        val t = text.trim()
-        val m = Regex("""^/(research|deepresearch|deep)\b\s*(.*)$""", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)).find(t) ?: return null
-        var rest = m.groupValues[2].trim()
-        var mode = if (m.groupValues[1].lowercase() == "research") ResearchMode.STANDARD else ResearchMode.DEEP
-        Regex("""^(deep|standard)\b\s*""", RegexOption.IGNORE_CASE).find(rest)?.let { mode = ResearchMode.of(it.groupValues[1]); rest = rest.substring(it.range.last + 1).trim() }
-        return if (rest.isEmpty()) null else mode to rest
-    }
-
-    /** The message the agent sees for a /research command (the user's text stays readable in the chat). */
-    fun commandMessage(mode: ResearchMode, topic: String): String =
-        "Deep research (${mode.id} mode): $topic\n\n[Call the $TOOL_NAME tool with mode=\"${mode.id}\" and this topic, then show the report to me.]"
 }
 
 /** Live progress of a deep_research run (chat card + task subtitle). */
