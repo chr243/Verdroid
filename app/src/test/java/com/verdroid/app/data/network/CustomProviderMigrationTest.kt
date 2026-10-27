@@ -33,4 +33,34 @@ class CustomProviderMigrationTest {
         CustomProviderStore.migrate(prefs, secure)
         assertTrue(prefs.all.isEmpty() && secure.all.isEmpty())
     }
+
+    @Test fun v2KeysBecomeKeyListsAndCustomSlotIsKept() {
+        val prefs = p("cp3"); val secure = p("cps3")
+        prefs.edit().putString("base_custom", "https://my.example/v1").putString("base_groq", "https://api.groq.com/openai/v1").commit()
+        secure.edit().putString("key_groq", "gsk_1").putString("key_custom", "sk_c").commit()
+        CustomProviderStore.migrateV2(prefs, secure)
+        assertEquals(listOf("gsk_1"), CustomProviderStore.readKeys(secure, "groq").map { it.key })
+        assertEquals(listOf("sk_c"), CustomProviderStore.readKeys(secure, "custom").map { it.key })
+        assertFalse(secure.contains("key_groq")); assertFalse(secure.contains("key_custom"))
+        assertEquals(listOf("custom"), CustomProviderStore.readCustoms(prefs).map { it.id })
+        assertEquals("https://my.example/v1", prefs.getString("base_custom", null))
+        CustomProviderStore.migrateV2(prefs, secure) // idempotent
+        assertEquals(1, CustomProviderStore.readKeys(secure, "groq").size)
+        assertEquals(1, CustomProviderStore.readCustoms(prefs).size)
+    }
+
+    @Test fun v1ThenV2FromOldestLayout() {
+        val prefs = p("cp4"); val secure = p("cps4")
+        prefs.edit().putString("preset", "deepseek").commit(); secure.edit().putString("key", "ds_1").commit()
+        CustomProviderStore.migrate(prefs, secure); CustomProviderStore.migrateV2(prefs, secure)
+        assertEquals(listOf("ds_1"), CustomProviderStore.readKeys(secure, "deepseek").map { it.key })
+        assertTrue(CustomProviderStore.readCustoms(prefs).isEmpty())
+    }
+
+    @Test fun v2FreshInstallHasNoCustoms() {
+        val prefs = p("cp5"); val secure = p("cps5")
+        CustomProviderStore.migrateV2(prefs, secure)
+        assertTrue(CustomProviderStore.readCustoms(prefs).isEmpty())
+        assertTrue(secure.all.isEmpty())
+    }
 }

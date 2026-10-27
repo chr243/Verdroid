@@ -99,6 +99,8 @@ class CooldownTracker @Inject constructor(
     @Synchronized fun blockKey(keyId: String, until: Long) { keys[keyId] = until; persist() }
     @Synchronized fun keyUntil(keyId: String): Long = keys[keyId] ?: 0
     @Synchronized fun clear() { models.clear(); keys.clear(); persist() }
+    /** Settings → key status → Reset: the key and its model cooldowns become usable again. */
+    @Synchronized fun unblockKey(keyId: String) { keys.remove(keyId); models.keys.removeAll { it.startsWith("$keyId|") }; persist() }
 
     /** Snapshot for the UI (model cooldown pool). */
     @Synchronized fun snapshot(): Pair<Map<String, Long>, Map<String, Long>> {

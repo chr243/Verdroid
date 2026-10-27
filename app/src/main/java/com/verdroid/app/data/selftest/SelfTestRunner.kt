@@ -41,6 +41,7 @@ class SkipCheck(reason: String) : Exception(reason)
 class SelfTestRunner @Inject constructor(
     @ApplicationContext private val context: Context,
     private val registry: ToolRegistry,
+    private val keyHealth: com.verdroid.app.data.network.KeyHealthTracker,
     private val settings: com.verdroid.app.domain.repository.SettingsRepository,
     private val agentsMd: com.verdroid.app.data.instructions.AgentsMdStore,
     private val memory: com.verdroid.app.data.memory.MemoryRepository,
@@ -136,7 +137,7 @@ class SelfTestRunner @Inject constructor(
             val or = get("https://openrouter.ai/api/v1/models")
             val kilo = runCatching { get("https://api.kilo.ai/api/gateway/models") }.getOrElse { -1 }
             check(or in 200..299) { "OpenRouter models HTTP $or" }
-            val configured = com.verdroid.app.data.network.ProviderPresets.ALL.filter { customStore.isConfigured(it.id) }
+            val configured = customStore.allProviders().filter { customStore.isConfigured(it.id) }
             val custom = if (configured.isEmpty()) "no other providers set up" else buildList {
                 for (p in configured) add(customLlm.listModels(p.id).fold({ "${p.shortName}: ${it.size} models" }, { e ->
                     // A local server (Ollama/LM Studio/LAN) that is simply off is skipped, not failed.
@@ -537,6 +538,26 @@ class SelfTestRunner @Inject constructor(
             ).run("self-test topic", com.verdroid.app.agent.research.ResearchMode.STANDARD, com.verdroid.app.agent.research.ResearchLimits(2, 1, 10, 2))
             check(out.sources.size == 2 && !out.reportFallback && out.report.contains("## Sources")) { "pipeline: ${out.sources} fallback=${out.reportFallback}" }
             "pipeline ok (plan → 2 workers → ${out.sources.size} deduped sources → report); /research + /deep commands"
+        },
+        "key_rotation" to {
+            // Offline: Retry-After parsing, backoff, key rotation, model lock, circuit breaker (fake clock, no requests).
+            check(com.verdroid.app.data.network.RetryAfter.parse({ if (it.equals("Retry-After", true)) "7" else null }, null, 0) == 7_000L) { "Retry-After header" }
+            check(com.verdroid.app.data.network.RetryAfter.fromBody("{\"error\":{\"details\":[{\"retryDelay\":\"33s\"}]}}") == 33_000L) { "retryDelay in body" }
+            check(com.verdroid.app.data.network.KeyPolicy.backoff(1) == com.verdroid.app.data.network.KeyPolicy.BACKOFF_BASE_MS && com.verdroid.app.data.network.KeyPolicy.backoff(40) == com.verdroid.app.data.network.KeyPolicy.BACKOFF_MAX_MS) { "backoff cap" }
+            var t = 1_000L
+            val h = com.verdroid.app.data.network.KeyHealth(clock = { t })
+            h.onFailure("s", "a", "m", com.verdroid.app.data.network.KeyFault.RATE_LIMIT, "429", retryAfterMs = 60_000)
+            check(h.order("s", listOf("a", "b"), { it }, false) == listOf("b")) { "rate-limited key skipped" }
+            h.onFailure("s", "b", "m", com.verdroid.app.data.network.KeyFault.MODEL, "no such model")
+            check(h.order("s", listOf("a", "b"), { it }, false) == listOf("b") && "m" in h.status("s", "b").modelLocks) { "model lock is per model" }
+            t += 61_000
+            check(h.order("s", listOf("a", "b"), { it }, false) == listOf("a", "b")) { "key back after Retry-After" }
+            val br = com.verdroid.app.data.network.CircuitBreaker(clock = { t }); repeat(3) { br.failure("p") }
+            check(!br.allow("p")) { "breaker opens after 3 failures" }
+            t += 31_000; check(br.allow("p")) { "breaker half-open" }
+            val tr = keyHealth.breaker.openProviders()
+            "rotation/backoff/Retry-After/breaker OK; round-robin ${if (keyHealth.roundRobin.value) "on" else "off"}, strict order ${if (keyHealth.strictOrder.value) "on" else "off"}" +
+                if (tr.isEmpty()) "" else "; skipping: " + tr.keys.joinToString()
         },
         "key_wipe_notice" to {
             check(com.verdroid.app.data.secure.KeyWipeNotice.message(setOf("Git token")).contains("Git token")) { "wipe message" }
