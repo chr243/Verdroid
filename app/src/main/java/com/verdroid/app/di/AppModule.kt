@@ -161,7 +161,7 @@ object AppModule {
         ) +
             // Shizuku shell, Termux (RUN_COMMAND), JGit, Accessibility
             listOf(
-                RunShellTool(shell, sandbox), TermuxRunTool(termux), RishRunTool(rishStore, rishRunner, shell),
+                RunShellTool(shell, sandbox), TermuxRunTool(termux) { sharedFolder.takeIf { it.hasAccess() }?.let { java.io.File(it.internal, ".live") } }, RishRunTool(rishStore, rishRunner, shell),
                 // Headless Chromium + Selenium inside Termux, and the agent's own Python scrapers (scripts stay in filesDir/workspace)
                 SeleniumOpenTool(termux, sharedFolder), SeleniumPageSourceTool(termux, sharedFolder),
                 SeleniumScreenshotTool(termux, sharedFolder), TermuxPythonTool(termux, sandbox, cookieVault),

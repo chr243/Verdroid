@@ -573,6 +573,10 @@ internal fun ToolCallCard(call: ToolCallRecord) {
                 if (call.status != ToolCallStatus.PENDING) FailedWorkersList(remember(call.resultJson) {
                     com.verdroid.app.agent.research.DeepResearchTool.failedWorkers(call.resultJson) })
             }
+            if (call.name == "termux_run" && call.status == ToolCallStatus.PENDING) {
+                val live by com.verdroid.app.agent.tools.TermuxLive.live.collectAsState()
+                live[call.taskId]?.let { LiveOutputView(it) }
+            }
             if (call.name == com.verdroid.app.agent.tools.ChartTool.NAME && call.status == ToolCallStatus.SUCCESS) {
                 remember(call.resultJson) { com.verdroid.app.agent.tools.ChartSpecs.fromResult(call.resultJson) }
                     ?.let { (spec, png) -> com.verdroid.app.ui.chart.ChartCard(spec, png) }
@@ -585,6 +589,31 @@ internal fun ToolCallCard(call: ToolCallRecord) {
                     CodeBlock("arguments", pretty(call.argumentsJson), if (call.name == "run_shell") "json" else null)
                     CodeBlock("result", pretty(call.resultJson).ifEmpty { "…running" }, null)
                 }
+            }
+        }
+    }
+}
+
+/** Live termux_run output: elapsed time + last lines (tap for up to 200), auto-scrolled to the newest line. */
+@Composable
+private fun LiveOutputView(o: com.verdroid.app.agent.tools.LiveOutput) {
+    var open by remember { mutableStateOf(false) }
+    val L = com.verdroid.app.agent.tools.LiveOutput
+    val quietS = (o.quietMs / 1000).toInt()
+    Column(Modifier.padding(top = 4.dp)) {
+        Text("⏱ " + L.duration((o.elapsedMs / 1000).toInt()) +
+            (if (o.lines.isEmpty()) " · no output yet" else " · ${o.lines.size} line${if (o.lines.size == 1) "" else "s"}") +
+            (if (quietS >= 30) " · quiet ${L.duration(quietS)} (stops after ${L.duration(o.idleLimitS)})" else "") +
+            (if (o.lines.size > L.COLLAPSED_LINES) if (open) " ▲" else " ▼" else ""),
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.clickable { open = !open })
+        if (o.lines.isNotEmpty()) {
+            val shown = if (open) o.lines else o.lines.takeLast(L.COLLAPSED_LINES)
+            val scroll = rememberScrollState()
+            LaunchedEffect(shown.size, shown.lastOrNull(), open) { scroll.scrollTo(scroll.maxValue) }
+            Box(Modifier.fillMaxWidth().padding(top = 4.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surface)
+                .heightIn(max = if (open) 320.dp else 200.dp).verticalScroll(scroll).padding(8.dp)) {
+                Text(shown.joinToString("\n"), fontFamily = FontFamily.Monospace, fontSize = 11.sp, lineHeight = 14.sp)
             }
         }
     }

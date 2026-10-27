@@ -40,7 +40,7 @@ class TermuxRunToolTest {
         val (cmd, timeoutMs) = t.commands.single()
         assertTrue(cmd, cmd.contains("timeout -k 5 30 bash -lc 'echo '\\''hi'\\''' </dev/null"))
         assertTrue(cmd.startsWith(TermuxRunTool.WORKDIR))
-        assertEquals(45_000L, timeoutMs)
+        assertEquals((30 + 60 + 30) * 1_000L, timeoutMs)
     }
 
     @Test fun `clear errors for missing Termux, permission, no answer and timeouts`() = runTest {
@@ -53,7 +53,7 @@ class TermuxRunToolTest {
         assertTrue(TermuxRunTool(t).execute(args("")).contains("command is required"))
         t.answer = { tag -> TermuxResult(tag, "", "", 124, -1, null) }
         assertTrue(TermuxRunTool(t).execute(args("sleep 999", 9999)).contains("\"timed_out\":true"))
-        assertEquals(615_000L, t.commands.last().second) // capped at 600 s + grace
+        assertEquals((1800 + 60 + 30) * 1_000L, t.commands.last().second) // capped at 1800 s + grace
         t.answer = { tag -> TermuxResult(tag, "", "", null, 2, "Bad path") }
         assertTrue(TermuxRunTool(t).execute(args("ls")).contains("Bad path"))
     }
@@ -122,5 +122,46 @@ class TermuxRunToolTest {
         assertTrue(TermuxRunTool(t).description.contains("/storage/emulated"))
         assertTrue(TermuxPythonTool.command("a.py", "import subprocess; subprocess.run(['git','status'])".toByteArray(), emptyList(), 30)
             .contains(TermuxRunTool.GIT_WORKDIR))
+    }
+
+    @Test fun `idle watchdog stops a silent command and keeps the output so far`() {
+        val t0 = System.nanoTime()
+        val (out, err, rc) = runLikeTermux(TermuxRunTool.script("echo started; sleep 60", 60, idleS = 2))
+        assertTrue((System.nanoTime() - t0) / 1e9 < 15)
+        assertEquals(124, rc); assertEquals("started\n", out); assertTrue(err, err.contains(TermuxRunTool.IDLE_MARK))
+        val o = Json.parseToJsonElement(TermuxRunTool.result(rc, out, err, 60, 300)).jsonObject
+        val e = o["error"]!!.jsonPrimitive.content
+        assertTrue(e, e.startsWith("Timed out after 5 min with no output") && e.contains("Last lines: started"))
+        assertFalse(o["stderr"]!!.jsonPrimitive.content.contains("__VERDROID"))
+    }
+
+    @Test fun `a command that keeps printing is not idle-killed`() {
+        val (out, _, rc) = runLikeTermux(TermuxRunTool.script("for i in 1 2 3 4 5; do echo \$i; sleep 1; done", 60, idleS = 3))
+        assertEquals(0, rc); assertEquals("1\n2\n3\n4\n5\n", out)
+    }
+
+    @Test fun `live files are written while running and a stop file kills the command`() {
+        val dir = java.nio.file.Files.createTempDirectory("live").toFile()
+        val base = java.io.File(dir, "run-1").path
+        var rc = -2
+        val th = Thread { rc = runLikeTermux(TermuxRunTool.script("echo one; echo two >&2; sleep 60", 120, 300, base)).third }.apply { start() }
+        val deadline = System.currentTimeMillis() + 10_000
+        while (System.currentTimeMillis() < deadline && !java.io.File("$base.err").let { it.exists() && it.length() > 0 }) Thread.sleep(100)
+        val live = LiveOutput.read(java.io.File("$base.out"), java.io.File("$base.err"), System.currentTimeMillis() - 3_000, 300)
+        assertEquals(listOf("one", "! two"), live.lines); assertTrue(live.elapsedMs >= 3_000)
+        java.io.File("$base.stop").writeText("stop")
+        th.join(15_000)
+        assertEquals(124, rc)
+        assertTrue(dir.listFiles()!!.isEmpty()) // wrapper cleans its own files
+        dir.deleteRecursively()
+    }
+
+    @Test fun `overall cap error, live tail helpers and durations`() {
+        val e = Json.parseToJsonElement(TermuxRunTool.result(124, "a\nb\n", "", 90, 300)).jsonObject["error"]!!.jsonPrimitive.content
+        assertTrue(e, e.startsWith("Timed out after 1 min 30 s (timeout_seconds cap)") && e.endsWith("a\nb"))
+        assertNull(Json.parseToJsonElement(TermuxRunTool.result(0, "ok", "", 90, 300)).jsonObject["error"])
+        assertEquals(listOf("50%", "done"), LiveOutput.lastLines("10%\r50%\n\ndone\n", 5))
+        assertEquals("42 s", LiveOutput.duration(42)); assertEquals("5 min", LiveOutput.duration(300))
+        assertTrue(LiveOutput.read(java.io.File("/nonexistent/a"), java.io.File("/nonexistent/b"), 0, 300, now = 1_000).lines.isEmpty())
     }
 }

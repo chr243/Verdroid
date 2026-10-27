@@ -454,7 +454,10 @@ class SelfTestRunner @Inject constructor(
             check(W.gitHostNote(404, "github.com") != null && W.gitHostNote(404, "example.com") == null && W.gitHostNote(200, "github.com") == null) { "web_fetch 404 note" }
             val R = com.verdroid.app.agent.tools.TermuxRunTool
             check(R.script("git status", 10).startsWith(R.GIT_WORKDIR) && R.script("ls", 10).startsWith(R.WORKDIR)) { "git cwd must be Termux home" }
-            "git 401/403/404 mapping, web_fetch note, git cwd in Termux home"
+            check(R.script("ls", 10, 300, "/x/run-1").let { "/x/run-1'.stop" in it && "-ge 300" in it }) { "termux_run live files + idle watchdog" }
+            check(R.result(124, "a", "${R.IDLE_MARK}\n", 10, 300).let { "no output" in it && "__VERDROID" !in it }) { "idle timeout error" }
+            check(com.verdroid.app.agent.tools.LiveOutput.lastLines("1%\r9%\nx\n", 5) == listOf("9%", "x")) { "live tail lines" }
+            "git 401/403/404 mapping, web_fetch note, git cwd in Termux home, termux_run live output + idle timeout"
         },
         "git_repos" to {
             // Temp copies of the real layout (shared Documents/Verdroid + private workspace) in the cache dir; nothing real is touched.
