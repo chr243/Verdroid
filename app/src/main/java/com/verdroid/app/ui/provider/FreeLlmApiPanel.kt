@@ -57,7 +57,12 @@ class FreeLlmApiViewModel @Inject constructor(
         _busy.value = false
     }
 
-    fun start() = bg(FreeLlmApi.startScript(), "fla-start", 15_000) { FreeLlmApi.startMessage(it) }
+    fun startInTerminal() {
+        termuxProblem()?.let { _note.value = it; return }
+        _note.value = if (termux.runInTerminal(FreeLlmApi.startInTerminalScript(), "FreeLLMAPI"))
+            "Running in a Termux window. Keep it open, then tap Check status." else "Couldn't open Termux."
+    }
+    fun start() = bg(FreeLlmApi.startScript(), "fla-start", 30_000) { FreeLlmApi.startMessage(it) }
     fun stop() = bg(FreeLlmApi.stopScript(), "fla-stop", 15_000) {
         _status.value = "Not running"; if (it?.contains(FreeLlmApi.STOPPED) == true) "Stopped." else "Stop: Termux didn't answer."
     }
@@ -93,6 +98,7 @@ fun FreeLlmApiPanel(open: (String) -> Unit, vm: FreeLlmApiViewModel = hiltViewMo
     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         Button(enabled = !busy, onClick = vm::install) { Text("Install / Update in Termux") }
         OutlinedButton(enabled = !busy, onClick = { vm.start() }) { Text("Start") }
+        OutlinedButton(enabled = !busy, onClick = vm::startInTerminal) { Text("Start in Termux window") }
         OutlinedButton(enabled = !busy, onClick = { vm.stop() }) { Text("Stop") }
         OutlinedButton(onClick = { open(FreeLlmApi.DASHBOARD_URL) }) { Text("Open dashboard") }
         TextButton(onClick = { vm.check() }) { Text("Check status") }

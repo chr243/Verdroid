@@ -57,24 +57,72 @@ read -r _
 """.trimStart()
 
     /** Background start (dev mode, the only documented way; dashboard + API both on localhost). */
+    const val DIED = "FREELLMAPI_DIED"
+
+    /**
+     * Full Termux environment: background RUN_COMMAND sessions may lack PATH/TMPDIR and termux-exec (LD_PRELOAD),
+     * without which `#!/usr/bin/env node` shebangs fail with "not found".
+     */
+    private val ENV = """
+export PREFIX=/data/data/com.termux/files/usr HOME=/data/data/com.termux/files/home
+export TMPDIR="${'$'}PREFIX/tmp" LANG="${'$'}{LANG:-en_US.UTF-8}"
+export PATH="${'$'}D/node_modules/.bin:${'$'}PREFIX/bin:${'$'}PATH"
+if [ -z "${'$'}LD_PRELOAD" ]; then for f in "${'$'}PREFIX/lib/libtermux-exec-ld-preload.so" "${'$'}PREFIX/lib/libtermux-exec.so"; do [ -f "${'$'}f" ] && { export LD_PRELOAD="${'$'}f"; break; }; done; fi
+export npm_config_script_shell="${'$'}PREFIX/bin/bash" SHELL="${'$'}PREFIX/bin/bash"
+unset NODE_ENV npm_config_production npm_config_omit
+""".trimStart()
+
+    /** Same as the repo's `npm run dev`, but the top-level concurrently runs via `node` explicitly (no shebang). */
+    private val DEV_CMD = """
+cj=${'$'}(node -p 'const p=require("./node_modules/concurrently/package.json");typeof p.bin=="string"?p.bin:(p.bin.concurrently||p.bin.conc)' 2>/dev/null)
+if [ -n "${'$'}cj" ] && [ -f "node_modules/concurrently/${'$'}cj" ]; then set -- node "node_modules/concurrently/${'$'}cj"; else set -- npx --no-install concurrently; fi
+""".trimStart()
+    private const val DEV_ARGS = "--kill-others-on-fail --names server,client \"npm run dev -w server\" \"npm run dev -w client\""
+
+    private val DIAG = """
+{ echo "== start ${'$'}(date)"; echo "uid=${'$'}(id -u) PATH=${'$'}PATH"; echo "LD_PRELOAD=${'$'}LD_PRELOAD"
+  for c in node npm sh bash; do echo "${'$'}c: ${'$'}(command -v ${'$'}c)"; done; node --version
+  ls -la node_modules/.bin/concurrently; echo "target: ${'$'}(readlink -f node_modules/.bin/concurrently)"
+  echo "head: ${'$'}(head -c 80 node_modules/.bin/concurrently | head -n 1)"; ls -la /usr/bin/env 2>&1
+  echo "cmd: ${'$'}* $DEV_ARGS"; echo "=="; } > "${'$'}L/server.log" 2>&1
+""".trimStart()
+
+    /** Background start: full env, diagnostics, then checks after 5 s that it's still alive. */
     fun startScript(): String = PRELUDE + """
 [ -f "${'$'}D/package.json" ] && [ -x "${'$'}D/node_modules/.bin/concurrently" ] || { echo $NOT_INSTALLED; exit 3; }
 p=${'$'}(cat "${'$'}L/server.pid" 2>/dev/null)
 if [ -n "${'$'}p" ] && kill -0 "${'$'}p" 2>/dev/null; then echo $ALREADY_RUNNING; exit 0; fi
+""" + ENV + """
 termux-wake-lock 2>/dev/null
 cd "${'$'}D" || exit 1
-unset NODE_ENV npm_config_production npm_config_omit
-echo "== start ${'$'}(date)" > "${'$'}L/server.log"
-if command -v setsid >/dev/null; then setsid nohup npm run dev >>"${'$'}L/server.log" 2>&1 </dev/null &
-else nohup npm run dev >>"${'$'}L/server.log" 2>&1 </dev/null & fi
-echo ${'$'}! > "${'$'}L/server.pid"
-echo $STARTED
+""" + DEV_CMD + DIAG + """
+if command -v setsid >/dev/null; then setsid nohup "${'$'}@" $DEV_ARGS >>"${'$'}L/server.log" 2>&1 </dev/null &
+else nohup "${'$'}@" $DEV_ARGS >>"${'$'}L/server.log" 2>&1 </dev/null & fi
+pid=${'$'}!
+echo ${'$'}pid > "${'$'}L/server.pid"
+sleep 5
+if kill -0 ${'$'}pid 2>/dev/null; then echo $STARTED; else echo $DIED; tail -n 15 "${'$'}L/server.log"; fi
+""".trimStart()
+
+    /** Fallback: foreground in a visible Termux window (the interactive env reliably works); window stays open. */
+    fun startInTerminalScript(): String = PRELUDE + """
+if [ ! -x "${'$'}D/node_modules/.bin/concurrently" ]; then echo "FreeLLMAPI isn't fully installed. Run Install / Update in Verdroid."; echo "Press Enter to close."; read -r _; exit 3; fi
+""" + ENV + """
+termux-wake-lock 2>/dev/null
+cd "${'$'}D" || exit 1
+""" + DEV_CMD + DIAG + """
+echo "Running FreeLLMAPI here. Keep this window open; press Ctrl+C to stop."
+"${'$'}@" $DEV_ARGS 2>&1 | tee -a "${'$'}L/server.log"
+termux-wake-unlock 2>/dev/null
+echo; echo "FreeLLMAPI stopped (see above). Press Enter to close this window."
+read -r _
 """.trimStart()
 
     fun stopScript(): String = PRELUDE + """
 p=${'$'}(cat "${'$'}L/server.pid" 2>/dev/null)
 [ -n "${'$'}p" ] && { kill -- -"${'$'}p" 2>/dev/null || kill "${'$'}p" 2>/dev/null; }
 pkill -f "${'$'}D/node_modules" 2>/dev/null
+pkill -f "concurrently.* --names server,client" 2>/dev/null
 : > "${'$'}L/server.pid"
 termux-wake-unlock 2>/dev/null
 echo $STOPPED
@@ -89,6 +137,8 @@ echo $STOPPED
         stdout == null -> "Termux didn't answer. Is Termux set up (Settings → Tools → Termux)?"
         NOT_INSTALLED in stdout -> "FreeLLMAPI isn't (fully) installed: its dev tools are missing. Run Install / Update again."
         ALREADY_RUNNING in stdout -> "Already running."
+        DIED in stdout -> "It stopped right away. Last log lines:\n" + stdout.substringAfter(DIED).trim().takeLast(1200) +
+            "\nTry \"Start in Termux window\" to watch it run."
         STARTED in stdout -> "Starting… the first start takes up to a minute. Then open the dashboard."
         else -> "Start failed: " + stdout.trim().take(200)
     }

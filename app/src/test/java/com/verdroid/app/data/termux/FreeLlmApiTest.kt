@@ -33,9 +33,14 @@ class FreeLlmApiTest {
 
     @Test fun startStopScripts() {
         val start = FreeLlmApi.startScript()
-        assertTrue("termux-wake-lock" in start && "nohup npm run dev" in start && FreeLlmApi.ALREADY_RUNNING in start)
+        assertTrue("termux-wake-lock" in start && "nohup \"\$@\" --kill-others-on-fail" in start && FreeLlmApi.ALREADY_RUNNING in start)
         assertFalse("0.0.0.0" in start)
         assertTrue("node_modules/.bin/concurrently" in start)
+        assertTrue("libtermux-exec-ld-preload.so" in start && "npm_config_script_shell" in start && "TMPDIR" in start)
+        assertTrue("node \"node_modules/concurrently/" in start && "\"npm run dev -w server\"" in start)
+        assertTrue("sleep 5" in start && FreeLlmApi.DIED in start && "head -c 80" in start && "/usr/bin/env" in start)
+        val term = FreeLlmApi.startInTerminalScript()
+        assertTrue("read -r _" in term && "tee -a" in term && "LD_PRELOAD" in term)
         val stop = FreeLlmApi.stopScript()
         assertTrue("termux-wake-unlock" in stop && FreeLlmApi.STOPPED in stop)
         assertFalse("rm " in stop)
@@ -46,11 +51,13 @@ class FreeLlmApiTest {
         assertEquals("Already running.", FreeLlmApi.startMessage(FreeLlmApi.ALREADY_RUNNING))
         assertTrue("Starting" in FreeLlmApi.startMessage("x\n" + FreeLlmApi.STARTED))
         assertTrue("Termux" in FreeLlmApi.startMessage(null))
+        val died = FreeLlmApi.startMessage(FreeLlmApi.DIED + "\nsh: 1: concurrently: not found")
+        assertTrue("concurrently: not found" in died && "Termux window" in died)
     }
 
     @Test fun scriptsParseInBash() {
         val bash = listOf("/bin/bash", "/usr/bin/bash").map { java.io.File(it) }.firstOrNull { it.canExecute() } ?: return
-        for (s in listOf(FreeLlmApi.installScript(), FreeLlmApi.startScript(), FreeLlmApi.stopScript(), FreeLlmApi.logScript())) {
+        for (s in listOf(FreeLlmApi.installScript(), FreeLlmApi.startScript(), FreeLlmApi.startInTerminalScript(), FreeLlmApi.stopScript(), FreeLlmApi.logScript())) {
             val f = java.io.File.createTempFile("fla", ".sh").apply { writeText(s); deleteOnExit() }
             val p = ProcessBuilder(bash.path, "-n", f.path).redirectErrorStream(true).start()
             val out = p.inputStream.bufferedReader().readText()
