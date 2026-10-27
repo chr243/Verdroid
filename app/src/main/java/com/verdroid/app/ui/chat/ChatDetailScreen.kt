@@ -247,6 +247,11 @@ fun ChatDetailScreen(onBack: () -> Unit, onChatMemory: (Long) -> Unit = {}, vm: 
                                 DropdownMenuItem(text = { Text("Tool presets") }, onClick = {
                                     overflow = false; showPresets = true
                                 })
+                                DropdownMenuItem(text = { Text("Deep research…") }, onClick = {
+                                    overflow = false
+                                    if (!input.trimStart().startsWith("/")) input = "/research " + input.trimStart()
+                                    Toast.makeText(context, "Type a topic after /research (or /deep for the deep mode) and send.", Toast.LENGTH_LONG).show()
+                                })
                             }
                         }
                     }
@@ -560,6 +565,13 @@ internal fun ToolCallCard(call: ToolCallRecord) {
                 val line = if (call.status == ToolCallStatus.PENDING) live[call.taskId]?.label ?: "Sub-agents starting…"
                     else remember(call.resultJson) { com.verdroid.app.agent.subagents.SpawnSubagentsTool.summary(call.resultJson) }
                 line?.let { Text("🤖 $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(top = 4.dp)) }
+            }
+            if (call.name == com.verdroid.app.agent.research.ResearchPolicy.TOOL_NAME) {
+                val live by com.verdroid.app.agent.research.ResearchLive.progress.collectAsState()
+                val line = if (call.status == ToolCallStatus.PENDING) live[call.taskId]?.label ?: "🔎 Deep research starting…"
+                    else remember(call.resultJson) { com.verdroid.app.agent.research.DeepResearchTool.summary(call.resultJson) }
+                line?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp)) }
             }
             if (call.name == com.verdroid.app.agent.tools.ChartTool.NAME && call.status == ToolCallStatus.SUCCESS) {

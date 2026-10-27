@@ -519,6 +519,25 @@ class SelfTestRunner @Inject constructor(
             check(g.observe(c) == com.verdroid.app.agent.RepeatCallGuard.NUDGE_AT) { "repeat counting" }
             "repeated identical tool calls: nudge at ${com.verdroid.app.agent.RepeatCallGuard.NUDGE_AT}, pause at ${com.verdroid.app.agent.RepeatCallGuard.PAUSE_AT}"
         },
+        "deep_research" to {
+            // Offline: the whole pipeline with a fake model and fake workers (no network, no model requests).
+            tool(com.verdroid.app.agent.research.ResearchPolicy.TOOL_NAME)
+            val R = com.verdroid.app.agent.research.ResearchPolicy
+            check(R.parseCommand("/deep solar panels")?.first == com.verdroid.app.agent.research.ResearchMode.DEEP) { "/deep command" }
+            check(R.dedupe(listOf("https://www.a.com/x?utm_source=1", "https://a.com/x/", "https://www.google.com/search?q=a", "https://b.org/y"), 10) ==
+                listOf("https://www.a.com/x?utm_source=1", "https://b.org/y")) { "URL dedupe/filter" }
+            fun ok(t: String) = com.verdroid.app.data.network.ChatOutcome.Success(
+                com.verdroid.app.data.network.ParsedCompletion(t, emptyList(), "stop", "fake"), "fake", "k")
+            val out = com.verdroid.app.agent.research.DeepResearchEngine(
+                main = { m -> val p = m.last().content.orEmpty()
+                    if (p.startsWith("You plan")) ok("[\"Q one?\", \"Q two?\"]") else ok("# Report\n\n" + "Body [1] [2]. ".repeat(30)) },
+                worker = { i, _ -> com.verdroid.app.agent.subagents.SubAgentResult(i, "t", com.verdroid.app.agent.subagents.SubAgentResult.Status.OK,
+                    "### P\nURL: https://s$i.example.com/a\n- fact", sources = listOf("https://s$i.example.com/a", "https://s0.example.com/a")) },
+                sleep = {},
+            ).run("self-test topic", com.verdroid.app.agent.research.ResearchMode.STANDARD, com.verdroid.app.agent.research.ResearchLimits(2, 1, 10, 2))
+            check(out.sources.size == 2 && !out.reportFallback && out.report.contains("## Sources")) { "pipeline: ${out.sources} fallback=${out.reportFallback}" }
+            "pipeline ok (plan → 2 workers → ${out.sources.size} deduped sources → report); /research + /deep commands"
+        },
         "key_wipe_notice" to {
             check(com.verdroid.app.data.secure.KeyWipeNotice.message(setOf("Git token")).contains("Git token")) { "wipe message" }
             val w = com.verdroid.app.data.secure.KeyWipeNotice.wiped.value

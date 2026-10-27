@@ -148,6 +148,8 @@ class SubAgentLoop(
     private val maxRetries: Int = 3,
     private val now: () -> Long = System::currentTimeMillis,
     private val sleep: suspend (Long) -> Unit = { kotlinx.coroutines.delay(it) },
+    /** Max characters kept from the final answer (deep_research workers keep more). */
+    private val maxFindingsChars: Int = SubAgentPolicy.MAX_FINDINGS_CHARS,
 ) {
     suspend fun run(index: Int, task: String): SubAgentResult {
         var steps = 0
@@ -233,7 +235,7 @@ class SubAgentLoop(
         return if (text.isEmpty()) SubAgentResult(index, task, SubAgentResult.Status.ERROR, "The sub-agent returned no answer.", steps, model)
         else {
             val r = UrlVerifier.verify(text, seenUrls)
-            SubAgentResult(index, task, SubAgentResult.Status.OK, r.text.take(SubAgentPolicy.MAX_FINDINGS_CHARS), steps, model,
+            SubAgentResult(index, task, SubAgentResult.Status.OK, r.text.take(maxFindingsChars), steps, model,
                 sources = r.verified, corrected = r.corrected, unverified = r.unverified, tools = allowed)
         }
     }

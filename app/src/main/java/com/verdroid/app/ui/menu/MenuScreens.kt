@@ -69,7 +69,7 @@ fun SettingsScreen(onNavigate: (String) -> Unit, onBack: () -> Unit, unreadNotif
             ))
             SettingsGroup("Agent tools", listOf(
                 item("Tools", "Built-in agent tools (status, on/off), Documents/Verdroid folder access, Termux setup and add-ons", Routes.TOOLS),
-                item("Sub-agents", "Parallel read-only research (spawn_subagents): on/off, model, concurrency, limits, allowed tools", Routes.SUBAGENTS),
+                item("Sub-agents", "Parallel read-only research (spawn_subagents) and Deep research (/research, /deep): on/off, models, concurrency, limits, tools", Routes.SUBAGENTS),
                 item("Profiles", "On/off (on by default). Switchable bundles of tools, skills, model, instructions and memory; filter chats by profile", Routes.PROFILES),
                 item("AGENTS.md", "Your standing instructions for the agent, added to every chat", Routes.AGENTS_MD),
                 item("Skills", "Procedures the agent saved: enable/disable (only enabled ones go into the prompt), view, delete", Routes.SKILLS),
@@ -343,6 +343,20 @@ fun SubAgentSettingsScreen(onBack: () -> Unit, vm: SettingsViewModel = hiltViewM
     val timeout by sa.timeoutSec.collectAsStateWithLifecycle()
     val tools by sa.tools.collectAsStateWithLifecycle()
     var pick by remember { mutableStateOf(false) }
+    val R = com.verdroid.app.agent.research.ResearchPolicy
+    val rp = vm.research
+    val researchOn = R.TOOL_NAME !in disabled
+    val rPin by rp.model.collectAsStateWithLifecycle()
+    val rStd by rp.standardSources.collectAsStateWithLifecycle()
+    val rDeep by rp.deepSources.collectAsStateWithLifecycle()
+    val rRounds by rp.deepRounds.collectAsStateWithLifecycle()
+    val rConc by rp.concurrency.collectAsStateWithLifecycle()
+    var pickResearch by remember { mutableStateOf(false) }
+    @Composable fun rSlider(label: String, value: Int, range: IntRange, set: (Int) -> Unit) {
+        Text(label, style = MaterialTheme.typography.bodyLarge)
+        Slider(value = value.toFloat(), onValueChange = { set(Math.round(it)) }, enabled = researchOn,
+            valueRange = range.first.toFloat()..range.last.toFloat(), steps = (range.last - range.first - 1).coerceAtLeast(0))
+    }
     @Composable fun slider(label: String, value: Int, range: IntRange, set: (Int) -> Unit) {
         Text(label, style = MaterialTheme.typography.bodyLarge)
         Slider(value = value.toFloat(), onValueChange = { set(Math.round(it)) }, enabled = enabled,
@@ -369,6 +383,27 @@ fun SubAgentSettingsScreen(onBack: () -> Unit, vm: SettingsViewModel = hiltViewM
             slider("Max sub-agents per call: $perCall", perCall, 1..P.MAX_TASKS, sa::setPerCall)
             slider("Max steps per sub-agent: $steps", steps, P.STEPS_RANGE, sa::setMaxSteps)
             slider("Timeout per sub-agent: ${timeout}s", timeout, P.TIMEOUT_SEC_RANGE) { sa.setTimeoutSec((it / 30) * 30) }
+            Text("Deep research", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 12.dp))
+            Text("deep_research plans sub-questions with the main model, runs parallel workers (web_search + web_fetch) on the worker " +
+                "model, dedupes and filters URLs, then writes a long cited report to Documents/Verdroid/Output/Research. In a chat send " +
+                "/research <topic> (standard) or /deep <topic>, or pick ⋮ → Deep research…. Stop cancels every worker.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Enable deep research", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                Switch(checked = researchOn, onCheckedChange = { vm.toolPrefs.setEnabled(R.TOOL_NAME, it) })
+            }
+            Row(Modifier.fillMaxWidth().clickable(enabled = researchOn) { pickResearch = true }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Worker model", style = MaterialTheme.typography.bodyLarge)
+                    Text(rPin?.let { com.verdroid.app.data.network.ModelIds.label(it.model) + if (it.allowFallback) " (+fallback)" else "" }
+                        ?: "Same as sub-agent model (tip: a free model, e.g. openrouter/free)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Text("Change", color = MaterialTheme.colorScheme.primary)
+            }
+            rSlider("Standard: max sources $rStd (1 round, ${R.STANDARD_QUESTIONS} sub-questions)", rStd, R.SOURCES_RANGE) { rp.setStandardSources((it / 5) * 5) }
+            rSlider("Deep: max sources $rDeep (${R.DEEP_QUESTIONS} sub-questions)", rDeep, R.SOURCES_RANGE) { rp.setDeepSources((it / 5) * 5) }
+            rSlider("Deep: rounds $rRounds (follow-up questions fill gaps)", rRounds, R.ROUNDS_RANGE, rp::setDeepRounds)
+            rSlider("Parallel workers: $rConc (lower if you hit rate limits)", rConc, P.MIN_CONCURRENCY..P.MAX_CONCURRENCY, rp::setConcurrency)
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 12.dp)) {
                 Text("Tools sub-agents may use", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
                 TextButton(onClick = sa::resetTools) { Text("Default") }
@@ -389,4 +424,7 @@ fun SubAgentSettingsScreen(onBack: () -> Unit, vm: SettingsViewModel = hiltViewM
     if (pick) com.verdroid.app.ui.chat.ChatModelDialog(pin, models,
         onPick = { sa.setModel(it); pick = false }, onUpdate = { sa.setModel(it) }, onDismiss = { pick = false },
         title = "Sub-agent model", defaultLabel = "Same as main model (default)")
+    if (pickResearch) com.verdroid.app.ui.chat.ChatModelDialog(rPin, models,
+        onPick = { rp.setModel(it); pickResearch = false }, onUpdate = { rp.setModel(it) }, onDismiss = { pickResearch = false },
+        title = "Deep research worker model", defaultLabel = "Same as sub-agent model (default)")
 }

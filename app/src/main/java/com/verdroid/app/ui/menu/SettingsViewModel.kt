@@ -27,6 +27,7 @@ class SettingsViewModel @Inject constructor(
     private val kiloUsage: com.verdroid.app.data.network.KiloUsage,
     val updater: com.verdroid.app.data.update.AppUpdater,
     val subAgents: com.verdroid.app.agent.subagents.SubAgentPrefs,
+    val research: com.verdroid.app.agent.research.ResearchPrefs,
     val toolPrefs: com.verdroid.app.data.tools.ToolPrefs,
 ) : ViewModel() {
     /** Kilo requests in the last hour (in-app counter, refreshed every 5 s while visible). */
