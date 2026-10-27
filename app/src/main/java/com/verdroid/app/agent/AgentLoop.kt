@@ -317,12 +317,12 @@ class AgentLoop internal constructor(
         )
         if (outcome.dailyQuota) {
             tasks.pause(task.id, TaskStatus.RATE_LIMITED, "Daily free quota exhausted – resumes 00:00 UTC", resumeAt, PauseReason.DAILY_QUOTA, attempt + 1)
-            status(task.id, DAILY_QUOTA_MESSAGE, null)
+            status(task.id, "$DAILY_QUOTA_MESSAGE\nProvider said: ${outcome.message.take(300)}", null)
             notifications.add(NotificationType.RATE_LIMIT, "Daily free quota exhausted: ${task.title}",
                 "Paused until 00:00 UTC. It will resume automatically.", task.id)
         } else {
             tasks.pause(task.id, TaskStatus.RATE_LIMITED, "Waiting for OpenRouter reset...", resumeAt, PauseReason.RATE_LIMIT, attempt + 1)
-            status(task.id, "⏸️ Paused: Rate limit hit.", resumeAt)
+            status(task.id, "⏸️ Paused: Rate limit hit.\nProvider said: ${outcome.message.take(300)}", resumeAt)
             notifications.add(NotificationType.RATE_LIMIT, "Rate limit hit: ${task.title}",
                 "All models/keys are rate-limited; auto-resume scheduled. ${outcome.message}".take(300), task.id)
         }

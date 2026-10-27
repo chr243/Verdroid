@@ -25,6 +25,7 @@ class AgentRunner @Inject constructor(
     private val loop: AgentLoop,
     private val tasks: TaskRepository,
     private val scheduler: AgentScheduler,
+    private val cooldowns: com.verdroid.app.data.network.CooldownTracker,
 ) : AgentController {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val jobs = HashMap<Long, Job>()
@@ -81,6 +82,8 @@ class AgentRunner @Inject constructor(
         scope.launch {
             scheduler.cancel(taskId)
             tasks.setAttempt(taskId, 0)
+            // Force retry must really call the provider: drop persisted key/model cooldowns first.
+            cooldowns.clear()
             tasks.addMessage(statusMessage(taskId, "🔁 Force retry requested."))
             start(taskId)
         }

@@ -34,7 +34,7 @@ class ClientRateLimiter @Inject constructor(
     }
 
     /** Suspends until a request slot is available for [keyId] under [rpm], then records it. */
-    suspend fun acquire(keyId: String, rpm: Int) {
+    suspend fun acquire(keyId: String, rpm: Int, countDaily: Boolean = true) {
         while (true) {
             val wait = mutex.withLock {
                 val now = clock()
@@ -42,10 +42,12 @@ class ClientRateLimiter @Inject constructor(
                 while (q.isNotEmpty() && now - q.first() >= 60_000) q.removeFirst()
                 if (q.size < rpm.coerceAtLeast(1)) {
                     q.addLast(now)
+                    if (countDaily) {
                     val today = utcDay(now)
                     val (day, count) = daily[keyId] ?: (today to 0)
                     daily[keyId] = today to (if (day == today) count + 1 else 1)
                     persist()
+                    }
                     0L
                 } else {
                     (q.first() + 60_000 - now).coerceAtLeast(50)

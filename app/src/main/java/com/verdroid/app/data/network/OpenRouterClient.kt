@@ -204,27 +204,31 @@ class OpenRouterClient @Inject constructor(
         val cooldownMs = limits.modelCooldownSeconds.coerceAtLeast(1) * 1000L
         var lastError = "No model available"
         var sawRateLimit = false
-        val dailyKeys = HashSet<String>()
         var sawResetHeader = false
         var skippedCooling = 0
+        var freeDailyHits = 0
+        var nonDailyRateLimits = 0
 
         keyLoop@ for (key in keys) {
             val now0 = System.currentTimeMillis()
             if (cooldowns.keyUntil(key.id) > now0) { sawRateLimit = true; continue }
-            if (limiter.usedToday(key.id) >= limits.requestsPerDay) {
-                cooldowns.blockKey(key.id, ClientRateLimiter.nextUtcMidnight(now0))
-                log(taskId, "-", key, 429, RateLimitHeaders.EMPTY, "client_daily_limit",
-                    "Local requests/day limit (${limits.requestsPerDay}) reached", "Key paused until 00:00 UTC, rotating key")
-                dailyKeys += key.id
-                sawRateLimit = true
-                continue
-            }
             for (model in models) {
                 val now = System.currentTimeMillis()
                 if (cooldowns.modelUntil(key.id, model) > now) { skippedCooling++; continue }
-                status("Calling $model…")
-                limiter.acquire(key.id, limits.requestsPerMinute)
                 val free = ClientRateLimiter.isFreeModel(model)
+                // The local requests/day budget only models OpenRouter's free-model daily cap; paid models are never held by it.
+                if (free && limiter.usedToday(key.id) >= limits.requestsPerDay) {
+                    val midnight = ClientRateLimiter.nextUtcMidnight(now)
+                    cooldowns.coolModel(key.id, model, midnight)
+                    log(taskId, model, key, 429, RateLimitHeaders.EMPTY, "client_daily_limit",
+                        "Local free requests/day limit (${limits.requestsPerDay}) reached", "Free model paused until 00:00 UTC")
+                    lastError = "$model: local free-model requests/day limit (${limits.requestsPerDay}) reached"
+                    freeDailyHits++
+                    sawRateLimit = true
+                    continue
+                }
+                status("Calling $model…")
+                limiter.acquire(key.id, limits.requestsPerMinute, countDaily = free)
                 val bucket = AdaptiveRateController.bucket("openrouter", model)
                 limiter.acquireShared(bucket, adaptive.rpm(bucket))
                 val response = try {
@@ -255,20 +259,17 @@ class OpenRouterClient @Inject constructor(
                 when (err.kind) {
                     ApiErrorKind.RATE_LIMIT -> {
                         sawRateLimit = true
-                        val keyWide = (headers.remaining == 0 && (headers.resetAtMs ?: 0) > now + cooldownMs) ||
-                            err.message.contains("per-day", ignoreCase = true) ||
-                            err.message.contains("per day", ignoreCase = true)
-                        if (keyWide) {
-                            val daily = err.message.contains("per-day", ignoreCase = true) ||
-                                err.message.contains("per day", ignoreCase = true) ||
-                                headers.resetAtMs == null || (headers.resetAtMs - now) > 60 * 60_000L
-                            if (daily) dailyKeys += key.id
+                        val dailyFree = QuotaClassifier.isDailyFreeQuota(model, err.message)
+                        if (dailyFree) {
+                            // OpenRouter's free-models-per-day cap is per key but only for :free models.
                             if (headers.resetAtMs != null && headers.resetAtMs > now) sawResetHeader = true
                             val until = headers.resetAtMs?.takeIf { it > now } ?: ClientRateLimiter.nextUtcMidnight(now)
-                            cooldowns.blockKey(key.id, until)
-                            log(taskId, model, key, response.code(), headers, err.errorType, err.message, "Key quota exhausted → rotating to next key")
-                            continue@keyLoop
+                            models.filter { ClientRateLimiter.isFreeModel(it) }.forEach { cooldowns.coolModel(key.id, it, until) }
+                            freeDailyHits++
+                            log(taskId, model, key, response.code(), headers, err.errorType, err.message, "Free daily quota → free models paused, trying paid models")
+                            continue
                         }
+                        nonDailyRateLimits++
                         val retryAfter = (headers.retryAfterAtMs ?: RateLimitHeaders.retryAfterFromBody(body, now))
                             ?.takeIf { it - now in 1..(10 * 60_000L) }
                         val headerReset = (retryAfter ?: headers.resetAtMs)?.takeIf { it - now in 1..(10 * 60_000L) }
@@ -308,7 +309,8 @@ class OpenRouterClient @Inject constructor(
                 RateLimitEvent(0, now, taskId, "*", "all keys (${keys.size})", 429, null, null, resumeAt.toString(),
                     "all_exhausted", lastError, "All models/keys rate-limited → task paused, auto-resume at reset")
             )
-            val allDaily = keys.all { it.id in dailyKeys || cooldowns.keyUntil(it.id) >= ClientRateLimiter.nextUtcMidnight(now) - 1000 }
+            // Daily-free-quota pause only when every model tried is :free and was stopped by the free daily cap.
+            val allDaily = QuotaClassifier.allDailyFree(models, freeDailyHits, nonDailyRateLimits)
             return ChatOutcome.RateLimited(resumeAt, lastError, dailyQuota = allDaily, explicitReset = sawResetHeader)
         }
         if (lastError == "No model available" && skippedCooling > 0)
