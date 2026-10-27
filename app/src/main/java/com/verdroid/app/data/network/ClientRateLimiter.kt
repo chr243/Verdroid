@@ -22,6 +22,8 @@ class ClientRateLimiter @Inject constructor(
     private val windows = HashMap<String, ArrayDeque<Long>>()
     private val daily = HashMap<String, Pair<LocalDate, Int>>()
     var clock: () -> Long = { System.currentTimeMillis() }
+    /** Waits are injectable for tests. */
+    var sleeper: suspend (Long) -> Unit = { delay(it) }
 
     init {
         val s = store.load()
@@ -50,9 +52,14 @@ class ClientRateLimiter @Inject constructor(
                 }
             }
             if (wait == 0L) return
-            delay(wait)
+            sleeper(wait)
         }
     }
+
+    /** Shared pacing buckets (OpenRouter free models); see [SharedRatePacer]. */
+    val shared = SharedRatePacer({ clock() }, { sleeper(it) })
+    suspend fun acquireShared(bucket: String, rpm: Int) = shared.acquire(bucket, rpm)
+    suspend fun pause(bucket: String, untilMs: Long) = shared.pause(bucket, untilMs)
 
     fun usedToday(keyId: String): Int {
         val (day, count) = daily[keyId] ?: return 0
@@ -70,6 +77,13 @@ class ClientRateLimiter @Inject constructor(
     private fun utcDay(ms: Long): LocalDate = Instant.ofEpochMilli(ms).atZone(ZoneOffset.UTC).toLocalDate()
 
     companion object {
+        /** One bucket for all OpenRouter free-model calls: OpenRouter limits free models per account (~20 req/min), not per key. */
+        const val FREE_BUCKET = "openrouter:free"
+        /** Conservative default under OpenRouter's 20 requests/minute free-model limit. */
+        const val DEFAULT_FREE_RPM = 15
+
+        fun isFreeModel(id: String): Boolean = id.trim().let { it.endsWith(":free") || it == "openrouter/free" }
+
         fun nextUtcMidnight(now: Long = System.currentTimeMillis()): Long =
             Instant.ofEpochMilli(now).atZone(ZoneOffset.UTC).toLocalDate().plusDays(1)
                 .atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
@@ -114,4 +128,44 @@ class CooldownTracker @Inject constructor(
         val k = HashMap(keys)
         store.update { it.copy(modelCooldowns = m, keyBlocks = k) }
     }
+}
+
+/** Pure, testable pacing for shared buckets: a sliding 60 s window + minimum spacing + pause-until after a 429. */
+class SharedRatePacer(private val clock: () -> Long, private val sleeper: suspend (Long) -> Unit) {
+    private val mutex = Mutex()
+    private val windows = HashMap<String, ArrayDeque<Long>>()
+    private val paused = HashMap<String, Long>()
+    private val lastAt = HashMap<String, Long>()
+
+    /**
+     * Shared pacing bucket (e.g. [ClientRateLimiter.FREE_BUCKET] for every OpenRouter `:free` call from the main agent, sub-agents and deep
+     * research workers): at most [rpm] calls in any 60 s window, spaced at least 60 000 / [rpm] ms apart (no bursts), and
+     * nothing while the bucket is paused after a 429 ([pause]). Suspends until the call may go; FIFO-ish under contention.
+     */
+    suspend fun acquire(bucket: String, rpm: Int) {
+        val r = rpm.coerceAtLeast(1)
+        val gap = 60_000L / r
+        while (true) {
+            val wait = mutex.withLock {
+                val now = clock()
+                val q = windows.getOrPut(bucket) { ArrayDeque() }
+                while (q.isNotEmpty() && now - q.first() >= 60_000) q.removeFirst()
+                val waits = listOf(
+                    (paused[bucket] ?: 0L) - now,
+                    (lastAt[bucket]?.plus(gap) ?: 0L) - now,
+                    if (q.size >= r) q.first() + 60_000 - now else 0L,
+                ).max()
+                if (waits <= 0L) { q.addLast(now); lastAt[bucket] = now; 0L } else waits.coerceAtLeast(50)
+            }
+            if (wait == 0L) return
+            sleeper(wait)
+        }
+    }
+
+    /** After a 429: nobody using [bucket] sends again before [untilMs] (shared by all workers). */
+    suspend fun pause(bucket: String, untilMs: Long) {
+        mutex.withLock { if (untilMs > (paused[bucket] ?: 0L)) paused[bucket] = untilMs }
+    }
+
+    fun pausedUntil(bucket: String): Long = paused[bucket] ?: 0L
 }

@@ -27,6 +27,8 @@ class SubAgentPrefs @Inject constructor(@ApplicationContext context: Context) {
     val model: StateFlow<ModelPin?> = _model.asStateFlow()
     private val _concurrency = MutableStateFlow(SubAgentPolicy.clampConcurrency(prefs.getInt(KEY_CONC, SubAgentPolicy.DEFAULT_CONCURRENCY)))
     val concurrency: StateFlow<Int> = _concurrency.asStateFlow()
+    /** false until the user moves the slider: then free models get [SubAgentPolicy.FREE_DEFAULT_CONCURRENCY]. */
+    val concurrencyUserSet: Boolean get() = prefs.contains(KEY_CONC)
 
     private fun intFlow(key: String, def: Int, range: IntRange) = MutableStateFlow(prefs.getInt(key, def).coerceIn(range))
     private val _perCall = intFlow(KEY_PER_CALL, SubAgentPolicy.DEFAULT_PER_CALL, 1..SubAgentPolicy.MAX_TASKS)
@@ -38,6 +40,11 @@ class SubAgentPrefs @Inject constructor(@ApplicationContext context: Context) {
     private val _tools = MutableStateFlow(prefs.getStringSet(KEY_TOOLS, null)?.toSet() ?: SubAgentPolicy.DEFAULT_TOOLS)
     /** Selected sub-agent tools (subset of [SubAgentPolicy.READ_ONLY_TOOLS]). */
     val tools: StateFlow<Set<String>> = _tools.asStateFlow()
+
+    private val _fallback = MutableStateFlow(prefs.getBoolean(KEY_FALLBACK, true))
+    /** When a sub-agent / research worker stays rate-limited after its retries, finish it on the main model list. */
+    val fallbackOnRateLimit: StateFlow<Boolean> = _fallback.asStateFlow()
+    fun setFallbackOnRateLimit(v: Boolean) { prefs.edit().putBoolean(KEY_FALLBACK, v).apply(); _fallback.value = v }
 
     fun setPerCall(n: Int) { val v = n.coerceIn(1, SubAgentPolicy.MAX_TASKS); prefs.edit().putInt(KEY_PER_CALL, v).apply(); _perCall.value = v }
     fun setMaxSteps(n: Int) { val v = n.coerceIn(SubAgentPolicy.STEPS_RANGE); prefs.edit().putInt(KEY_STEPS, v).apply(); _steps.value = v }
@@ -61,7 +68,7 @@ class SubAgentPrefs @Inject constructor(@ApplicationContext context: Context) {
     }
 
     private companion object { const val KEY_MODEL = "model"; const val KEY_CONC = "concurrency"
-        const val KEY_PER_CALL = "per_call"; const val KEY_STEPS = "max_steps"; const val KEY_TIMEOUT = "timeout_sec"; const val KEY_TOOLS = "tools" }
+        const val KEY_PER_CALL = "per_call"; const val KEY_STEPS = "max_steps"; const val KEY_TIMEOUT = "timeout_sec"; const val KEY_TOOLS = "tools"; const val KEY_FALLBACK = "fallback_on_rate_limit" }
 }
 
 /** Live progress per parent chat while spawn_subagents runs (chat card). */
@@ -89,7 +96,11 @@ class SubAgentService @Inject constructor(
             ((s as? JsonObject)?.get("function") as? JsonObject)?.get("name")?.let { (it as? JsonPrimitive)?.content } in names
         })
         val pin = modelOverride?.let { ModelPin(it, allowFallback = false) } ?: prefs.model.value
-        val conc = prefs.concurrency.value
+        val conc = SubAgentPolicy.effectiveConcurrency(prefs.concurrency.value, prefs.concurrencyUserSet, client.firstModelIsFree(pin))
+        // Fallback after rate limits: the main model list (only useful when sub-agents are pinned to another model).
+        val fallback: (suspend (List<com.verdroid.app.data.network.ApiMessage>, JsonArray?) -> com.verdroid.app.data.network.ChatOutcome)? =
+            if (prefs.fallbackOnRateLimit.value && pin != null) { m, t -> client.complete(m, t, parentTaskId) } else null
+        val waits = RateWaitCounter()
         val maxSteps = prefs.maxSteps.value
         val timeoutMs = prefs.timeoutSec.value * 1000L
         try {
@@ -99,12 +110,14 @@ class SubAgentService @Inject constructor(
                     if (parentTaskId > 0) runCatching { this.tasks.updateSubtitle(parentTaskId, p.label) }
                 },
                 failed = { it.status != SubAgentResult.Status.OK },
+                waits = waits,
             ) { i, t ->
                 val choice = SubAgentToolChoice.choose(t.tools, allowed, known)
                 SubAgentLoop(
                     model = { msgs, tools -> client.completeSubAgent(msgs, tools, parentTaskId, pin) },
                     execute = { name, args -> reg.execute(name, args, parentTaskId) },
                     toolSchemas = schemasFor(choice.tools), allowed = choice.tools, maxSteps = maxSteps, timeoutMs = timeoutMs,
+                    fallback = fallback, onWait = waits::set, rateWaitBudgetMs = SubAgentPolicy.RATE_WAIT_BUDGET_MS,
                 ).run(i, t.prompt).copy(tools = choice.tools, rejectedTools = choice.rejected)
             }
             return SubAgentBatch(results, pin?.model, conc, allowed)

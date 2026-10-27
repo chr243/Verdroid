@@ -174,7 +174,10 @@ data class ResearchProgress(val phase: String, val round: Int = 0, val rounds: I
     val label: String get() = buildString {
         append("🔎 ").append(phase)
         if (rounds > 1 && round > 0) append(" · round $round/$rounds")
-        workers?.let { append(" · ${it.done}/${it.total} questions") ; if (it.running > 0) append(" (${it.running} running)") }
+        workers?.let {
+            append(" · ${it.done}/${it.total} questions"); if (it.running > 0) append(" (${it.running} running)")
+            if (it.waiting > 0) append(" · ${it.waiting} waiting for rate limit")
+        }
         if (sources > 0) append(" · $sources sources")
     }
 }
@@ -204,6 +207,8 @@ class DeepResearchEngine(
     private val onProgress: suspend (ResearchProgress) -> Unit = {},
     private val sleep: suspend (Long) -> Unit = { kotlinx.coroutines.delay(it) },
     private val now: () -> Long = System::currentTimeMillis,
+    /** Workers sleeping on a rate limit (shown in progress instead of failures). */
+    private val waits: com.verdroid.app.agent.subagents.RateWaitCounter? = null,
 ) {
     suspend fun run(topic: String, mode: ResearchMode, limits: ResearchLimits, language: String? = null): ResearchOutcome {
         onProgress(ResearchProgress("Planning", 1, limits.rounds))
@@ -214,6 +219,7 @@ class DeepResearchEngine(
         val sources = mutableListOf<String>()
         var failed = 0
         var roundsDone = 0
+        val failedQs = mutableListOf<String>()
         for (round in 1..limits.rounds) {
             if (questions.isEmpty() || sources.size >= limits.maxSources) break
             roundsDone = round
@@ -222,9 +228,10 @@ class DeepResearchEngine(
             val results = SubAgentPool.run(qs, limits.concurrency,
                 onProgress = { p -> onProgress(ResearchProgress("Researching", round, limits.rounds, p, sources.size)) },
                 failed = { r: SubAgentResult -> r.status != SubAgentResult.Status.OK },
+                waits = waits,
             ) { i, q -> worker(i, ResearchPolicy.workerTask(topic, q, limits.perWorkerSources, sources)) }
             for ((i, r) in results.withIndex()) {
-                if (r.status != SubAgentResult.Status.OK) { failed++; continue }
+                if (r.status != SubAgentResult.Status.OK) { failedQs += qs[i]; continue }
                 val room = limits.maxSources - sources.size
                 sources += ResearchPolicy.dedupe(r.sources, room.coerceAtLeast(0), sources)
                 findings += qs[i] to r.findings
@@ -237,6 +244,20 @@ class DeepResearchEngine(
                     .filter { q -> allQuestions.none { it.equals(q, ignoreCase = true) } }
             }
         }
+        // Failed sub-questions (rate limits, timeouts, errors) get one more try at the end.
+        if (failedQs.isNotEmpty() && sources.size < limits.maxSources) {
+            val retry = failedQs.toList()
+            val results = SubAgentPool.run(retry, limits.concurrency,
+                onProgress = { p -> onProgress(ResearchProgress("Retrying failed questions", roundsDone, limits.rounds, p, sources.size)) },
+                failed = { r: SubAgentResult -> r.status != SubAgentResult.Status.OK },
+                waits = waits,
+            ) { i, q -> worker(i, ResearchPolicy.workerTask(topic, q, limits.perWorkerSources, sources)) }
+            for ((i, r) in results.withIndex()) {
+                if (r.status != SubAgentResult.Status.OK) { failed++; continue }
+                sources += ResearchPolicy.dedupe(r.sources, (limits.maxSources - sources.size).coerceAtLeast(0), sources)
+                findings += retry[i] to r.findings
+            }
+        } else failed += failedQs.size
         onProgress(ResearchProgress("Writing report", roundsDone, limits.rounds, null, sources.size))
         var fallback = false
         val body = if (findings.isEmpty()) { fallback = true; "# Research: $topic\n\nNo sub-question returned usable findings ($failed failed). Try again later or with another worker model." }

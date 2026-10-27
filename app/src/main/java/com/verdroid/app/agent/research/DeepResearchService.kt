@@ -40,6 +40,8 @@ class ResearchPrefs @Inject constructor(@ApplicationContext context: Context) {
     val deepRounds: StateFlow<Int> = _rounds.asStateFlow()
     private val _conc = flow("concurrency", SubAgentPolicy.DEFAULT_CONCURRENCY, SubAgentPolicy.MIN_CONCURRENCY..SubAgentPolicy.MAX_CONCURRENCY)
     val concurrency: StateFlow<Int> = _conc.asStateFlow()
+    /** false until the user moves the slider: free worker models then default to SubAgentPolicy.FREE_DEFAULT_CONCURRENCY. */
+    val concurrencyUserSet: Boolean get() = prefs.contains("concurrency")
     private val _model = MutableStateFlow(ModelPins.decode(prefs.getString("model", null)))
     /** null = Settings → Sub-agents → Model (which itself defaults to the main model). */
     val model: StateFlow<ModelPin?> = _model.asStateFlow()
@@ -86,7 +88,11 @@ class DeepResearchService @Inject constructor(
             ((s as? JsonObject)?.get("function") as? JsonObject)?.get("name")?.let { (it as? JsonPrimitive)?.content } in tools
         })
         val pin = prefs.model.value ?: subPrefs.model.value
-        val limits = ResearchPolicy.limits(mode, prefs.standardSources.value, prefs.deepSources.value, prefs.deepRounds.value, prefs.concurrency.value)
+        val conc = SubAgentPolicy.effectiveConcurrency(prefs.concurrency.value, prefs.concurrencyUserSet, client.firstModelIsFree(pin))
+        val limits = ResearchPolicy.limits(mode, prefs.standardSources.value, prefs.deepSources.value, prefs.deepRounds.value, conc)
+        val fallback: (suspend (List<com.verdroid.app.data.network.ApiMessage>, JsonArray?) -> com.verdroid.app.data.network.ChatOutcome)? =
+            if (subPrefs.fallbackOnRateLimit.value && pin != null) { m, t -> client.complete(m, t, taskId) } else null
+        val waits = com.verdroid.app.agent.subagents.RateWaitCounter()
         val steps = subPrefs.maxSteps.value.coerceAtLeast(limits.perWorkerSources + 4)
         val timeoutMs = maxOf(subPrefs.timeoutSec.value, 300) * 1000L
         try {
@@ -98,8 +104,10 @@ class DeepResearchService @Inject constructor(
                         execute = { name, args -> reg.execute(name, args, taskId) },
                         toolSchemas = schemas, allowed = tools, maxSteps = steps, timeoutMs = timeoutMs,
                         maxFindingsChars = ResearchPolicy.WORKER_FINDINGS_CHARS,
+                        fallback = fallback, onWait = waits::set, rateWaitBudgetMs = SubAgentPolicy.RATE_WAIT_BUDGET_MS,
                     ).run(i, task)
                 },
+                waits = waits,
                 onProgress = { p ->
                     ResearchLive.set(taskId, p)
                     if (taskId > 0) runCatching { tasks.updateSubtitle(taskId, p.label) }

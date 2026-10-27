@@ -105,6 +105,14 @@ class OpenRouterClient @Inject constructor(
         return completeWith(com.verdroid.app.data.settings.ModelPins.resolve(global, pin), messages, tools, parentTaskId) {}
     }
 
+    /** Whether the first model sub-agents / workers would use with [pin] is an OpenRouter free model (shared ~20 req/min). */
+    suspend fun firstModelIsFree(pin: com.verdroid.app.data.settings.ModelPin?): Boolean {
+        val global = settings.currentModels().ifEmpty { com.verdroid.app.domain.model.DefaultModels.list }
+        val first = if (pin == null || pin.model.isBlank()) global.firstOrNull()
+            else com.verdroid.app.data.settings.ModelPins.resolve(global, pin).firstOrNull()
+        return first != null && ClientRateLimiter.isFreeModel(first)
+    }
+
     private suspend fun completeWith(
         models: List<String>,
         messages: List<ApiMessage>,
@@ -215,6 +223,9 @@ class OpenRouterClient @Inject constructor(
                 if (cooldowns.modelUntil(key.id, model) > now) continue
                 status("Calling $model…")
                 limiter.acquire(key.id, limits.requestsPerMinute)
+                val free = ClientRateLimiter.isFreeModel(model)
+                val bucket = AdaptiveRateController.bucket("openrouter", model)
+                limiter.acquireShared(bucket, adaptive.rpm(bucket))
                 val response = try {
                     api.chatCompletions("Bearer ${key.key}", model, key.displayName,
                         ChatRequest(model = model, messages = forModel(model, messages), tools = tools, toolChoice = if (tools != null) "auto" else null))
@@ -228,6 +239,11 @@ class OpenRouterClient @Inject constructor(
                     (if (response.isSuccessful) response.body() else response.errorBody())?.string()
                 } catch (e: IOException) { null }
                 val headers = RateLimitHeaders.parse { response.headers()[it] }
+                if (response.isSuccessful) {
+                    adaptive.onSuccess(bucket, headers)
+                    // Header says nothing left in this window: hold the bucket until it resets.
+                    if (headers.remaining == 0) headers.resetAtMs?.takeIf { it - now in 1..(2 * 60_000L) }?.let { limiter.pause(bucket, it) }
+                }
                 val err = ApiErrorDetector.detect(response.code(), body)
                     ?: run {
                         val parsed = body?.let { CompletionParser.parse(it) }
@@ -252,9 +268,15 @@ class OpenRouterClient @Inject constructor(
                             log(taskId, model, key, response.code(), headers, err.errorType, err.message, "Key quota exhausted → rotating to next key")
                             continue@keyLoop
                         }
-                        val headerReset = headers.resetAtMs?.takeIf { it - now in 1..(10 * 60_000L) }
+                        val retryAfter = (headers.retryAfterAtMs ?: RateLimitHeaders.retryAfterFromBody(body, now))
+                            ?.takeIf { it - now in 1..(10 * 60_000L) }
+                        val headerReset = (retryAfter ?: headers.resetAtMs)?.takeIf { it - now in 1..(10 * 60_000L) }
                         if (headerReset != null) sawResetHeader = true
                         val until = maxOf(now + cooldownMs, headerReset ?: 0)
+                        // Free models share one per-account budget: hold every other free-model caller until it resets.
+                        // Shared per-bucket hold (all :free models share one account budget) + AIMD halving.
+                        limiter.pause(bucket, headerReset ?: (now + if (free) 20_000 else 5_000))
+                        adaptive.onRateLimited(bucket)
                         cooldowns.coolModel(key.id, model, until)
                         log(taskId, model, key, response.code(), headers, err.errorType, err.message,
                             "Model cooldown ${(until - now) / 1000}s → next model")
@@ -289,6 +311,11 @@ class OpenRouterClient @Inject constructor(
             return ChatOutcome.RateLimited(resumeAt, lastError, dailyQuota = allDaily, explicitReset = sawResetHeader)
         }
         return ChatOutcome.Failure(lastError)
+    }
+
+    private val adaptive by lazy {
+        AdaptiveRateController(AdaptiveRateController.decode(appPrefs.learnedRpm),
+            save = { appPrefs.learnedRpm = AdaptiveRateController.encode(it) }, override = { appPrefs.rpmOverride.value })
     }
 
     private suspend fun log(

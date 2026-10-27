@@ -133,11 +133,11 @@ class SubAgentsTest {
         val loop = SubAgentLoop(
             model = { _, _ -> if (calls++ < 2) ChatOutcome.RateLimited(0, "429") else ok("answer") },
             execute = { _, _ -> ToolResult("{}", false) }, toolSchemas = JsonArray(emptyList()), allowed = emptySet(),
-            now = { 0L }, sleep = { sleeps += it },
+            now = { 0L }, sleep = { sleeps += it }, jitter = { 0L },
         )
         assertEquals(SubAgentResult.Status.OK, loop.run(0, "t").status)
         assertEquals(listOf(2_000L, 4_000L), sleeps)
-        assertEquals(60_000L, SubAgentLoop.backoffMs(1, 500_000))
+        assertEquals(120_000L, SubAgentLoop.backoffMs(1, 500_000))
     }
 
     @Test fun rateLimitGivesUpAfterRetries() = runTest {

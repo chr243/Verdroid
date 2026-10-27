@@ -14,6 +14,16 @@ class AppPrefs @Inject constructor(@ApplicationContext context: Context) {
     private val prefs = context.getSharedPreferences("app_prefs", Context.MODE_PRIVATE)
         .also { if (it.contains(KEY_SHARE_OPEN)) it.edit().remove(KEY_SHARE_OPEN).apply() }
 
+    private val _rpmOverride = MutableStateFlow(prefs.getInt("rpm_override", 0).coerceIn(0, 60))
+    /** Manual requests/minute override for every OpenRouter model bucket; 0 = automatic (headers + AIMD, learned per model). */
+    val rpmOverride: StateFlow<Int> = _rpmOverride
+    fun setRpmOverride(v: Int) { val c = v.coerceIn(0, 60); prefs.edit().putInt("rpm_override", c).apply(); _rpmOverride.value = c }
+
+    /** Learned per provider|model rpm (AdaptiveRateController.encode). */
+    var learnedRpm: String
+        get() = prefs.getString("learned_rpm", "") ?: ""
+        set(v) { prefs.edit().putString("learned_rpm", v).apply() }
+
     private val _notifyOnFinish = MutableStateFlow(prefs.getBoolean(KEY_NOTIFY_FINISH, false))
     /** "Notify when a task finishes" — default OFF (only attention-needed events notify). */
     val notifyOnFinish: StateFlow<Boolean> = _notifyOnFinish.asStateFlow()

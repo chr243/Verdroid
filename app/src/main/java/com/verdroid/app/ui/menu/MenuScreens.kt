@@ -342,6 +342,8 @@ fun SubAgentSettingsScreen(onBack: () -> Unit, vm: SettingsViewModel = hiltViewM
     val steps by sa.maxSteps.collectAsStateWithLifecycle()
     val timeout by sa.timeoutSec.collectAsStateWithLifecycle()
     val tools by sa.tools.collectAsStateWithLifecycle()
+    val rlFallback by sa.fallbackOnRateLimit.collectAsStateWithLifecycle()
+    val freeRpm by vm.appPrefs.rpmOverride.collectAsStateWithLifecycle()
     var pick by remember { mutableStateOf(false) }
     val R = com.verdroid.app.agent.research.ResearchPolicy
     val rp = vm.research
@@ -383,6 +385,23 @@ fun SubAgentSettingsScreen(onBack: () -> Unit, vm: SettingsViewModel = hiltViewM
             slider("Max sub-agents per call: $perCall", perCall, 1..P.MAX_TASKS, sa::setPerCall)
             slider("Max steps per sub-agent: $steps", steps, P.STEPS_RANGE, sa::setMaxSteps)
             slider("Timeout per sub-agent: ${timeout}s", timeout, P.TIMEOUT_SEC_RANGE) { sa.setTimeoutSec((it / 30) * 30) }
+            Text("Rate limits", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 12.dp))
+            Text("All OpenRouter free-model calls (main chat, sub-agents, research workers) share one paced queue, because OpenRouter " +
+                "limits free models per account (20 requests/min). On a 429 a worker waits for Retry-After and retries instead of failing. " +
+                "Free models default to ${P.FREE_DEFAULT_CONCURRENCY} parallel workers until you move a slider.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("Requests per minute: " + if (freeRpm == 0) "Auto (learned per model)" else "$freeRpm (manual override)", style = MaterialTheme.typography.bodyLarge)
+            Text("Auto reads the provider's rate-limit headers, speeds up slowly after successes and halves on a 429. " +
+                "Learned rates are remembered per model.", style = MaterialTheme.typography.bodySmall)
+            Slider(value = freeRpm.toFloat(), onValueChange = { vm.appPrefs.setRpmOverride(Math.round(it)) }, valueRange = 0f..60f, steps = 59)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("Fall back to main model when rate-limited", style = MaterialTheme.typography.bodyLarge)
+                    Text("If a sub-agent or worker is still rate-limited after its retries, it finishes on the Model priority list.",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Switch(checked = rlFallback, onCheckedChange = sa::setFallbackOnRateLimit)
+            }
             Text("Deep research", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 12.dp))
             Text("deep_research plans sub-questions with the main model, runs parallel workers (web_search + web_fetch) on the worker " +
                 "model, dedupes and filters URLs, then writes a long cited report to Documents/Verdroid/Output/Research. The agent calls it " +

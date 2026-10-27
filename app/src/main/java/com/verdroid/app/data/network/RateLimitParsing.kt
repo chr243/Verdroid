@@ -10,6 +10,8 @@ data class RateLimitHeaders(
     val rawLimit: String?,
     val rawRemaining: String?,
     val rawReset: String?,
+    /** Retry-After header as an absolute time (Unix ms), seconds or HTTP-date form. */
+    val retryAfterAtMs: Long? = null,
 ) {
     val isEmpty: Boolean get() = rawLimit == null && rawRemaining == null && rawReset == null
 
@@ -17,15 +19,47 @@ data class RateLimitHeaders(
         val EMPTY = RateLimitHeaders(null, null, null, null, null, null)
 
         fun parse(header: (String) -> String?): RateLimitHeaders {
-            val l = header("X-RateLimit-Limit")?.trim()
-            val r = header("X-RateLimit-Remaining")?.trim()
+            return parseAt(header, System.currentTimeMillis())
+        }
+
+        /**
+         * X-RateLimit-Limit/-Remaining/-Reset (OpenRouter: reset = epoch ms) and the OpenAI/Groq-style
+         * x-ratelimit-limit-requests / -remaining-requests / -reset-requests (reset = duration like "1s", "6m0s", "250ms").
+         */
+        fun parseAt(header: (String) -> String?, now: Long): RateLimitHeaders {
+            val l = (header("X-RateLimit-Limit") ?: header("x-ratelimit-limit-requests"))?.trim()
+            val r = (header("X-RateLimit-Remaining") ?: header("x-ratelimit-remaining-requests"))?.trim()
             val s = header("X-RateLimit-Reset")?.trim()
+            val sReq = header("x-ratelimit-reset-requests")?.trim()
             return RateLimitHeaders(
                 limit = l?.toDoubleOrNull()?.toInt(),
                 remaining = r?.toDoubleOrNull()?.toInt(),
-                resetAtMs = s?.toDoubleOrNull()?.toLong()?.let { normaliseEpoch(it) },
-                rawLimit = l, rawRemaining = r, rawReset = s,
+                resetAtMs = s?.let { v -> v.toDoubleOrNull()?.toLong()?.let { normaliseEpoch(it) } ?: durationMs(v)?.let { now + it } }
+                    ?: sReq?.let { durationMs(it) }?.let { now + it },
+                rawLimit = l, rawRemaining = r, rawReset = s ?: sReq,
+                retryAfterAtMs = retryAfterAt(header("Retry-After"), now),
             )
+        }
+
+        /** Retry-After: delta seconds ("12", "1.5") or an HTTP-date; null if absent / unparsable. */
+        fun retryAfterAt(v: String?, now: Long): Long? {
+            val t = v?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+            t.toDoubleOrNull()?.let { return if (it < 0) null else now + (it * 1000).toLong() }
+            return runCatching { java.time.ZonedDateTime.parse(t, java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME).toInstant().toEpochMilli() }.getOrNull()
+        }
+
+        /** retry_after / retryAfter (seconds) in an error body's `error.metadata` (or top level); absolute ms or null. */
+        fun retryAfterFromBody(body: String?, now: Long): Long? {
+            if (body.isNullOrBlank()) return null
+            val m = Regex("""["']retry[_-]?after(?:_seconds)?["']\s*:\s*"?(\d+(?:\.\d+)?)""", RegexOption.IGNORE_CASE).find(body) ?: return null
+            return m.groupValues[1].toDoubleOrNull()?.let { now + (it * 1000).toLong() }
+        }
+
+        /** "6m0s", "1.5s", "250ms", "1h2m" → ms; null if not a duration. */
+        fun durationMs(v: String): Long? {
+            val parts = Regex("""(\d+(?:\.\d+)?)(ms|h|m|s)""").findAll(v.trim()).toList()
+            if (parts.isEmpty() || parts.joinToString("") { it.value } != v.trim()) return null
+            return parts.sumOf { val n = it.groupValues[1].toDouble(); when (it.groupValues[2]) { "ms" -> n; "s" -> n * 1e3; "m" -> n * 6e4; else -> n * 3.6e6 }.toLong() }
         }
 
         /** OpenRouter documents Unix ms; be tolerant of seconds. */

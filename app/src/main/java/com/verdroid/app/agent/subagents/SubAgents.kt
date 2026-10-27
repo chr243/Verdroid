@@ -26,6 +26,14 @@ import kotlinx.serialization.json.jsonPrimitive
 object SubAgentPolicy {
     const val TOOL_NAME = "spawn_subagents"
     const val DEFAULT_CONCURRENCY = 3
+    /** Default parallel workers when the worker model is an OpenRouter free model (one shared ~20 req/min account limit). */
+    const val FREE_DEFAULT_CONCURRENCY = 2
+    /** Rate-limit waiting a sub-agent may do on top of its timeout. */
+    const val RATE_WAIT_BUDGET_MS = 8 * 60_000L
+
+    /** The user's value if they set one; otherwise [FREE_DEFAULT_CONCURRENCY] for free models, else [setting]. */
+    fun effectiveConcurrency(setting: Int, userSet: Boolean, freeModel: Boolean): Int =
+        clampConcurrency(if (!userSet && freeModel) minOf(setting, FREE_DEFAULT_CONCURRENCY) else setting)
     const val MIN_CONCURRENCY = 1
     const val MAX_CONCURRENCY = 10
     const val MAX_TASKS = 20
@@ -92,13 +100,28 @@ data class SubAgentResult(
     val tools: Set<String> = emptySet(),
     /** Requested tools it did not get, with the reason. */
     val rejectedTools: Map<String, String> = emptyMap(),
+    /** Failed because of rate limits (after retries and fallback). */
+    val rateLimited: Boolean = false,
+    /** Finished on the fallback model list after the worker model stayed rate-limited. */
+    val usedFallback: Boolean = false,
 ) {
     enum class Status { OK, ERROR, TIMEOUT }
 }
 
 /** Progress of one spawn_subagents call (drives the chat card and the task subtitle). */
-data class SubAgentProgress(val total: Int, val done: Int, val running: Int, val failed: Int) {
-    val label: String get() = "Sub-agents $done/$total done" + if (running > 0) " · $running running" else ""
+data class SubAgentProgress(val total: Int, val done: Int, val running: Int, val failed: Int, val waiting: Int = 0) {
+    val label: String get() = "Sub-agents $done/$total done" + (if (running > 0) " · $running running" else "") +
+        (if (waiting > 0) " · $waiting waiting for rate limit" else "")
+}
+
+/** Counts workers currently sleeping on a rate limit (shown as "waiting for rate limit", not as failures). */
+class RateWaitCounter {
+    @Volatile var waiting: Int = 0; private set
+    @Volatile var onChange: suspend () -> Unit = {}
+    suspend fun set(on: Boolean) {
+        synchronized(this) { waiting = (waiting + if (on) 1 else -1).coerceAtLeast(0) }
+        onChange()
+    }
 }
 
 /**
@@ -111,12 +134,14 @@ object SubAgentPool {
         concurrency: Int,
         onProgress: suspend (SubAgentProgress) -> Unit = {},
         failed: (R) -> Boolean = { false },
+        waits: RateWaitCounter? = null,
         block: suspend (index: Int, task: T) -> R,
     ): List<R> = coroutineScope {
         val sem = Semaphore(SubAgentPolicy.clampConcurrency(concurrency))
         val lock = Mutex()
         var done = 0; var running = 0; var bad = 0
-        suspend fun report() = onProgress(SubAgentProgress(tasks.size, done, running, bad))
+        suspend fun report() = onProgress(SubAgentProgress(tasks.size, done, running, bad, waits?.waiting ?: 0))
+        waits?.onChange = { lock.withLock { report() } }
         report()
         tasks.mapIndexed { i, t ->
             async {
@@ -145,29 +170,40 @@ class SubAgentLoop(
     private val allowed: Set<String>,
     private val maxSteps: Int = SubAgentPolicy.MAX_STEPS,
     private val timeoutMs: Long = SubAgentPolicy.TIMEOUT_MS,
-    private val maxRetries: Int = 3,
+    private val maxRetries: Int = DEFAULT_RATE_RETRIES,
     private val now: () -> Long = System::currentTimeMillis,
     private val sleep: suspend (Long) -> Unit = { kotlinx.coroutines.delay(it) },
     /** Max characters kept from the final answer (deep_research workers keep more). */
     private val maxFindingsChars: Int = SubAgentPolicy.MAX_FINDINGS_CHARS,
+    /** Used once the worker model stays rate-limited after [maxRetries] waits (e.g. the main Model priority list); null = none. */
+    private val fallback: (suspend (messages: List<ApiMessage>, tools: JsonArray?) -> ChatOutcome)? = null,
+    /** true while sleeping on a rate limit, false when done waiting (progress UI). */
+    private val onWait: suspend (Boolean) -> Unit = {},
+    private val jitter: () -> Long = { kotlin.random.Random.nextLong(0, 1_000) },
+    /** Extra wall time allowed for rate-limit waits: time spent waiting does not count toward [timeoutMs] (up to this much). */
+    private val rateWaitBudgetMs: Long = 0,
 ) {
+    private var waitedMs = 0L
+
     suspend fun run(index: Int, task: String): SubAgentResult {
         var steps = 0
         var lastModel: String? = null
-        val out = withTimeoutOrNull(timeoutMs) {
+        val start = now()
+        val out = withTimeoutOrNull(timeoutMs + rateWaitBudgetMs) {
             val msgs = mutableListOf(ApiMessage("system", SubAgentPolicy.systemPrompt(allowed)), ApiMessage("user", task))
             val guard = RepeatCallGuard()
             val tools = toolSchemas.takeIf { it.isNotEmpty() }
             while (true) {
+                if (rateWaitBudgetMs > 0 && now() - start - waitedMs > timeoutMs) return@withTimeoutOrNull null
                 if (steps >= maxSteps) {
                     // Last chance: ask for the answer without tools.
                     msgs += ApiMessage("system", "Step limit reached. Give your findings now, with sources, without calling tools.")
-                    val c = call(msgs, null) ?: return@withTimeoutOrNull SubAgentResult(index, task, SubAgentResult.Status.ERROR, lastError, steps, lastModel)
+                    val c = call(msgs, null) ?: return@withTimeoutOrNull fail(index, task, steps, lastModel)
                     lastModel = c.model
                     return@withTimeoutOrNull done(index, task, c.completion.content, steps, lastModel)
                 }
                 steps++
-                val c = call(msgs, tools) ?: return@withTimeoutOrNull SubAgentResult(index, task, SubAgentResult.Status.ERROR, lastError, steps, lastModel)
+                val c = call(msgs, tools) ?: return@withTimeoutOrNull fail(index, task, steps, lastModel)
                 lastModel = c.model
                 val native = c.completion.toolCalls
                 val fenced = if (native.isEmpty()) FencedToolCallParser.deliberate(c.completion.content, allowed) else emptyList()
@@ -193,7 +229,8 @@ class SubAgentLoop(
             @Suppress("UNREACHABLE_CODE") null
         }
         return out ?: SubAgentResult(index, task, SubAgentResult.Status.TIMEOUT,
-            "Timed out after ${timeoutMs / 1000}s (step $steps).", steps, lastModel)
+            "Timed out after ${timeoutMs / 1000}s (step $steps)" + (if (waitedMs > 0) ", ${waitedMs / 1000}s of it waiting for rate limits." else "."),
+            steps, lastModel, rateLimited = waitedMs > 0)
     }
 
     private var lastError = ""
@@ -210,17 +247,37 @@ class SubAgentLoop(
         catch (e: Exception) { ToolResult("""{"error":"${(e.message ?: e.javaClass.simpleName).replace("\"", "'")}"}""", true) }
     }
 
-    /** Model call with retries: rate limits wait (backoff, or the provider's reset time, capped at 60 s); other failures retry once. */
+    private var rateLimitedOut = false
+    private var onFallback = false
+
+    private fun fail(index: Int, task: String, steps: Int, model: String?) =
+        SubAgentResult(index, task, SubAgentResult.Status.ERROR, lastError, steps, model, rateLimited = rateLimitedOut, usedFallback = onFallback)
+
+    /**
+     * Model call with retries. Rate limits: wait for the provider's Retry-After / reset time (or 2 s, 4 s, 8 s … backoff),
+     * plus jitter, up to [maxRetries] times; then switch once to [fallback] (if set) with a fresh retry budget. Daily quota
+     * skips straight to the fallback. Other failures retry once.
+     */
     private suspend fun call(msgs: List<ApiMessage>, tools: JsonArray?): ChatOutcome.Success? {
         var attempt = 0
         var failures = 0
         while (true) {
-            when (val o = model(msgs, tools)) {
+            val m = if (onFallback) fallback!! else model
+            when (val o = m(msgs, tools)) {
                 is ChatOutcome.Success -> return o
                 is ChatOutcome.NoApiKey -> { lastError = "No API key / model available."; return null }
                 is ChatOutcome.RateLimited -> {
-                    if (o.dailyQuota || attempt >= maxRetries) { lastError = "Rate limited: ${o.message}"; return null }
-                    sleep(backoffMs(attempt, o.resumeAt - now())); attempt++
+                    if (o.dailyQuota || attempt >= maxRetries) {
+                        if (fallback != null && !onFallback) { onFallback = true; attempt = 0; failures = 0; continue }
+                        lastError = "Rate limited after ${attempt} retries${if (onFallback) " (fallback model too)" else ""}: ${o.message}"
+                        rateLimitedOut = true
+                        return null
+                    }
+                    val w = backoffMs(attempt, o.resumeAt - now()) + jitter()
+                    onWait(true)
+                    try { sleep(w) } finally { onWait(false) }
+                    waitedMs += w
+                    attempt++
                 }
                 is ChatOutcome.Failure -> {
                     if (failures >= 1) { lastError = o.message; return null }
@@ -241,9 +298,12 @@ class SubAgentLoop(
     }
 
     companion object {
-        /** 2 s, 4 s, 8 s … or the provider's reset time if later; never more than 60 s. */
+        /** Rate-limit waits per model list before failing / falling back (6 ≈ up to several minutes in total). */
+        const val DEFAULT_RATE_RETRIES = 6
+
+        /** 2 s, 4 s, 8 s … (≤60 s) or the provider's Retry-After / reset time if later (honoured up to 120 s). */
         fun backoffMs(attempt: Int, untilReset: Long): Long =
-            maxOf(2_000L shl attempt.coerceAtMost(5), untilReset).coerceIn(1_000L, 60_000L)
+            maxOf((2_000L shl attempt.coerceAtMost(5)).coerceAtMost(60_000L), untilReset).coerceIn(1_000L, 120_000L)
     }
 }
 
