@@ -36,7 +36,13 @@ data class SourceEntry(
     /** False when [text] is only part of the page (first markdown page, or cut at [SourceRegistry.MAX_TEXT]). */
     val complete: Boolean = true,
     val disambigReason: String = "",
+    /** Every fetch attempt for this URL in order: HTTP status, or dns/timeout/tls/connect/blocked_page, or wayback:<result>. */
+    val attempts: List<String> = emptyList(),
+    /** True once every recovery step (retries with backoff, Wayback) was tried and failed; not_found is terminal at once. */
+    val terminal: Boolean = false,
 ) {
+    /** not_found / blocked / unreachable / error, or null for a fetched page. */
+    val failure: String? get() = SourceChecks.FAILURES.firstOrNull { it in flags }
     val ok: Boolean get() = flags.isEmpty()
     /** Cleaned, tokenized page text for quote grounding (built once per entry). */
     val index: PageIndex by lazy { PageIndex(text) }
@@ -44,7 +50,36 @@ data class SourceEntry(
 }
 
 object SourceChecks {
-    const val DEAD = "dead"
+    /** 404/410: the page does not exist (deleted, or a hallucinated URL). The only state that is terminal without a retry. */
+    const val NOT_FOUND = "not_found"
+    /** 401/403/429/503 or a bot-check page: rate limited or blocked, retried with backoff, then Wayback. */
+    const val BLOCKED = "blocked"
+    /** DNS / TLS / timeout / connection failure (status 000): retried once, then Wayback. */
+    const val UNREACHABLE = "unreachable"
+    /** Any other HTTP error (mostly 5xx): retried once, then Wayback. */
+    const val ERROR = "error"
+    val FAILURES = listOf(NOT_FOUND, BLOCKED, UNREACHABLE, ERROR)
+
+    /** Failure kind of one fetch outcome, or null when it succeeded. */
+    fun failureKind(status: Int, blocked: Boolean, error: String = ""): String? = when {
+        status == 404 || status == 410 -> NOT_FOUND
+        status in setOf(401, 403, 429, 503) || (blocked && status in 200..299) -> BLOCKED
+        status in 200..299 && !blocked && error.isBlank() -> null
+        status == 0 -> UNREACHABLE
+        blocked && status !in 500..599 -> BLOCKED
+        else -> ERROR
+    }
+
+    /** Short label for a network failure without an HTTP status. */
+    fun netLabel(error: String): String {
+        val m = error.lowercase()
+        return when {
+            "resolve host" in m || "unknownhost" in m || "no address associated" in m || "nodename" in m || "name or service" in m -> "dns"
+            "timeout" in m || "timed out" in m -> "timeout"
+            "ssl" in m || "tls" in m || "certificate" in m || "handshake" in m -> "tls"
+            else -> "connect"
+        }
+    }
     const val DISAMBIGUATION = "disambiguation"
     const val SEARCH_PAGE = "search_page"
     const val EMPTY = "empty"
@@ -75,7 +110,8 @@ object SourceChecks {
     fun isDisambiguation(title: String, text: String, url: String = ""): Boolean = disambiguationSignal(title, text, url) != null
 
     fun flags(url: String, finalUrl: String, status: Int, title: String, text: String, blocked: Boolean): Set<String> = buildSet {
-        if (status !in 200..299 || blocked) add(DEAD)
+        val fail = failureKind(status, blocked)
+        if (fail != null) add(fail)
         else if (text.trim().length < MIN_TEXT) add(EMPTY)
         if (ResearchPolicy.isSearchPage(url) || ResearchPolicy.isSearchPage(finalUrl)) add(SEARCH_PAGE)
         if (isDisambiguation(title, text, finalUrl.ifBlank { url })) add(DISAMBIGUATION)
@@ -258,6 +294,28 @@ class SourceRegistry {
     val rejected = LinkedHashMap<String, String>()
     /** Where a rejected URL came from (worker / report) and the validation detail. */
     val rejectedOrigin = LinkedHashMap<String, String>()
+    /** URL → id of the source it was merged into (redirect target or same page title + text on the same domain). */
+    val merged = LinkedHashMap<String, Int>()
+
+    /** Appends an attempt label (e.g. a Wayback outcome) without changing the entry's state. */
+    @Synchronized fun attempt(url: String, label: String) {
+        val k = key(url) ?: return
+        val e = byKey[k]?.let { byId[it.id] } ?: return
+        val n = e.copy(attempts = e.attempts + label); byId[e.id] = n; byKey.replaceAll { _, v -> if (v.id == e.id) n else v }
+    }
+
+    /** Marks a failed entry terminal (every recovery step tried): blocked_terminal / unreachable_terminal / error_terminal. */
+    @Synchronized fun markTerminal(url: String) {
+        val k = key(url) ?: return
+        val e = byKey[k]?.let { byId[it.id] } ?: return
+        if (e.ok || e.terminal) return
+        val n = e.copy(terminal = true); byId[e.id] = n; byKey.replaceAll { _, v -> if (v.id == e.id) n else v }
+    }
+
+    private fun titleKey(url: String, title: String): String? {
+        val t = title.lowercase().replace(Regex("""\s+[-–—|]\s+(wikipedia|wikimedia commons|wiktionary)$"""), "").replace(Regex("""\s+"""), " ").trim()
+        return if (t.length < 8) null else Urls.domain(url) + "|" + t
+    }
 
     @Synchronized fun get(url: String): SourceEntry? = key(url)?.let { byKey[it] }?.let { byId[it.id] }
     @Synchronized fun byId(id: Int): SourceEntry? = byId[id]
@@ -270,24 +328,33 @@ class SourceRegistry {
 
     @Synchronized fun record(
         url: String, finalUrl: String, status: Int, title: String, text: String, blocked: Boolean = false, servedFrom: String = "live",
-        complete: Boolean = true,
+        complete: Boolean = true, attemptLabel: String? = null,
     ): SourceEntry? {
         val k = key(url) ?: return null
         val fk = key(finalUrl) ?: k
         val flags = SourceChecks.flags(url, finalUrl, status, title, text, blocked)
         val dis = if (SourceChecks.DISAMBIGUATION in flags) SourceChecks.disambiguationSignal(title, text, finalUrl.ifBlank { url }).orEmpty() else ""
         val full = complete && text.length <= MAX_TEXT
-        val old = byKey[k] ?: byKey[fk]
+        val label = attemptLabel ?: (if (status == 0) "000" else status.toString()) + (if (blocked && status in 200..299) " blocked_page" else "")
+        var old = (byKey[k] ?: byKey[fk])?.let { byId[it.id] }
+        // Same article under another URL (e.g. a Wikipedia redirect title): same domain, same page title and opening text.
+        if (old == null && flags.isEmpty()) {
+            val tk = titleKey(finalUrl.ifBlank { url }, title)
+            val head = SourceChecks.norm(text.take(1_500)).take(400)
+            val twin = tk?.let { t -> byId.values.firstOrNull { it.ok && titleKey(it.finalUrl.ifBlank { it.url }, it.title) == t && SourceChecks.norm(it.text.take(1_500)).take(400) == head } }
+            if (twin != null) { merged[url] = twin.id; byKey[k] = twin; byKey[fk] = twin; return twin }
+        }
+        if (old != null && byKey[k] == null && key(old.url) != k) merged[url] = old.id // redirect target already known
         val e = when {
-            old == null -> SourceEntry(next++, url, finalUrl, status, title, SourceChecks.h1(text), text.take(MAX_TEXT), servedFrom, flags, full, dis)
+            old == null -> SourceEntry(next++, url, finalUrl, status, title, SourceChecks.h1(text), text.take(MAX_TEXT), servedFrom, flags, full, dis, listOf(label))
             old.ok && flags.isEmpty() -> when {
                 old.complete -> old
                 full && text.length >= old.text.length -> old.copy(text = text, complete = true) // whole document replaces a partial one
                 old.text.length < MAX_TEXT && !old.text.contains(text.take(200)) -> old.copy(text = (old.text + "\n" + text).take(MAX_TEXT))
                 else -> old
             }
-            old.ok -> old // a later failed page/attempt never downgrades a good one
-            else -> SourceEntry(old.id, old.url, finalUrl, status, title.ifBlank { old.title }, SourceChecks.h1(text), text.take(MAX_TEXT), servedFrom, flags, full, dis)
+            old.ok -> old.copy(attempts = old.attempts + label) // a later failed page/attempt never downgrades a good one
+            else -> SourceEntry(old.id, old.url, finalUrl, status, title.ifBlank { old.title }, SourceChecks.h1(text), text.take(MAX_TEXT), servedFrom, flags, full, dis, old.attempts + label)
         }
         byKey[k] = e; byKey[fk] = e; byId[e.id] = e
         return e
@@ -301,7 +368,7 @@ class SourceRegistry {
         if (result.isError || o == null || o["error"] != null) {
             val msg = o?.str("error") ?: result.json
             val code = Regex("""HTTP (\d{3})""").find(msg)?.groupValues?.get(1)?.toIntOrNull() ?: 0
-            return record(asked, asked, code, "", "", blocked = true, servedFrom = servedFrom)
+            return record(asked, asked, code, "", "", servedFrom = servedFrom, attemptLabel = if (code == 0) SourceChecks.netLabel(msg) else code.toString())
         }
         val status = o.str("status")?.toIntOrNull() ?: if (o.str("ok") == "true") 200 else 0
         val text = SourceChecks.unfence(o.str("content") ?: o.str("body").orEmpty())
@@ -485,13 +552,23 @@ class RunBudget(val budgetMs: Long, private val now: () -> Long) {
 class ResearchRunState(
     val registry: SourceRegistry = SourceRegistry(),
     val breaker: EngineBreaker = EngineBreaker(),
-    private val maxWayback: Int = 6,
-    private val waybackTotalMs: Long = 90_000,
+    private val maxWayback: Int = 12,
+    private val waybackTotalMs: Long = 150_000,
     private val waybackCallMs: Long = 20_000,
     private val now: () -> Long = System::currentTimeMillis,
     private val maxFullText: Int = 40,
     private val fullTextCallMs: Long = 15_000,
+    /** Live re-fetches of failed pages per run, and the longest single backoff wait (a longer Retry-After goes to Wayback). */
+    private val maxRetries: Int = 40,
+    private val maxRetryWaitMs: Long = 20_000,
+    private val sleep: suspend (Long) -> Unit = { kotlinx.coroutines.delay(it) },
+    private val jitter: (Long) -> Long = { b -> (Math.random() * b).toLong() },
 ) {
+    /** Time left in the run (set by the engine from its budget); retries and Wayback never wait past it. */
+    @Volatile var timeLeft: () -> Long = { Long.MAX_VALUE }
+    @Volatile var retriesUsed = 0; private set
+    @Volatile var retryRecovered = 0; private set
+    private val hostNext = HashMap<String, Long>()
     private var waybackUsed = 0
     private var waybackMs = 0L
     @Volatile var waybackServed = 0; private set
@@ -536,7 +613,7 @@ class ResearchRunState(
      */
     suspend fun diversify(topic: String, dominant: String, exec: suspend (String, String) -> ToolResult, maxQueries: Int = 3, maxFetches: Int = 3): List<Int> {
         val added = mutableListOf<Int>()
-        val qs = listOf(topic, "$topic analysis", "$topic news").map { "$it -site:$dominant" }.take(maxQueries)
+        val qs = listOf(topic, "$topic analysis", "$topic news").map { if (dominant.isBlank()) it else "$it -site:$dominant" }.take(maxQueries)
         for (q in qs) {
             if (added.size >= maxFetches) break
             synchronized(this) { diversifyQueries++ }
@@ -560,14 +637,17 @@ class ResearchRunState(
 
     /** Tries the Internet Archive for [url] through web_fetch: availability API → snapshot (markdown). Capped by count and time. */
     suspend fun wayback(url: String, exec: suspend (String, String) -> ToolResult): ToolResult? {
-        if (!ResearchPolicy.usable(url) || !takeWayback()) return null
+        if (!ResearchPolicy.usable(url) || timeLeft() < waybackCallMs || !takeWayback()) return null
         val t0 = now()
         try {
             return withTimeoutOrNull(waybackCallMs) {
                 val api = "https://archive.org/wayback/available?url=" + URLEncoder.encode(url, "UTF-8")
                 val avail = exec("web_fetch", buildJsonObject { put("url", api); put("format", "raw") }.toString())
-                val snap = waybackSnapshot(avail.json) ?: return@withTimeoutOrNull null
+                val snap = waybackSnapshot(avail.json) ?: run { registry.attempt(url, "wayback:none"); return@withTimeoutOrNull null }
                 val r = exec("web_fetch", buildJsonObject { put("url", snap); put("format", "markdown") }.toString())
+                val o0 = runCatching { Json.parseToJsonElement(r.json) as JsonObject }.getOrNull()
+                val good = !r.isError && o0 != null && o0["error"] == null && o0.str("ok") != "false" && o0.str("blocked") != "true"
+                if (!good) { registry.attempt(url, "wayback:fail"); return@withTimeoutOrNull null } // a failed snapshot never changes the page's state
                 val e = registry.recordFetch(buildJsonObject { put("url", url) }.toString(), r, servedFrom = "wayback", originalUrl = url)
                 if (e?.ok == true && e.servedFrom == "wayback") { synchronized(this@ResearchRunState) { waybackServed++ } } else return@withTimeoutOrNull null
                 val o = runCatching { Json.parseToJsonElement(r.json) as JsonObject }.getOrNull() ?: return@withTimeoutOrNull null
@@ -577,15 +657,72 @@ class ResearchRunState(
         } catch (c: CancellationException) { throw c } catch (_: Exception) { return null } finally { spent(now() - t0) }
     }
 
-    /** Fetches a cited URL nobody fetched (used before writing; recorded, with Wayback fallback). */
+    /** Fetches a cited URL nobody fetched (used before writing; recorded, with the same retry → Wayback recovery). */
     suspend fun verifyFetch(url: String, exec: suspend (String, String) -> ToolResult) {
         val args = buildJsonObject { put("url", url); put("format", "markdown") }.toString()
-        val r = runCatching { exec("web_fetch", args) }.getOrElse { if (it is CancellationException) throw it; ToolResult("{\"error\":\"${it.message}\"}", true) }
+        val r = safe(exec, args)
         val e = registry.recordFetch(args, r)
-        if (e == null || !e.ok) wayback(url, exec)
+        if (e != null && !e.ok) recover(e, args, r, exec)
+    }
+
+    private suspend fun safe(exec: suspend (String, String) -> ToolResult, args: String): ToolResult =
+        runCatching { exec("web_fetch", args) }.getOrElse { if (it is CancellationException) throw it; ToolResult(buildJsonObject { put("error", "web_fetch failed: ${it.message}") }.toString(), true) }
+
+    /** Seconds from a Retry-After value (delta seconds or HTTP date) in the result, or in the error text. */
+    fun retryAfterMs(resultJson: String): Long? {
+        val o = runCatching { Json.parseToJsonElement(resultJson) as JsonObject }.getOrNull()
+        val v = o?.str("retry_after") ?: Regex("""retry[- ]after[:= ]*(\d{1,6})""", RegexOption.IGNORE_CASE).find(resultJson)?.groupValues?.get(1) ?: return null
+        v.trim().toLongOrNull()?.let { return it * 1000 }
+        return runCatching { java.time.ZonedDateTime.parse(v.trim(), java.time.format.DateTimeFormatter.RFC_1123_DATE_TIME).toInstant().toEpochMilli() - System.currentTimeMillis() }
+            .getOrNull()?.coerceAtLeast(0)
+    }
+
+    /** Reserves the next slot for [host] at least [backoff] from now and [HOST_GAP_MS] after the previous retry to that host. */
+    @Synchronized private fun slot(host: String, backoff: Long): Long {
+        val t = now(); val start = maxOf(t + backoff, hostNext[host] ?: 0L)
+        hostNext[host] = start + HOST_GAP_MS
+        return start - t
+    }
+
+    @Synchronized private fun takeRetry(): Boolean = if (retriesUsed < maxRetries) { retriesUsed++; true } else false
+
+    /**
+     * Recovery for a failed fetch. not_found: terminal at once. blocked: ≥2 retries with exponential backoff + jitter, honouring
+     * Retry-After (up to [maxRetryWaitMs]); unreachable / error: one retry. Then Wayback. Retries to one host are spread out, and
+     * nothing waits past the run budget. The entry is marked terminal only when every step really ran; if a cap or the budget cut
+     * recovery short it stays non-terminal (reported as blocked / unreachable / error). Returns a successful result, or null.
+     */
+    suspend fun recover(failed: SourceEntry, argsJson: String, first: ToolResult, exec: suspend (String, String) -> ToolResult): ToolResult? {
+        val url = failed.url
+        var kind = failed.failure ?: return null
+        if (kind == SourceChecks.NOT_FOUND) { registry.markTerminal(url); return null }
+        val host = runCatching { java.net.URI(url).host.orEmpty() }.getOrDefault("")
+        val tries = if (kind == SourceChecks.BLOCKED) 2 else 1
+        var last = first
+        var cut = false
+        for (i in 0 until tries) {
+            val base = (if (kind == SourceChecks.BLOCKED) 2_000L else 1_000L) shl i
+            val ra = retryAfterMs(last.json)
+            if (ra != null && ra > maxRetryWaitMs) { registry.attempt(url, "retry_after_${ra / 1000}s:skipped"); break }
+            val wait = slot(host, maxOf(ra ?: 0L, base + jitter(base / 2)))
+            if (wait > maxRetryWaitMs * 2 || timeLeft() < wait + RETRY_MARGIN_MS || !takeRetry()) { cut = true; break }
+            sleep(wait)
+            last = safe(exec, argsJson)
+            val e = registry.recordFetch(argsJson, last)
+            if (e != null && e.failure == null) { if (e.ok) synchronized(this) { retryRecovered++ }; return last } // fetched (even if empty/disambiguation)
+            kind = e?.failure ?: kind
+            if (kind == SourceChecks.NOT_FOUND) { registry.markTerminal(url); return null }
+        }
+        val wb = wayback(url, exec)
+        if (wb != null) return wb
+        val waybackRan = registry.get(url)?.attempts?.any { it.startsWith("wayback:") } == true
+        if (!cut && waybackRan) registry.markTerminal(url)
+        return null
     }
 
     companion object {
+        const val HOST_GAP_MS = 1_500L
+        const val RETRY_MARGIN_MS = 20_000L
         fun waybackSnapshot(json: String): String? = runCatching {
             val o = Json.parseToJsonElement(json) as JsonObject
             val body = o.str("body") ?: json
@@ -613,13 +750,25 @@ class ResearchToolGuard(
     private suspend fun fetch(argsJson: String): ToolResult {
         val r = exec("web_fetch", argsJson)
         val e = state.registry.recordFetch(argsJson, r)
-        if (e != null && (SourceChecks.DEAD in e.flags || SourceChecks.EMPTY in e.flags) && SourceChecks.SEARCH_PAGE !in e.flags) {
-            state.wayback(e.url, exec)?.let { return it }
+        if (e != null && !e.ok && SourceChecks.SEARCH_PAGE !in e.flags && (e.failure != null || SourceChecks.EMPTY in e.flags)) {
+            val fixed = if (e.failure != null) state.recover(e, argsJson, r, exec) else state.wayback(e.url, exec)
+            if (fixed != null) { state.registry.get(e.url)?.let { if (it.ok && !it.complete) state.fullText(it.url, exec) }; return fixed }
             state.fetchFailedBy.getOrPut(question) { java.util.concurrent.ConcurrentHashMap.newKeySet() } += e.url
+            return state.registry.get(e.url)?.let { f -> annotate(r, f) } ?: r
         }
         // The worker reads one page at a time; grounding needs the whole cleaned document, cached once per URL.
         if (e != null && e.ok && !e.complete) state.fullText(e.url, exec)
         return r
+    }
+
+    /** Tells the worker what the failure means, so a not_found URL is not retried or cited. */
+    private fun annotate(r: ToolResult, e: SourceEntry): ToolResult {
+        val o = runCatching { Json.parseToJsonElement(r.json) as JsonObject }.getOrNull() ?: return r
+        val note = when (e.failure) {
+            SourceChecks.NOT_FOUND -> "This URL does not exist (HTTP ${e.status}). Do not cite it."
+            else -> "Fetch failed after retries and an Internet Archive attempt (${e.failure}; attempts: ${e.attempts.joinToString()}). Do not cite it; try another source."
+        }
+        return ToolResult(JsonObject(o + mapOf("source_state" to JsonPrimitive(SourceTable.state(e)), "note" to JsonPrimitive(note))).toString(), r.isError)
     }
 
     private suspend fun search(argsJson: String): ToolResult {
@@ -657,10 +806,23 @@ class ResearchToolGuard(
 object Grounding {
     data class Note(val question: String, val parsed: WorkerOutput.Parsed)
     data class Stats(var checked: Int = 0, var verified: Int = 0, val tiers: MutableMap<String, Int> = LinkedHashMap(), val misses: MutableMap<String, Int> = LinkedHashMap()) {
+        /** Quotes whose cited source could not be read (never fetched, blocked, unreachable, error, empty, malformed or not_found). */
+        var unreachable: Int = 0
+        /** Subset of [unreachable]: the cited URL does not exist (404/410), so the quote is likely invented. */
+        var onNotFound: Int = 0
+        val unreachableBy: MutableMap<String, Int> = LinkedHashMap()
         @Synchronized fun add(c: SourceChecks.QuoteCheck) {
             checked++
             if (c.verified) { verified++; tiers.merge(c.tier, 1, Int::plus) } else misses.merge(c.reason.ifBlank { "unknown" }, 1, Int::plus)
         }
+        @Synchronized fun unreachable(state: String) {
+            unreachable++; unreachableBy.merge(state, 1, Int::plus)
+            if (state == SourceChecks.NOT_FOUND) onNotFound++
+        }
+        val total: Int get() = checked + unreachable
+        val unverified: Int get() = checked - verified
+        /** Share of quotes that could be checked at all; 1.0 when there were none. */
+        val coverage: Double get() = if (total == 0) 1.0 else checked.toDouble() / total
     }
 
     /** Why a URL cannot be cited, as a reason code: malformed_url / never_fetched / the entry's primary state. */
@@ -678,9 +840,14 @@ object Grounding {
                 for (f in p.findings) {
                     if (f.url.isBlank()) continue
                     val bad = Urls.malformed(f.url)
-                    if (bad != null) { reg.reject(f.url, "malformed_url", "$bad; worker: ${q.take(80)}"); continue }
+                    if (bad != null) { reg.reject(f.url, "malformed_url", "$bad; worker: ${q.take(80)}"); if (f.quote.isNotBlank()) stats.unreachable("malformed_url"); continue }
                     val e = reg.get(f.url)
-                    if (e == null || !e.ok) { reg.reject(f.url, rejectReason(f.url, e), "worker: ${q.take(80)}"); continue }
+                    if (e == null || !e.ok) {
+                        val why = rejectReason(f.url, e)
+                        reg.reject(f.url, why, "worker: ${q.take(80)}")
+                        if (f.quote.isNotBlank()) stats.unreachable(e?.failure ?: why) // counted, never silently dropped from the denominator
+                        continue
+                    }
                     used[e.id] = e; n++
                     append("- ${f.claim} [S${e.id}]")
                     if (f.quote.isNotBlank()) {
@@ -808,13 +975,15 @@ object Grounding {
 object SourceTable {
     const val CITED = "cited"
     const val UNCITED = "uncited"
+    /** Another URL for an already registered page (redirect or same title + text); counted once. */
+    const val MERGED = "merged_duplicate"
     data class Row(val url: String, val id: Int?, val state: String, val detail: String = "")
 
     /** Primary state of a registered entry (one per entry, so counters add up). */
     fun state(e: SourceEntry): String = when {
         SourceChecks.SEARCH_PAGE in e.flags -> SourceChecks.SEARCH_PAGE
         SourceChecks.DISAMBIGUATION in e.flags -> SourceChecks.DISAMBIGUATION
-        SourceChecks.DEAD in e.flags -> SourceChecks.DEAD
+        e.failure != null -> e.failure!!.let { f -> if (e.terminal && f != SourceChecks.NOT_FOUND) "${f}_terminal" else f }
         SourceChecks.EMPTY in e.flags -> SourceChecks.EMPTY
         else -> "ok"
     }
@@ -824,11 +993,17 @@ object SourceTable {
         val rows = all.map { e ->
             val st = state(e)
             Row(e.url, e.id, if (st == "ok") (if (e.id in cited) CITED else UNCITED) else st,
-                if (st == SourceChecks.DISAMBIGUATION) "signal: ${e.disambigReason}" else if (e.servedFrom == "wayback") "wayback" else "")
+                when {
+                    st == SourceChecks.DISAMBIGUATION -> "signal: ${e.disambigReason}"
+                    e.failure != null -> "fetch_attempts ${e.attempts.size}: ${e.attempts.joinToString()}"
+                    e.servedFrom == "wayback" -> "wayback; fetch_attempts ${e.attempts.size}: ${e.attempts.joinToString()}"
+                    else -> ""
+                })
         }
         val (rej, origin) = synchronized(reg) { LinkedHashMap(reg.rejected) to LinkedHashMap(reg.rejectedOrigin) }
         val extra = rej.filter { (u, _) -> reg.get(u) == null || Urls.malformed(u) != null }.map { (u, why) -> Row(u, null, why, origin[u].orEmpty()) }
-        return rows + extra
+        val dups = synchronized(reg) { LinkedHashMap(reg.merged) }.map { (u, id) -> Row(u, null, MERGED, "same page as source S$id") }
+        return rows + extra + dups
     }
 
     fun counts(rows: List<Row>): Map<String, Int> = rows.groupingBy { it.state }.eachCount()
@@ -854,6 +1029,8 @@ data class SourceDiversity(val distinct: Int, val top: String, val share: Double
             return SourceDiversity(d.distinct().size, top.key, top.value.toDouble() / d.size)
         }
         const val LOW_SHARE = 0.6
+        /** Top-domain share above which the capped diversification step runs (it also runs when search was degraded). */
+        const val DIVERSIFY_SHARE = 0.4
     }
 }
 
@@ -862,6 +1039,8 @@ data class ResearchDiagnostics(
     val table: List<SourceTable.Row> = emptyList(),
     val wayback: Int = 0,
     val quotesChecked: Int = 0, val quotesVerified: Int = 0, val quoteMisses: Map<String, Int> = emptyMap(), val quoteTiers: Map<String, Int> = emptyMap(),
+    val quotesUnreachable: Int = 0, val quotesOnNotFound: Int = 0, val quotesUnreachableBy: Map<String, Int> = emptyMap(),
+    val retries: Int = 0, val retryRecovered: Int = 0,
     val enginesFailed: Map<String, String> = emptyMap(), val enginesHealthy: Set<String> = emptySet(),
     val queriesIssued: Int = 0, val pagesReturned: Int = 0, val reformulations: Int = 0, val diversifyQueries: Int = 0,
     val diversity: SourceDiversity = SourceDiversity(0, "", 0.0),
@@ -876,26 +1055,51 @@ data class ResearchDiagnostics(
     val cited: Int get() = n(SourceTable.CITED)
     val orphansPruned: Int get() = n(SourceTable.UNCITED)
     val ok: Int get() = cited + orphansPruned
-    val dead: Int get() = n(SourceChecks.DEAD)
+    val notFound: Int get() = n(SourceChecks.NOT_FOUND)
+    val blocked: Int get() = n(SourceChecks.BLOCKED) + n(SourceChecks.BLOCKED + "_terminal")
+    val unreachable: Int get() = n(SourceChecks.UNREACHABLE) + n(SourceChecks.UNREACHABLE + "_terminal")
+    val error: Int get() = n(SourceChecks.ERROR) + n(SourceChecks.ERROR + "_terminal")
+    /** Every registered page whose fetch failed, by any reason. */
+    val failed: Int get() = notFound + blocked + unreachable + error
+    val quotesTotal: Int get() = quotesChecked + quotesUnreachable
+    val quotesUnverified: Int get() = quotesChecked - quotesVerified
+    val coverage: Double get() = if (quotesTotal == 0) 1.0 else quotesChecked.toDouble() / quotesTotal
+    val lowCoverage: Boolean get() = quotesTotal > 0 && coverage < COVERAGE_MIN
+    val merged: Int get() = table.count { it.state == SourceTable.MERGED }
     val empty: Int get() = n(SourceChecks.EMPTY)
     val disambiguation: Int get() = n(SourceChecks.DISAMBIGUATION)
     val searchPages: Int get() = n(SourceChecks.SEARCH_PAGE)
     val malformed: Int get() = n("malformed_url")
     /** Every row that cannot be cited, registered or not. */
-    val rejectedRows: List<SourceTable.Row> get() = table.filter { it.state != SourceTable.CITED && it.state != SourceTable.UNCITED }
+    val rejectedRows: List<SourceTable.Row> get() = table.filter { it.state != SourceTable.CITED && it.state != SourceTable.UNCITED && it.state != SourceTable.MERGED }
     val rejected: Map<String, String> get() = rejectedRows.associate { it.url to it.state }
-    /** collected == ok + dead + empty + disambiguation + search pages, by construction; checked anyway. */
-    val consistent: Boolean get() = collected == ok + dead + empty + disambiguation + searchPages
+    /** collected == ok + failed + empty + disambiguation + search pages, by construction; checked anyway. */
+    val consistent: Boolean get() = collected == ok + failed + empty + disambiguation + searchPages
+
+    companion object { const val COVERAGE_MIN = 0.8 }
+    private fun pct(x: Double) = Math.round(x * 100)
+    /** One-line grounding statement: never a verified rate without its coverage. */
+    fun groundingLine(): String = "Quotes: $quotesVerified of $quotesChecked checked quotes found on the pages; coverage ${pct(coverage)}% " +
+        "($quotesChecked of $quotesTotal quotes could be checked, $quotesUnreachable cite sources that could not be read" +
+        (if (quotesOnNotFound > 0) ", $quotesOnNotFound of them cite URLs that do not exist (likely invented)" else "") + ")"
 
     fun json(): JsonObject = buildJsonObject {
-        put("sources_collected", collected); put("sources_ok", ok); put("sources_dead", dead); put("sources_empty", empty)
+        put("sources_collected", collected); put("sources_ok", ok); put("sources_empty", empty)
+        put("sources_not_found", notFound); put("sources_blocked", blocked); put("sources_unreachable", unreachable); put("sources_error", error)
+        put("urls_not_found", notFound); put("duplicates_merged", merged)
+        put("fetch_retries", retries); put("recovered_by_retry", retryRecovered)
         put("sources_disambiguation", disambiguation); put("search_pages", searchPages); put("malformed_urls", malformed)
         put("served_from_wayback", wayback); put("sources_cited", cited); put("orphans_pruned", orphansPruned)
         put("source_states", buildJsonObject { counts.forEach { (k, v) -> put(k, v) } })
         put("counters_consistent", consistent)
-        put("quotes_checked", quotesChecked); put("quotes_verified", quotesVerified)
-        if (quoteMisses.isNotEmpty()) put("quote_miss_reasons", buildJsonObject { quoteMisses.forEach { (k, v) -> put(k, v) } })
-        if (quoteTiers.isNotEmpty()) put("quote_match_tiers", buildJsonObject { quoteTiers.forEach { (k, v) -> put(k, v) } })
+        put("grounding", buildJsonObject {
+            put("quotes_total", quotesTotal); put("quotes_checked", quotesChecked); put("quotes_verified", quotesVerified)
+            put("quotes_unverified", quotesUnverified); put("quotes_unreachable", quotesUnreachable); put("quotes_citing_not_found", quotesOnNotFound)
+            put("coverage", Math.round(coverage * 100) / 100.0)
+            put("tiers", buildJsonObject { quoteTiers.forEach { (k, v) -> put(k, v) } })
+            if (quotesUnreachableBy.isNotEmpty()) put("unreachable_by_state", buildJsonObject { quotesUnreachableBy.forEach { (k, v) -> put(k, v) } })
+            if (quoteMisses.isNotEmpty()) put("miss_reasons", buildJsonObject { quoteMisses.forEach { (k, v) -> put(k, v) } })
+        })
         put("weak_recall_questions", weakRecall)
         put("engines_healthy", buildJsonArray { enginesHealthy.forEach { add(JsonPrimitive(it)) } })
         put("engines_failed", buildJsonObject { enginesFailed.forEach { (k, v) -> put(k, v) } })
@@ -910,10 +1114,12 @@ data class ResearchDiagnostics(
 
     fun runNotes(): String = buildString {
         append("\n\n## Run notes\n\n")
-        append("- Sources: $collected fetched, $ok usable, $dead dead/blocked, $empty empty, $disambiguation disambiguation pages, $searchPages search pages, $wayback from the Internet Archive; ")
+        append("- Sources: $collected fetched, $ok usable, $notFound not found (URL does not exist), $blocked blocked/rate-limited, $unreachable unreachable, $error server errors, " +
+            "$empty empty, $disambiguation disambiguation pages, $searchPages search pages, $wayback from the Internet Archive; $retries retries ($retryRecovered recovered)" +
+            (if (merged > 0) ", $merged duplicate URL(s) merged" else "") + "; ")
         append("$cited cited ($orphansPruned uncited dropped, ${rejectedRows.size} rejected" + (if (malformed > 0) ", $malformed malformed URLs" else "") + ").\n")
         if (diversity.distinct > 0) append("- Source diversity: ${diversity.distinct} distinct domain(s); top domain ${diversity.top} = ${Math.round(diversity.share * 100)}% of usable sources.\n")
-        if (quotesChecked > 0) append("- Quotes: $quotesVerified of $quotesChecked found on the cited pages" + (if (quoteMisses.isNotEmpty()) " (misses: ${quoteMisses.entries.joinToString { "${it.key} ${it.value}" }})" else "") + ".\n")
+        if (quotesTotal > 0) append("- ${groundingLine()}" + (if (quoteMisses.isNotEmpty()) "; misses: ${quoteMisses.entries.joinToString { "${it.key} ${it.value}" }}" else "") + ".\n")
         append("- Search: $queriesIssued queries, $pagesReturned results, $reformulations reformulation(s)" + (if (diversifyQueries > 0) ", $diversifyQueries diversification queries" else "") +
             "; healthy engines: ${enginesHealthy.joinToString().ifEmpty { "none" }}.\n")
         if (enginesFailed.isNotEmpty()) append("- Search engines paused after repeated failures (retried after a cooldown): ${enginesFailed.keys.joinToString()}.\n")

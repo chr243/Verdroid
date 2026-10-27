@@ -58,6 +58,7 @@ class WebFetchTool(
                     put("status", resp.code)
                     put("url", resp.request.url.toString())
                     put("content_type", resp.header("Content-Type") ?: "")
+                    resp.header("Retry-After")?.let { put("retry_after", it) }
                     put("bytes", bytes.size)
                     put("truncated", truncated)
                     if (method != "HEAD") put("body", text)
@@ -78,6 +79,7 @@ class WebFetchTool(
         var source = "cache"
         var status = 200
         var blockReason: String? = null
+        var retryAfter: String? = null
         val entry = synchronized(cache) { cache[url] } ?: run {
             source = "live"
             val req = Request.Builder().url(url)
@@ -88,6 +90,7 @@ class WebFetchTool(
             val fetched = try {
                 http.newCall(req).execute().use { resp ->
                     status = resp.code
+                    retryAfter = resp.header("Retry-After")
                     val body = resp.body?.bytes()?.let { b -> String(if (b.size > MAX_HTML) b.copyOf(MAX_HTML) else b, Charsets.UTF_8) }.orEmpty()
                     val type = resp.header("Content-Type").orEmpty()
                     blockReason = com.verdroid.app.data.websearch.BlockDetector.reason(resp.code, body)
@@ -118,6 +121,7 @@ class WebFetchTool(
             put("source", source)
             put("untrusted", true)
             put("blocked", blockReason != null); blockReason?.let { put("block_reason", it) }
+            retryAfter?.let { put("retry_after", it) }
             gitHostNote(status, runCatching { java.net.URI(finalUrl).host }.getOrNull(), gitHosts)?.let { put("note", it) }
             put("content", com.verdroid.app.data.websearch.UntrustedFence.fence(text, finalUrl))
         }.toString()

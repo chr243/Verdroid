@@ -553,10 +553,18 @@ class SelfTestRunner @Inject constructor(
                 val u = "https://en.wikipedia.org/wiki/Yes_We_Can_(will.i.am_song)"
                 check(com.verdroid.app.agent.research.Urls.first("see $u.") == u && com.verdroid.app.agent.research.Urls.malformed(u) == null) { "balanced-paren URL" }
                 check(com.verdroid.app.agent.research.Urls.malformed(u.dropLast(1)) != null) { "malformed URL" }
+                check(sc.failureKind(404, false) == sc.NOT_FOUND && sc.failureKind(410, false) == sc.NOT_FOUND) { "404/410 → not_found" }
+                check(listOf(401, 403, 429, 503).all { sc.failureKind(it, false) == sc.BLOCKED }) { "401/403/429/503 → blocked" }
+                check(sc.failureKind(0, false, "Unable to resolve host x") == sc.UNREACHABLE && sc.netLabel("Unable to resolve host x") == "dns") { "dns → unreachable" }
+                check(sc.failureKind(502, false) == sc.ERROR && sc.failureKind(200, false) == null && "dead" !in sc.FAILURES) { "5xx → error; no dead state" }
+                val gs = com.verdroid.app.agent.research.Grounding.Stats(checked = 2, verified = 1)
+                check(com.verdroid.app.agent.research.Grounding.Stats(checked = 3, verified = 3).coverage == 1.0) { "coverage all fetched" }
+                gs.unreachable(sc.NOT_FOUND); gs.unreachable(sc.BLOCKED)
+                check(gs.total == 4 && gs.coverage == 0.5 && gs.onNotFound == 1 && gs.unverified == 1) { "coverage math" }
             }
             val bib = com.verdroid.app.agent.research.Grounding.bibliography("x [S${good.id}] y [S99]", reg)
             check(bib.cited.size == 1 && bib.text.contains("[1]") && bib.text.contains("[unverified source]")) { "bibliography: ${bib.text}" }
-            "pipeline ok (plan → 2 workers → ${out.sources.size} deduped sources → report); registry, lenient parsing, quote grounding and bibliography ok"
+            "pipeline ok (plan → 2 workers → ${out.sources.size} deduped sources → report); registry, lenient parsing, quote grounding, fetch states (not_found/blocked/unreachable/error), grounding coverage and bibliography ok"
         },
         "key_wipe_notice" to {
             check(com.verdroid.app.data.secure.KeyWipeNotice.message(setOf("Git token")).contains("Git token")) { "wipe message" }

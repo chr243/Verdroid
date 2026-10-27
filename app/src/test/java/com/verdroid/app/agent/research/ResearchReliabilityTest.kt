@@ -14,6 +14,7 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.serialization.json.put
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -38,7 +39,7 @@ class ResearchReliabilityTest {
         reg.record("https://a.com/x", "https://a.com/x", 500, "", "")
         assertTrue(reg.get("https://a.com/x")!!.ok)
         val d = reg.record("https://b.com/p", "https://b.com/p", 404, "", "")!!
-        assertTrue(SourceChecks.DEAD in d.flags)
+        assertTrue(SourceChecks.NOT_FOUND in d.flags)
         val up = reg.record("https://b.com/p", "https://b.com/p", 200, "B", page)!!
         assertTrue(up.ok); assertEquals(d.id, up.id)
     }
@@ -129,7 +130,7 @@ class ResearchReliabilityTest {
                 url.startsWith("https://archive.org/wayback/available") -> ToolResult(buildJsonObject { put("ok", true); put("status", 200)
                     put("body", "{\"archived_snapshots\":{\"closest\":{\"available\":true,\"url\":\"http://web.archive.org/web/2024/https://dead.com/a\"}}}") }.toString(), false)
                 url.startsWith("https://web.archive.org") -> ToolResult(fetchJson(url, 200, "Dead page", page), false)
-                else -> ToolResult("{\"error\":\"HTTP 404\"}", true)
+                else -> ToolResult("{\"error\":\"HTTP 500\"}", true) // a 404 would be terminal (not_found) and skip the archive
             }
         }
         val g = ResearchToolGuard(exec, state, "q")
@@ -138,7 +139,7 @@ class ResearchReliabilityTest {
         val e = state.registry.get("https://dead.com/a")!!
         assertTrue(e.ok); assertEquals("wayback", e.servedFrom); assertEquals(1, state.waybackServed)
         g.execute("web_fetch", fetchArgs("https://dead2.com/b")) // cap reached: no more archive calls
-        assertEquals(4, calls.size)
+        assertEquals(6, calls.size) // 2 + retry each, archive only for the first
         assertNull(ResearchRunState.waybackSnapshot("{\"body\":\"{\\\"archived_snapshots\\\":{}}\"}"))
     }
 
@@ -363,7 +364,7 @@ class ResearchReliabilityTest {
         val d = o.diagnostics!!
         assertTrue(searches.size in 1..3); assertTrue(searches.all { it.contains("-site:wikipedia.org") })
         assertTrue(d.diversity.distinct >= 2)
-        assertTrue(d.consistent); assertEquals(d.collected, d.ok + d.dead + d.empty + d.disambiguation + d.searchPages)
+        assertTrue(d.consistent); assertEquals(d.collected, d.ok + d.failed + d.empty + d.disambiguation + d.searchPages)
         assertEquals(d.rejected.size, d.rejectedRows.size)
         val types = d.gaps.map { it.type }
         assertTrue(types.count { it == "weak_recall_after_reformulation" } == 2 && "topic_no_source" in types)
@@ -384,5 +385,180 @@ class ResearchReliabilityTest {
         ).run("t", ResearchMode.STANDARD, ResearchLimits(2, 1, 10, 2))
         assertTrue(o.diagnostics!!.warnings.any { it.startsWith("source_diversity_low") })
         assertFalse(o.diagnostics!!.searchDegraded)
+    }
+    // ---- test8: fetch-status recovery, grounding coverage, duplicates, diversification trigger ----
+
+    private fun errJson(msg: String) = buildJsonObject { put("error", msg) }.toString()
+    private fun statusJson(url: String, status: Int, retryAfter: String? = null) = buildJsonObject {
+        put("ok", false); put("status", status); put("url", url); put("title", ""); put("total_pages", 1); put("content", "Error page")
+        retryAfter?.let { put("retry_after", it) }
+    }.toString()
+
+    /** Scripted web_fetch: per URL a queue of replies; Wayback availability says "none" unless [snapshots] has the URL. */
+    private class FakeWeb(val script: Map<String, MutableList<String>>, val snapshots: Map<String, String> = emptyMap()) {
+        val calls = mutableListOf<String>()
+        suspend fun exec(name: String, a: String): ToolResult {
+            val url = (Json.parseToJsonElement(a) as JsonObject)["url"]!!.jsonPrimitive.content
+            calls += url
+            if (url.startsWith("https://archive.org/wayback/available")) {
+                val orig = java.net.URLDecoder.decode(url.substringAfter("url="), "UTF-8")
+                val snap = snapshots[orig]
+                val body = if (snap == null) "{\"archived_snapshots\":{}}" else "{\"archived_snapshots\":{\"closest\":{\"available\":true,\"url\":\"$snap\"}}}"
+                return ToolResult(buildJsonObject { put("ok", true); put("status", 200); put("body", body) }.toString(), false)
+            }
+            val q = script[url] ?: return ToolResult("{\"error\":\"web_fetch failed: no script\"}", true)
+            val r = if (q.size > 1) q.removeAt(0) else q.first()
+            return ToolResult(r, r.contains("\"error\""))
+        }
+    }
+
+    private fun stateFor(t: () -> Long = { 0L }, waits: MutableList<Long> = mutableListOf()) =
+        ResearchRunState(now = t, sleep = { waits += it }, jitter = { 0L })
+
+    @Test fun notFoundIsTerminalWithoutRetry() = runTest {
+        val u = "https://www.noaa.gov/weather-modification"
+        val web = FakeWeb(mapOf(u to mutableListOf(statusJson(u, 404))))
+        val st = stateFor()
+        ResearchToolGuard(web::exec, st, "q").execute("web_fetch", fetchArgs(u))
+        val e = st.registry.get(u)!!
+        assertEquals(SourceChecks.NOT_FOUND, e.failure); assertEquals("not_found", SourceTable.state(e))
+        assertEquals(listOf(u), web.calls) // no retry, no Wayback
+        assertEquals(listOf("404"), e.attempts)
+        val gone = st.registry.record("https://x.org/gone", "https://x.org/gone", 410, "", "")!!
+        assertEquals(SourceChecks.NOT_FOUND, gone.failure)
+    }
+
+    @Test fun forbiddenIsBlockedAndRetriedNeverTerminalWithoutRetry() = runTest {
+        val u = "https://www.noaa.gov/jetstream/tropical/tropical-cyclone-introduction"
+        val waits = mutableListOf<Long>()
+        val web = FakeWeb(mapOf(u to mutableListOf(statusJson(u, 403), fetchJson(u, 200, "Tropical cyclones", page))))
+        val st = stateFor(waits = waits)
+        val r = ResearchToolGuard(web::exec, st, "q").execute("web_fetch", fetchArgs(u))
+        val e = st.registry.get(u)!!
+        assertTrue(e.ok); assertFalse(r.isError); assertEquals(listOf("403", "200"), e.attempts)
+        assertEquals(1, st.retryRecovered); assertTrue(waits.single() >= 2_000)
+        // Always 403: 2 retries with growing backoff, then Wayback, then blocked_terminal (never dead).
+        val v = "https://www.noaa.gov/jetstream/clouds/cloud-seeding"
+        val waits2 = mutableListOf<Long>()
+        val st2 = stateFor(waits = waits2)
+        val web2 = FakeWeb(mapOf(v to mutableListOf(statusJson(v, 403))))
+        ResearchToolGuard(web2::exec, st2, "q").execute("web_fetch", fetchArgs(v))
+        val b = st2.registry.get(v)!!
+        assertEquals(listOf("403", "403", "403", "wayback:none"), b.attempts)
+        assertEquals("blocked_terminal", SourceTable.state(b)); assertTrue(waits2[1] > waits2[0])
+        // If the budget cuts recovery short, it stays "blocked" (not terminal): we do not know the page is gone.
+        val st3 = stateFor().also { it.timeLeft = { 5_000L } }
+        ResearchToolGuard(FakeWeb(mapOf(v to mutableListOf(statusJson(v, 403))))::exec, st3, "q").execute("web_fetch", fetchArgs(v))
+        assertEquals("blocked", SourceTable.state(st3.registry.get(v)!!))
+    }
+
+    @Test fun rateLimitedIsRetriedHonouringRetryAfter() = runTest {
+        val u = "https://en.wikipedia.org/wiki/Willow_(disambiguation)"
+        val waits = mutableListOf<Long>()
+        val web = FakeWeb(mapOf(u to mutableListOf(statusJson(u, 429, "7"), fetchJson(u, 200, "Willow (disambiguation)", page))))
+        val st = stateFor(waits = waits)
+        ResearchToolGuard(web::exec, st, "q").execute("web_fetch", fetchArgs(u))
+        assertEquals(7_000L, waits.single())
+        val e = st.registry.get(u)!!
+        assertNull(e.failure); assertEquals(listOf("429", "200"), e.attempts)
+        // A Retry-After longer than the cap is not waited for: straight to Wayback.
+        val v = "https://a.org/x"; val w2 = mutableListOf<Long>()
+        val st2 = stateFor(waits = w2)
+        ResearchToolGuard(FakeWeb(mapOf(v to mutableListOf(statusJson(v, 429, "3600"))))::exec, st2, "q").execute("web_fetch", fetchArgs(v))
+        assertTrue(w2.isEmpty()); assertTrue(st2.registry.get(v)!!.attempts.any { it.startsWith("wayback:") })
+    }
+
+    @Test fun dnsFailureRetriesOnceThenWayback() = runTest {
+        val u = "https://scijinks.gov/cloud-seeding/"
+        val snap = "https://web.archive.org/web/2024/https://scijinks.gov/cloud-seeding/"
+        val web = FakeWeb(mapOf(u to mutableListOf(errJson("web_fetch failed: Unable to resolve host \"scijinks.gov\": No address associated with hostname")),
+            snap to mutableListOf(fetchJson(snap, 200, "Cloud seeding", page))), snapshots = mapOf(u to snap))
+        val st = stateFor()
+        val r = ResearchToolGuard(web::exec, st, "q").execute("web_fetch", fetchArgs(u))
+        assertEquals(2, web.calls.count { it == u }) // one retry
+        assertTrue(r.json.contains("wayback"))
+        val e = st.registry.get(u)!!
+        assertTrue(e.ok); assertEquals("wayback", e.servedFrom); assertEquals(listOf("dns", "dns", "200"), e.attempts)
+        // Unreachable everywhere → unreachable_terminal.
+        val v = "https://down.example.org/a"
+        val st2 = stateFor()
+        ResearchToolGuard(FakeWeb(mapOf(v to mutableListOf(errJson("web_fetch failed: timeout"))))::exec, st2, "q").execute("web_fetch", fetchArgs(v))
+        assertEquals("unreachable_terminal", SourceTable.state(st2.registry.get(v)!!))
+        // A server error is retried once too.
+        val w = "https://srv.example.org/a"
+        val st3 = stateFor()
+        val web3 = FakeWeb(mapOf(w to mutableListOf(statusJson(w, 500), fetchJson(w, 200, "Server page", page))))
+        ResearchToolGuard(web3::exec, st3, "q").execute("web_fetch", fetchArgs(w))
+        assertTrue(st3.registry.get(w)!!.ok)
+    }
+
+    @Test fun retriesAreSpreadPerHost() = runTest {
+        val waits = mutableListOf<Long>()
+        val st = stateFor(waits = waits)
+        val a = "https://www.noaa.gov/a"; val b = "https://www.noaa.gov/b"
+        val web = FakeWeb(mapOf(a to mutableListOf(statusJson(a, 500), fetchJson(a, 200, "Page A here", page)), b to mutableListOf(statusJson(b, 500), fetchJson(b, 200, "Page B here", page + "b"))))
+        ResearchToolGuard(web::exec, st, "q").execute("web_fetch", fetchArgs(a))
+        ResearchToolGuard(web::exec, st, "q").execute("web_fetch", fetchArgs(b))
+        assertEquals(1_000L, waits[0]); assertTrue(waits[1] >= 2_500) // second retry to the same host waits for its slot (clock frozen)
+    }
+
+    @Test fun groundingCoverage() {
+        val reg = SourceRegistry()
+        val a = reg.record("https://a.com/x", "https://a.com/x", 200, "A", page)!!
+        reg.record("https://b.com/gone", "https://b.com/gone", 404, "", "")
+        reg.record("https://c.com/blocked", "https://c.com/blocked", 403, "", "")
+        fun f(u: String, q: String) = WorkerOutput.Finding("claim", u, q)
+        val q = "Solar panels convert sunlight into electricity"
+        val all = Grounding.Stats()
+        Grounding.notes(listOf(Grounding.Note("Q", WorkerOutput.Parsed(listOf(f(a.url, q), f(a.url, "panels convert moonlight into cheese daily")), false, "", true))), reg, all)
+        assertEquals(2, all.total); assertEquals(1.0, all.coverage, 0.0); assertEquals(1, all.unverified)
+        val st = Grounding.Stats()
+        Grounding.notes(listOf(Grounding.Note("Q", WorkerOutput.Parsed(listOf(f(a.url, q), f("https://b.com/gone", q), f("https://c.com/blocked", q), f("https://never.org/x", q)), false, "", true))), reg, st)
+        assertEquals(4, st.total); assertEquals(1, st.checked); assertEquals(3, st.unreachable); assertEquals(1, st.onNotFound)
+        assertEquals(0.25, st.coverage, 1e-9)
+        val d = ResearchDiagnostics(quotesChecked = st.checked, quotesVerified = st.verified, quotesUnreachable = st.unreachable, quotesOnNotFound = st.onNotFound)
+        assertTrue(d.lowCoverage)
+        val g = d.json()["grounding"] as JsonObject
+        assertEquals("4", g["quotes_total"].toString()); assertEquals("0.25", g["coverage"].toString()); assertEquals("1", g["quotes_citing_not_found"].toString())
+        assertNull(d.json()["quotes_verified"]) // no bare verified rate outside the grounding block
+        assertTrue(d.runNotes().contains("coverage 25%"))
+        assertFalse(ResearchDiagnostics(quotesChecked = 5, quotesVerified = 5).lowCoverage)
+    }
+
+    @Test fun redirectAndTitleDuplicatesMerge() {
+        val reg = SourceRegistry()
+        val body = "The High-frequency Active Auroral Research Program (HAARP) is a research program. " + page
+        val long = reg.record("https://en.wikipedia.org/wiki/High-frequency_Active_Auroral_Research_Program", "https://en.wikipedia.org/wiki/High-frequency_Active_Auroral_Research_Program", 200, "High-frequency Active Auroral Research Program - Wikipedia", body)!!
+        val short = reg.record("https://en.wikipedia.org/wiki/HAARP", "https://en.wikipedia.org/wiki/HAARP", 200, "High-frequency Active Auroral Research Program - Wikipedia", body)!!
+        assertEquals(long.id, short.id)
+        val red = reg.record("https://en.m.wikipedia.org/wiki/Haarp", "https://en.wikipedia.org/wiki/High-frequency_Active_Auroral_Research_Program", 200, "HAARP", body)!!
+        assertEquals(long.id, red.id)
+        val other = reg.record("https://en.wikipedia.org/wiki/Solar_geoengineering", "https://en.wikipedia.org/wiki/Solar_geoengineering", 200, "Solar geoengineering - Wikipedia", "Solar geoengineering is different. " + page)!!
+        assertNotEquals(long.id, other.id)
+        assertEquals(2, reg.all().size)
+        val r = Grounding.bibliography("A [S${long.id}] B https://en.wikipedia.org/wiki/HAARP C.", reg)
+        assertEquals("A [1] B [1] C.", r.text)
+        val d = ResearchDiagnostics(table = SourceTable.build(reg, setOf(long.id)))
+        assertEquals(2, d.merged); assertEquals(2, d.collected); assertTrue(d.consistent); assertTrue(d.rejectedRows.isEmpty())
+    }
+
+    @Test fun diversificationFiresWhenDegradedOrAboveFortyPercent() = runTest {
+        // Run 3 shape: top domain at ~46% (below test7's 60% trigger) with degraded search; must now spend diversification queries.
+        val state = ResearchRunState(breaker = EngineBreaker(now = { 0L }))
+        val searches = mutableListOf<String>()
+        val verify: suspend (String, String) -> ToolResult = { name, a ->
+            if (name == "web_search") { searches += a; ToolResult("{\"results\":[{\"url\":\"https://www.noaa.gov/x\"}],\"engines\":{\"bing\":\"ok (1)\"}}", false) }
+            else ToolResult(fetchJson("https://www.noaa.gov/x", 200, "NOAA page", page + "noaa"), false)
+        }
+        val urls = listOf("https://en.wikipedia.org/wiki/A", "https://en.wikipedia.org/wiki/B", "https://www.bbc.co.uk/x", "https://www.nasa.gov/y") // 2/4 = 50% > 40%
+        var i = 0
+        val o = DeepResearchEngine(
+            main = { m -> if (m.last().content!!.startsWith("You plan")) ok("[\"Q1?\",\"Q2?\",\"Q3?\",\"Q4?\",\"Q5?\"]") else ok("# R\n\nFacts [S1] [S2] [S3] [S4] [S5]. " + "More [S1]. ".repeat(30)) },
+            worker = { k, _ -> worker(state.registry, k, urls[(i++) % urls.size]) },
+            sleep = {}, reliability = state, verifyExec = verify,
+        ).run("weather control", ResearchMode.STANDARD, ResearchLimits(5, 1, 10, 5))
+        assertTrue(searches.isNotEmpty() && searches.size <= 3)
+        assertTrue(searches.all { it.contains("-site:wikipedia.org") })
+        assertTrue(o.diagnostics!!.diversifyQueries > 0)
     }
 }

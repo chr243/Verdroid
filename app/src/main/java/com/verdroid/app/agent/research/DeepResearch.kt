@@ -255,6 +255,7 @@ class DeepResearchEngine(
 ) {
     suspend fun run(topic: String, mode: ResearchMode, limits: ResearchLimits, language: String? = null): ResearchOutcome {
         val budget = RunBudget(limits.budgetMs, now)
+        reliability?.timeLeft = { if (budget.limited) (budget.workerLeft() + budget.reserveMs / 2).coerceAtLeast(0) else Long.MAX_VALUE }
         onProgress(ResearchProgress("Planning", 1, limits.rounds))
         val planned = ResearchPolicy.parseQuestions(ask(ResearchPolicy.planPrompt(topic, limits.questions, mode)), limits.questions)
         var questions = planned.ifEmpty { listOf(topic) }
@@ -369,10 +370,15 @@ class DeepResearchEngine(
                 for (e in partial.take((MAX_VERIFY_FETCHES - used).coerceAtLeast(0))) state.fullText(e.url, exec)
             }
         }
-        // Source diversity: one small capped step when a single domain dominates and time remains.
+        // Source diversity: one small capped step (≤3 queries, ~45 s) when one domain dominates (>40%) or search was degraded,
+        // and time remains. (test7 only fired above 60%, so run 3 at 46% with degraded search spent nothing.)
+        val healthyNow = state.breaker.healthy()
+        val degradedNow = questions.isNotEmpty() && state.weakRecall.size * 2 > questions.size && healthyNow.size < 2
         var diversity = SourceDiversity.of(reg.all().filter { it.ok })
         val extra = mutableListOf<SourceEntry>()
-        if (exec != null && diversity.share > SourceDiversity.LOW_SHARE && reg.all().count { it.ok } >= 2 && left() >= DIVERSIFY_MIN_LEFT_MS) {
+        val okCount = reg.all().count { it.ok }
+        val wantDiversify = (diversity.share > SourceDiversity.DIVERSIFY_SHARE && okCount >= 2) || degradedNow
+        if (exec != null && wantDiversify && left() >= DIVERSIFY_MIN_LEFT_MS) {
             val ids = withTimeoutOrNull(minOf(DIVERSIFY_TIME_MS, left() / 2)) { state.diversify(topic, diversity.top, exec) }.orEmpty()
             extra += ids.mapNotNull { reg.byId(it) }
             diversity = SourceDiversity.of(reg.all().filter { it.ok })
@@ -414,9 +420,14 @@ class DeepResearchEngine(
         if (rendered.cited.isNotEmpty() && (citedDiversity.share > SourceDiversity.LOW_SHARE || citedDiversity.distinct < 3))
             warnings += "source_diversity_low: ${citedDiversity.distinct} distinct domain(s); ${citedDiversity.top} = ${Math.round(citedDiversity.share * 100)}% of cited sources."
         if (stats.checked > 0 && stats.verified < stats.checked) warnings += "${stats.checked - stats.verified} quote(s) could not be verified on the pages and are marked."
+        val lowCoverage = stats.total > 0 && stats.coverage < ResearchDiagnostics.COVERAGE_MIN
+        if (lowCoverage) warnings += "Grounding coverage ${Math.round(stats.coverage * 100)}%: only ${stats.checked} of ${stats.total} quotes could be checked; ${stats.unreachable} cite sources that could not be read. Unchecked is not verified."
+        if (stats.onNotFound > 0) warnings += "${stats.onNotFound} quote(s) cite URLs that do not exist (HTTP 404/410): likely invented by a worker; they were not used."
         var diag = ResearchDiagnostics(
             table = table, wayback = reg.all().count { it.servedFrom == "wayback" && it.ok },
             quotesChecked = stats.checked, quotesVerified = stats.verified, quoteMisses = LinkedHashMap(stats.misses), quoteTiers = LinkedHashMap(stats.tiers),
+            quotesUnreachable = stats.unreachable, quotesOnNotFound = stats.onNotFound, quotesUnreachableBy = LinkedHashMap(stats.unreachableBy),
+            retries = state.retriesUsed, retryRecovered = state.retryRecovered,
             enginesFailed = synchronized(state.breaker) { LinkedHashMap(state.breaker.reasons) }, enginesHealthy = healthy,
             queriesIssued = state.queriesIssued, pagesReturned = state.pagesReturned, reformulations = state.reformulations, diversifyQueries = state.diversifyQueries,
             diversity = citedDiversity, weakRecall = state.weakRecall.size, gaps = gaps, searchDegraded = degraded,
@@ -424,7 +435,8 @@ class DeepResearchEngine(
         )
         if (!diag.consistent) warnings += "Internal: source counters do not add up (${diag.collected} collected); please report this."
         diag = diag.copy(warnings = warnings.distinct())
-        val stamp = (if (degraded) "> ⚠️ Search was degraded: most sub-questions got only off-topic results and fewer than 2 search engines were healthy. This report is incomplete.\n\n" else "") +
+        val stamp = (if (lowCoverage) "> ⚠️ Grounding coverage ${Math.round(stats.coverage * 100)}%: only ${stats.checked} of ${stats.total} quotes could be checked against their sources (${stats.verified} verified); the rest cite pages that could not be read. Unchecked is not verified.\n\n" else "") +
+            (if (degraded) "> ⚠️ Search was degraded: most sub-questions got only off-topic results and fewer than 2 search engines were healthy. This report is incomplete.\n\n" else "") +
             (if (writerIsFree) "> ℹ️ Written by a free model: verify key claims against the numbered sources.\n\n" else "")
         val report = stamp + rendered.text + Grounding.sourcesSection(rendered.cited) + diag.runNotes() + FailureText.markdownSection(failures)
         return ResearchOutcome(topic, mode, report, rendered.cited.map { it.url }, questions, rounds, failures.size, fallback, failures, diag)
