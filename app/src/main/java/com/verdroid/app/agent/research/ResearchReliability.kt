@@ -466,6 +466,29 @@ class EngineBreaker(
     private val lastOk = HashMap<String, Boolean>()
     /** Engines that were tripped at least once in this run, with the last reason. */
     val reasons = LinkedHashMap<String, String>()
+    /** Per-run health: answers, successes, longest failure streak and results served, per engine. */
+    private val total = HashMap<String, Int>()
+    private val okN = HashMap<String, Int>()
+    private val maxStreak = HashMap<String, Int>()
+    private val served = HashMap<String, Int>()
+
+    /** Engines that failed ≥2 times in a row at some point, or succeeded on under half of their queries. */
+    @Synchronized fun degradedEngines(): Set<String> = total.keys.filter { e ->
+        (maxStreak[e] ?: 0) >= 2 || (okN[e] ?: 0) * 2 < (total[e] ?: 0)
+    }.toSortedSet()
+
+    /**
+     * Search degraded for this run: fewer than 2 healthy engines served results, the top engine alone served over half of all results
+     * while fewer than 2 healthy engines carried the rest, or more than half the engines degraded.
+     */
+    @Synchronized fun searchDegraded(): Boolean {
+        if (total.isEmpty()) return false
+        val bad = degradedEngines()
+        val healthyServers = served.filter { it.value > 0 && it.key !in bad }.keys
+        return healthyServers.size < 2 || bad.size * 2 > total.size
+    }
+
+    @Synchronized fun served(): Map<String, Int> = served.toSortedMap()
 
     @Synchronized fun skipped(): Set<String> { val t = now(); return until.filterValues { it > t }.keys.toSortedSet() }
 
@@ -480,16 +503,21 @@ class EngineBreaker(
         for ((name, v) in engines) {
             val s = (v as? JsonPrimitive)?.contentOrNull.orEmpty()
             if (s.startsWith("skipped")) continue
+            total.merge(name, 1, Int::plus)
             if (s.startsWith("error")) {
                 lastOk[name] = false
                 val n = (fails[name] ?: 0) + 1; fails[name] = n
+                if (n > (maxStreak[name] ?: 0)) maxStreak[name] = n
                 if (n >= threshold) {
                     val k = (trips[name] ?: 0) + 1; trips[name] = k
                     val cd = retryAfterMs(s) ?: minOf(maxCooldownMs, baseCooldownMs shl (k - 1).coerceAtMost(10))
                     until[name] = now() + cd
                     reasons[name] = s.removePrefix("error:").trim().take(160) + " ($n failures in a row; retry in ${cd / 1000} s)"
                 }
-            } else { fails[name] = 0; trips[name] = 0; until.remove(name); lastOk[name] = true }
+            } else {
+                fails[name] = 0; trips[name] = 0; until.remove(name); lastOk[name] = true; okN.merge(name, 1, Int::plus)
+                Regex("""\((\d+)\)""").find(s)?.groupValues?.get(1)?.toIntOrNull()?.let { served.merge(name, it, Int::plus) }
+            }
         }
     }
 
@@ -497,26 +525,77 @@ class EngineBreaker(
         ?.groupValues?.get(1)?.toLongOrNull()?.let { (it * 1000).coerceIn(1_000, maxCooldownMs) }
 }
 
-/** Off-topic detection (token overlap) and one deterministic query reformulation. */
+/**
+ * Off-topic detection and one deterministic query reformulation. Accent-folded, FR/EN stopwords ignored, whole-word matching on
+ * title + snippet + URL slug (so "canalplus" never matches "canal"), and an entity/title phrase match counts as on-topic.
+ */
 object Recall {
-    const val WEAK = 0.2
+    const val WEAK = 0.15
     private val STOP = setOf("the", "and", "for", "with", "what", "which", "who", "how", "why", "when", "where", "are", "was", "were", "is",
         "does", "did", "from", "that", "this", "these", "those", "into", "about", "their", "there", "have", "has", "its", "than", "any",
-        "can", "could", "should", "would", "will", "between", "over", "under", "more", "most", "some", "such", "other", "also", "been")
+        "can", "could", "should", "would", "will", "between", "over", "under", "more", "most", "some", "such", "other", "also", "been",
+        "les", "des", "une", "dans", "par", "pour", "sur", "aux", "est", "qui", "que", "quoi", "comment", "pourquoi", "quand", "avec",
+        "son", "ses", "leur", "leurs", "cette", "ces", "entre", "plus", "pas", "ont", "sont", "été", "ete", "etait", "du", "de", "la", "le",
+        "www", "com", "org", "net", "html", "htm", "php", "aspx", "wiki", "en", "fr")
 
-    fun tokens(s: String): List<String> = s.lowercase().replace(Regex("""site:\S+"""), " ")
-        .split(Regex("""[^\p{L}\p{N}]+""")).filter { it.length >= 3 && it !in STOP }.distinct()
+    fun fold(s: String): String = java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFD)
+        .replace(Regex("""\p{M}+"""), "").lowercase()
 
-    /** Average share of query tokens found in each of the top 5 results' title + snippet (0 when no results). */
-    fun overlap(query: String, resultJson: String): Double {
+    /** Words of [s]; a brand like "Canal+" becomes "canalplus" so it never matches "canal". */
+    private fun words(s: String): List<String> = fold(s).replace(Regex("""(\p{L})\+"""), "$1plus").split(Regex("""[^\p{L}\p{N}]+""")).filter { it.isNotEmpty() }
+
+    fun tokens(s: String): List<String> = words(s.replace(Regex("""-?site:\S+"""), " ")).filter { it.length >= 3 && it !in STOP }.distinct()
+
+    /** Content words of the query in order, with each adjacent pair (stopwords between allowed) as a phrase regex. */
+    private fun phrases(q: List<String>): List<Regex> = q.zipWithNext().map { (a, b) ->
+        Regex("""(?<![\p{L}\p{N}])${Regex.escape(a)}[^\p{L}\p{N}]+(?:[\p{L}\p{N}]{1,4}[^\p{L}\p{N}]+){0,2}${Regex.escape(b)}(?![\p{L}\p{N}])""")
+    }
+
+    /** Relevance of one text (title + snippet + URL slug) to a query: share of query words present, raised to ≥0.6 on a phrase match in [title]. */
+    fun score(query: String, title: String, text: String): Double {
         val q = tokens(query).ifEmpty { return 1.0 }
-        val results = runCatching { (Json.parseToJsonElement(resultJson) as JsonObject)["results"] as? JsonArray }.getOrNull().orEmpty().take(5)
+        val w = words("$title $text").toHashSet()
+        val share = q.count { it in w }.toDouble() / q.size
+        val t = fold(title)
+        val phrase = q.size >= 2 && phrases(q).any { it.containsMatchIn(t) }
+        return if (phrase) maxOf(share, 0.6) else share
+    }
+
+    private fun slug(url: String): String = runCatching { java.net.URI(url).let { (it.host.orEmpty().removePrefix("www.") + " " + it.path.orEmpty()) } }.getOrDefault(url)
+
+    /** Mean of the best 3 of the top 8 results' scores (0 when no results): a few on-topic hits are enough. */
+    fun overlap(query: String, resultJson: String): Double {
+        if (tokens(query).isEmpty()) return 1.0
+        val results = runCatching { (Json.parseToJsonElement(resultJson) as JsonObject)["results"] as? JsonArray }.getOrNull().orEmpty().take(8)
         if (results.isEmpty()) return 0.0
-        return results.map { r ->
+        val scores = results.map { r ->
             val o = r as? JsonObject
-            val text = ((o?.str("title") ?: "") + " " + (o?.str("snippet") ?: "") + " " + (o?.str("url") ?: "")).lowercase()
-            q.count { it in text }.toDouble() / q.size
-        }.average()
+            score(query, o?.str("title").orEmpty(), (o?.str("snippet").orEmpty()) + " " + slug(o?.str("url").orEmpty()))
+        }.sortedDescending().take(3)
+        return scores.average()
+    }
+
+    /**
+     * Whether a fetched page is about the run's topic: an adjacent topic-word pair as a phrase in title/URL/opening text, or
+     * ≥2/3 of the topic words present (all of them for a 2-word topic). Single-word topics need that word.
+     */
+    fun onTopic(topic: String, e: SourceEntry): Boolean {
+        val q = tokens(topic).ifEmpty { return true }
+        val head = fold(e.label + " " + slug(e.finalUrl.ifBlank { e.url }) + " " + e.text.take(4000))
+        if (q.size >= 2 && phrases(q).any { it.containsMatchIn(head) }) return true
+        val w = words(head).toHashSet()
+        val share = q.count { it in w }.toDouble() / q.size
+        return if (q.size <= 2) share >= 1.0 else share >= 2.0 / 3
+    }
+
+    /**
+     * Topic gate for notes and bibliography. Fails open (accepts everything) when it would drop more than half of the usable
+     * sources, so an unusual topic phrasing never empties a report.
+     */
+    fun gate(topic: String, usable: List<SourceEntry>): (SourceEntry) -> Boolean {
+        val off = usable.filterNot { onTopic(topic, it) }.map { it.id }.toSet()
+        if (usable.isEmpty() || off.size * 2 > usable.size) return { true }
+        return { it.id !in off }
     }
 
     /** Sub-question keywords first, then the query's (max 8); null when that is the same query. */
@@ -524,6 +603,34 @@ object Recall {
         val toks = (tokens(question) + tokens(query)).distinct().take(8)
         val r = toks.joinToString(" ")
         return r.takeIf { toks.size >= 2 && tokens(query) != toks }
+    }
+}
+
+/** Drops obvious spam/adult results before they reach workers. */
+object SpamFilter {
+    private val KEYWORDS = listOf("bokep", "porn", "xxx", "xvideo", "xnxx", "xhamster", "hentai", "casino", "gacor", "togel", "judionline", "judibola",
+        "slot88", "slotonline", "pragmatic88", "maxwin", "sexcam", "camgirl", "escort", "viagra", "cialis", "onlyfan", "nudes")
+    private val SPAM_TLDS = setOf("xyz", "top", "icu", "cyou", "sbs", "cfd", "buzz", "click", "monster", "rest", "lol", "bond", "beauty",
+        "hair", "quest", "mom", "skin", "autos", "boats", "yachts", "makeup", "homes", "lat", "bar", "pw", "tk", "ml", "ga", "cf", "gq")
+
+    fun host(url: String): String = runCatching { java.net.URI(url.trim()).host.orEmpty().lowercase().removePrefix("www.") }.getOrDefault("")
+
+    /** Spam when the host contains a blocklisted keyword, or sits on a spam-prone TLD while title + snippet share nothing with the query. */
+    fun spam(query: String, url: String, title: String, snippet: String): Boolean {
+        val h = host(url).ifEmpty { return false }
+        val flat = h.replace("-", "").replace(".", "")
+        if (KEYWORDS.any { it in flat }) return true
+        if (h.substringAfterLast('.') in SPAM_TLDS && Recall.score(query, title, snippet) == 0.0) return true
+        return false
+    }
+
+    /** web_search JSON without spam results, and how many were removed. */
+    fun filter(query: String, resultJson: String): Pair<String, Int> {
+        val o = runCatching { Json.parseToJsonElement(resultJson) as JsonObject }.getOrNull() ?: return resultJson to 0
+        val arr = o["results"] as? JsonArray ?: return resultJson to 0
+        val keep = arr.filterNot { r -> (r as? JsonObject)?.let { spam(query, it.str("url").orEmpty(), it.str("title").orEmpty(), it.str("snippet").orEmpty()) } == true }
+        val n = arr.size - keep.size
+        return if (n == 0) resultJson to 0 else JsonObject(o + ("results" to JsonArray(keep)) + ("spam_filtered" to JsonPrimitive(n))).toString() to n
     }
 }
 
@@ -573,6 +680,9 @@ class ResearchRunState(
     private var waybackMs = 0L
     @Volatile var waybackServed = 0; private set
     val weakRecall = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    /** Best search overlap seen per sub-question: weak recall means even the best search stayed off-topic. */
+    val bestRecall = java.util.concurrent.ConcurrentHashMap<String, Double>()
+    @Volatile var spamFiltered = 0
     @Volatile var reformulations = 0
     @Volatile var queriesIssued = 0
     @Volatile var pagesReturned = 0
@@ -781,19 +891,26 @@ class ResearchToolGuard(
                 if (skip.isNotEmpty()) put("skip_engines", JsonPrimitive(skip.joinToString(",")))
             }).toString()
         }
-        var r = exec("web_search", withQuery(query)); state.breaker.observe(r.json); state.searched(question, query, r.json)
+        fun clean(q: String, x: ToolResult): ToolResult {
+            val (j, n) = SpamFilter.filter(q, x.json)
+            if (n > 0) synchronized(state) { state.spamFiltered += n }
+            return if (n > 0) ToolResult(j, x.isError) else x
+        }
+        var r = exec("web_search", withQuery(query)); state.breaker.observe(r.json); r = clean(query, r); state.searched(question, query, r.json)
         var ov = Recall.overlap(query, r.json)
         if (ov < Recall.WEAK && !reformulated) {
             reformulated = true
             Recall.reformulate(query, question)?.let { q2 ->
                 state.reformulations++
-                val r2 = exec("web_search", withQuery(q2)); state.breaker.observe(r2.json); state.searched(question, q2, r2.json)
+                var r2 = exec("web_search", withQuery(q2)); state.breaker.observe(r2.json); r2 = clean(q2, r2); state.searched(question, q2, r2.json)
                 val ov2 = Recall.overlap(q2, r2.json)
                 if (ov2 > ov) { r = r2; ov = ov2 }
             }
         }
+        val best = state.bestRecall.merge(question, ov) { a, b -> maxOf(a, b) } ?: ov
+        if (best >= Recall.WEAK) state.weakRecall -= question
         if (ov < Recall.WEAK) {
-            state.weakRecall += question
+            if (best < Recall.WEAK) state.weakRecall += question
             val o = runCatching { Json.parseToJsonElement(r.json) as JsonObject }.getOrNull()
             if (o != null) return ToolResult(JsonObject(o + ("weak_recall" to JsonPrimitive(true)) +
                 ("note" to JsonPrimitive("Results look off-topic: refine the query with disambiguating words or report insufficient_evidence."))).toString(), r.isError)
@@ -829,7 +946,8 @@ object Grounding {
     fun rejectReason(url: String, e: SourceEntry?): String = Urls.malformed(url)?.let { "malformed_url" } ?: e?.let { SourceTable.state(it) } ?: "never_fetched"
 
     /** Writer notes: only findings whose URL is well-formed and resolved OK in the registry, cited as [S<id>], with quote verification. */
-    fun notes(items: List<Note>, reg: SourceRegistry, stats: Stats, maxChars: Int = ResearchPolicy.REPORT_INPUT_CHARS, extra: List<SourceEntry> = emptyList()): Pair<String, List<SourceEntry>> {
+    fun notes(items: List<Note>, reg: SourceRegistry, stats: Stats, maxChars: Int = ResearchPolicy.REPORT_INPUT_CHARS, extra: List<SourceEntry> = emptyList(),
+              relevant: (SourceEntry) -> Boolean = { true }): Pair<String, List<SourceEntry>> {
         val used = LinkedHashMap<Int, SourceEntry>()
         val per = (maxChars / (items.size + if (extra.isEmpty()) 0 else 1).coerceAtLeast(1)).coerceAtLeast(500)
         val blocks = items.map { (q, p) ->
@@ -848,6 +966,7 @@ object Grounding {
                         if (f.quote.isNotBlank()) stats.unreachable(e?.failure ?: why) // counted, never silently dropped from the denominator
                         continue
                     }
+                    if (!relevant(e)) { reg.reject(f.url, SourceTable.OFF_TOPIC, "worker: ${q.take(80)}"); continue }
                     used[e.id] = e; n++
                     append("- ${f.claim} [S${e.id}]")
                     if (f.quote.isNotBlank()) {
@@ -863,7 +982,7 @@ object Grounding {
         }
         val extraBlock = if (extra.isEmpty()) emptyList() else listOf(buildString {
             append("## Additional independent sources (fetched to diversify; cite one only for what its excerpt says)\n")
-            for (e in extra) { used[e.id] = e; append("- [S${e.id}] ${e.label.take(120)}: ${e.text.replace(Regex("""\s+"""), " ").take(600)}\n") }
+            for (e in extra.filter(relevant)) { used[e.id] = e; append("- [S${e.id}] ${e.label.take(120)}: ${e.text.replace(Regex("""\s+"""), " ").take(600)}\n") }
         }.take(per))
         return (blocks + extraBlock).joinToString("\n\n").take(maxChars) to used.values.toList()
     }
@@ -876,7 +995,10 @@ object Grounding {
     data class Rendered(val text: String, val cited: List<SourceEntry>)
 
     /** [S3] / [3] / raw URLs → [1], [2]… numbered by first citation; unknown, malformed or failed sources → [unverified source]. */
-    fun bibliography(report: String, reg: SourceRegistry): Rendered {
+    /** Only sources that loaded OK, are on topic ([relevant]) and are cited get a number; anything else becomes [UNVERIFIED_SOURCE]. */
+    fun bibliography(report: String, reg: SourceRegistry, relevant: (SourceEntry) -> Boolean = { true }): Rendered {
+        fun usable(e: SourceEntry?) = e != null && e.ok && relevant(e)
+        fun why(url: String, e: SourceEntry?) = if (e != null && e.ok) SourceTable.OFF_TOPIC else rejectReason(url, e)
         val order = LinkedHashMap<Int, Int>()
         fun num(e: SourceEntry) = order.getOrPut(e.id) { order.size + 1 }
         // URLs become [S<id>] first, so the single numbering pass below orders everything by first citation.
@@ -884,7 +1006,7 @@ object Grounding {
             val bad = Urls.malformed(url)
             if (bad != null) { reg.reject(url, "malformed_url", "$bad; report"); return UNVERIFIED_SOURCE }
             val e = reg.get(url)
-            return if (e != null && e.ok) "[S${e.id}]" else { reg.reject(url, rejectReason(url, e), "report"); UNVERIFIED_SOURCE }
+            return if (usable(e)) "[S${e!!.id}]" else { reg.reject(url, why(url, e), "report"); UNVERIFIED_SOURCE }
         }
         var t = MD_LINK.replace(report) { m -> m.groupValues[1] + " " + cite(m.groupValues[2]) }
         t = buildString {
@@ -900,9 +1022,9 @@ object Grounding {
         }
         t = MARKER.replace(t) { m ->
             val ids = m.groupValues[1].split(',', ';').mapNotNull { it.trim().removePrefix("S").toIntOrNull() }
-            val good = ids.mapNotNull { id -> reg.byId(id)?.takeIf { it.ok } }
+            val good = ids.mapNotNull { id -> reg.byId(id)?.takeIf { usable(it) } }
             val bad = ids.size - good.size
-            if (bad > 0) ids.filter { id -> reg.byId(id)?.ok != true }.forEach { id -> reg.byId(id)?.let { reg.reject(it.url, SourceTable.state(it), "report") } }
+            if (bad > 0) ids.filter { id -> !usable(reg.byId(id)) }.forEach { id -> reg.byId(id)?.let { reg.reject(it.url, if (it.ok) SourceTable.OFF_TOPIC else SourceTable.state(it), "report") } }
             (if (good.isEmpty()) "" else good.map(::num).distinct().joinToString(", ", "[", "]")) + (if (bad > 0) (if (good.isEmpty()) "" else " ") + UNVERIFIED_SOURCE else "")
         }
         return Rendered(t, order.keys.mapNotNull { reg.byId(it) })
@@ -977,6 +1099,8 @@ object SourceTable {
     const val UNCITED = "uncited"
     /** Another URL for an already registered page (redirect or same title + text); counted once. */
     const val MERGED = "merged_duplicate"
+    /** Loaded fine but is not about the run's topic (e.g. canalplus.com for "Canal du Midi"); never numbered. */
+    const val OFF_TOPIC = "off_topic"
     data class Row(val url: String, val id: Int?, val state: String, val detail: String = "")
 
     /** Primary state of a registered entry (one per entry, so counters add up). */
@@ -990,9 +1114,10 @@ object SourceTable {
 
     fun build(reg: SourceRegistry, cited: Set<Int>): List<Row> {
         val all = reg.all()
+        val off = synchronized(reg) { reg.rejected.filterValues { it == OFF_TOPIC }.keys.toSet() }
         val rows = all.map { e ->
             val st = state(e)
-            Row(e.url, e.id, if (st == "ok") (if (e.id in cited) CITED else UNCITED) else st,
+            Row(e.url, e.id, if (st == "ok") (if (e.id in cited) CITED else if (e.url in off) OFF_TOPIC else UNCITED) else st,
                 when {
                     st == SourceChecks.DISAMBIGUATION -> "signal: ${e.disambigReason}"
                     e.failure != null -> "fetch_attempts ${e.attempts.size}: ${e.attempts.joinToString()}"
@@ -1046,6 +1171,7 @@ data class ResearchDiagnostics(
     val diversity: SourceDiversity = SourceDiversity(0, "", 0.0),
     val weakRecall: Int = 0, val gaps: List<Gap> = emptyList(), val warnings: List<String> = emptyList(),
     val searchDegraded: Boolean = false,
+    val spamFiltered: Int = 0, val enginesDegraded: Set<String> = emptySet(), val enginesServed: Map<String, Int> = emptyMap(),
     val budgetMs: Long = 0, val elapsedMs: Long = 0, val budgetHit: Boolean = false,
 ) {
     private val counts = SourceTable.counts(table)
@@ -1054,7 +1180,9 @@ data class ResearchDiagnostics(
     val collected: Int get() = registered.size
     val cited: Int get() = n(SourceTable.CITED)
     val orphansPruned: Int get() = n(SourceTable.UNCITED)
-    val ok: Int get() = cited + orphansPruned
+    /** Loaded fine but off-topic for the run; never numbered. */
+    val offTopic: Int get() = n(SourceTable.OFF_TOPIC)
+    val ok: Int get() = cited + orphansPruned + offTopic
     val notFound: Int get() = n(SourceChecks.NOT_FOUND)
     val blocked: Int get() = n(SourceChecks.BLOCKED) + n(SourceChecks.BLOCKED + "_terminal")
     val unreachable: Int get() = n(SourceChecks.UNREACHABLE) + n(SourceChecks.UNREACHABLE + "_terminal")
@@ -1105,6 +1233,9 @@ data class ResearchDiagnostics(
         put("engines_failed", buildJsonObject { enginesFailed.forEach { (k, v) -> put(k, v) } })
         put("search", buildJsonObject { put("queries_issued", queriesIssued); put("pages_returned", pagesReturned); put("reformulations", reformulations); put("diversification_queries", diversifyQueries) })
         put("search_degraded", searchDegraded)
+        put("search_results_spam_filtered", spamFiltered); put("sources_off_topic", offTopic)
+        put("engines_degraded", buildJsonArray { enginesDegraded.forEach { add(JsonPrimitive(it)) } })
+        put("engines_results_served", buildJsonObject { enginesServed.forEach { (k, v) -> put(k, v) } })
         put("source_diversity", buildJsonObject { put("distinct_domains", diversity.distinct); put("top_domain", diversity.top); put("top_domain_share", Math.round(diversity.share * 100) / 100.0) })
         put("rejected_sources", buildJsonArray { rejectedRows.take(40).forEach { r -> add(buildJsonObject { put("url", r.url.take(300)); put("reason", r.state); if (r.detail.isNotBlank()) put("detail", r.detail.take(200)) }) } })
         put("gaps", buildJsonArray { gaps.take(40).forEach { add(it.json()) } })
@@ -1117,11 +1248,13 @@ data class ResearchDiagnostics(
         append("- Sources: $collected fetched, $ok usable, $notFound not found (URL does not exist), $blocked blocked/rate-limited, $unreachable unreachable, $error server errors, " +
             "$empty empty, $disambiguation disambiguation pages, $searchPages search pages, $wayback from the Internet Archive; $retries retries ($retryRecovered recovered)" +
             (if (merged > 0) ", $merged duplicate URL(s) merged" else "") + "; ")
-        append("$cited cited ($orphansPruned uncited dropped, ${rejectedRows.size} rejected" + (if (malformed > 0) ", $malformed malformed URLs" else "") + ").\n")
+        append("$cited cited ($orphansPruned uncited dropped, ${rejectedRows.size} rejected" + (if (offTopic > 0) ", $offTopic off-topic" else "") + (if (malformed > 0) ", $malformed malformed URLs" else "") + ").\n")
         if (diversity.distinct > 0) append("- Source diversity: ${diversity.distinct} distinct domain(s); top domain ${diversity.top} = ${Math.round(diversity.share * 100)}% of usable sources.\n")
         if (quotesTotal > 0) append("- ${groundingLine()}" + (if (quoteMisses.isNotEmpty()) "; misses: ${quoteMisses.entries.joinToString { "${it.key} ${it.value}" }}" else "") + ".\n")
         append("- Search: $queriesIssued queries, $pagesReturned results, $reformulations reformulation(s)" + (if (diversifyQueries > 0) ", $diversifyQueries diversification queries" else "") +
-            "; healthy engines: ${enginesHealthy.joinToString().ifEmpty { "none" }}.\n")
+            (if (spamFiltered > 0) ", $spamFiltered spam result(s) filtered" else "") +
+            "; healthy engines: ${enginesHealthy.joinToString().ifEmpty { "none" }}" +
+            (if (enginesDegraded.isNotEmpty()) "; degraded: ${enginesDegraded.joinToString()}" else "") + ".\n")
         if (enginesFailed.isNotEmpty()) append("- Search engines paused after repeated failures (retried after a cooldown): ${enginesFailed.keys.joinToString()}.\n")
         if (weakRecall > 0) append("- $weakRecall sub-question(s) only got off-topic search results (weak recall).\n")
         if (budgetMs > 0) append("- Time: ${elapsedMs / 1000} s of a ${budgetMs / 60_000} min budget" + (if (budgetHit) " (budget reached: unfinished workers were stopped)" else "") + ".\n")

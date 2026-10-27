@@ -373,7 +373,7 @@ class DeepResearchEngine(
         // Source diversity: one small capped step (≤3 queries, ~45 s) when one domain dominates (>40%) or search was degraded,
         // and time remains. (test7 only fired above 60%, so run 3 at 46% with degraded search spent nothing.)
         val healthyNow = state.breaker.healthy()
-        val degradedNow = questions.isNotEmpty() && state.weakRecall.size * 2 > questions.size && healthyNow.size < 2
+        val degradedNow = state.breaker.searchDegraded() || (questions.isNotEmpty() && state.weakRecall.size * 2 > questions.size && healthyNow.size < 2)
         var diversity = SourceDiversity.of(reg.all().filter { it.ok })
         val extra = mutableListOf<SourceEntry>()
         val okCount = reg.all().count { it.ok }
@@ -384,7 +384,9 @@ class DeepResearchEngine(
             diversity = SourceDiversity.of(reg.all().filter { it.ok })
         }
         val stats = Grounding.Stats()
-        val (notes, noteSources) = Grounding.notes(parsed, reg, stats, extra = extra)
+        // Topic gate: pages that loaded but are not about the topic (canalplus.com for "Canal du Midi") never reach the writer or the bibliography.
+        val relevant = Recall.gate(topic, reg.all().filter { it.ok })
+        val (notes, noteSources) = Grounding.notes(parsed, reg, stats, extra = extra, relevant = relevant)
         var fallback = false
         val raw = if (noteSources.isEmpty()) {
             fallback = true
@@ -392,7 +394,7 @@ class DeepResearchEngine(
         } else ask(ResearchPolicy.groundedReportPrompt(topic, mode, notes, noteSources, language))?.trim()?.takeIf { it.length > 200 }
             ?: run { fallback = true; "# Research notes: $topic\n\n> The report writer failed (${lastError.ifEmpty { "empty reply" }}), so these are the grounded notes.\n\n$notes" }
         val quoted = Grounding.markQuotes(raw, reg, stats)
-        val rendered = Grounding.bibliography(quoted, reg)
+        val rendered = Grounding.bibliography(quoted, reg, relevant)
         val table = SourceTable.build(reg, rendered.cited.map { it.id }.toSet())
         val citedDiversity = SourceDiversity.of(rendered.cited).takeIf { rendered.cited.isNotEmpty() } ?: diversity
         // Gaps: every "tried and got nothing" path, with the queries tried.
@@ -409,8 +411,11 @@ class DeepResearchEngine(
             failures.forEach { (q, f) -> add(Gap(if (f.kind == FailureKind.RUN_BUDGET) "budget_stopped" else "worker_failed", q, f.kind.label, qs(q))) }
         }
         val healthy = state.breaker.healthy()
-        val degraded = questions.isNotEmpty() && state.weakRecall.size * 2 > questions.size && healthy.size < 2
-        if (degraded) warnings += "Search was degraded: ${state.weakRecall.size} of ${questions.size} sub-questions got only off-topic results and ${healthy.size} search engine(s) were healthy (${healthy.joinToString().ifEmpty { "none" }}). Treat the report as incomplete."
+        val weakDegraded = questions.isNotEmpty() && state.weakRecall.size * 2 > questions.size && healthy.size < 2
+        val badEngines = state.breaker.degradedEngines()
+        val degraded = weakDegraded || state.breaker.searchDegraded()
+        if (degraded) warnings += "Search was degraded: ${badEngines.size} of ${state.breaker.seen().size} search engine(s) failed repeatedly (${badEngines.joinToString().ifEmpty { "none" }}), " +
+            "${state.weakRecall.size} of ${questions.size} sub-questions got only off-topic results. Treat the report as incomplete."
         if (writerIsFree) warnings += "The report was written by a free model: check key claims against the cited sources."
         if (budget.hit) warnings += "Run time budget reached: ${failures.count { it.second.kind == FailureKind.RUN_BUDGET }} worker(s) were stopped or not started; the report uses what was collected."
         if (failures.isNotEmpty()) warnings += "${failures.size} of ${questions.size} sub-questions failed (see Failed workers)."
@@ -431,12 +436,13 @@ class DeepResearchEngine(
             enginesFailed = synchronized(state.breaker) { LinkedHashMap(state.breaker.reasons) }, enginesHealthy = healthy,
             queriesIssued = state.queriesIssued, pagesReturned = state.pagesReturned, reformulations = state.reformulations, diversifyQueries = state.diversifyQueries,
             diversity = citedDiversity, weakRecall = state.weakRecall.size, gaps = gaps, searchDegraded = degraded,
+            spamFiltered = state.spamFiltered, enginesDegraded = badEngines, enginesServed = state.breaker.served(),
             warnings = emptyList(), budgetMs = budget.budgetMs, elapsedMs = budget.elapsed(), budgetHit = budget.hit,
         )
         if (!diag.consistent) warnings += "Internal: source counters do not add up (${diag.collected} collected); please report this."
         diag = diag.copy(warnings = warnings.distinct())
         val stamp = (if (lowCoverage) "> ⚠️ Grounding coverage ${Math.round(stats.coverage * 100)}%: only ${stats.checked} of ${stats.total} quotes could be checked against their sources (${stats.verified} verified); the rest cite pages that could not be read. Unchecked is not verified.\n\n" else "") +
-            (if (degraded) "> ⚠️ Search was degraded: most sub-questions got only off-topic results and fewer than 2 search engines were healthy. This report is incomplete.\n\n" else "") +
+            (if (degraded) "> ⚠️ Search was degraded: most search engines failed repeatedly or most sub-questions got only off-topic results. This report is incomplete.\n\n" else "") +
             (if (writerIsFree) "> ℹ️ Written by a free model: verify key claims against the numbered sources.\n\n" else "")
         val report = stamp + rendered.text + Grounding.sourcesSection(rendered.cited) + diag.runNotes() + FailureText.markdownSection(failures)
         return ResearchOutcome(topic, mode, report, rendered.cited.map { it.url }, questions, rounds, failures.size, fallback, failures, diag)

@@ -561,10 +561,16 @@ class SelfTestRunner @Inject constructor(
                 check(com.verdroid.app.agent.research.Grounding.Stats(checked = 3, verified = 3).coverage == 1.0) { "coverage all fetched" }
                 gs.unreachable(sc.NOT_FOUND); gs.unreachable(sc.BLOCKED)
                 check(gs.total == 4 && gs.coverage == 0.5 && gs.onNotFound == 1 && gs.unverified == 1) { "coverage math" }
+                val rc = com.verdroid.app.agent.research.Recall
+                check(rc.score("canal du midi history", "CANAL+ : films, séries", "canalplus.com") < rc.WEAK && rc.score("Saint-Ferréol", "Bassin de Saint-Ferreol", "") > 0.9) { "recall: Canal+ off-topic, accents folded" }
+                check(com.verdroid.app.agent.research.SpamFilter.spam("q", "https://bokep.example.com/", "", "") && !com.verdroid.app.agent.research.SpamFilter.spam("courts", "https://www.judiciary.uk/", "Judiciary", "")) { "spam filter" }
+                val eb = com.verdroid.app.agent.research.EngineBreaker(now = { 0L })
+                repeat(2) { eb.observe("{\"engines\":{\"bing\":\"ok (8)\",\"brave\":\"error: HTTP 429\",\"yahoo\":\"error: HTTP 500\"}}") }
+                check(eb.searchDegraded()) { "search_degraded from engine health" }
             }
             val bib = com.verdroid.app.agent.research.Grounding.bibliography("x [S${good.id}] y [S99]", reg)
             check(bib.cited.size == 1 && bib.text.contains("[1]") && bib.text.contains("[unverified source]")) { "bibliography: ${bib.text}" }
-            "pipeline ok (plan → 2 workers → ${out.sources.size} deduped sources → report); registry, lenient parsing, quote grounding, fetch states (not_found/blocked/unreachable/error), grounding coverage and bibliography ok"
+            "pipeline ok (plan → 2 workers → ${out.sources.size} deduped sources → report); registry, lenient parsing, quote grounding, fetch states (not_found/blocked/unreachable/error), grounding coverage, recall, spam filter, engine health and bibliography ok"
         },
         "key_wipe_notice" to {
             check(com.verdroid.app.data.secure.KeyWipeNotice.message(setOf("Git token")).contains("Git token")) { "wipe message" }

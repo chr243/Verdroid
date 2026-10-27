@@ -561,4 +561,108 @@ class ResearchReliabilityTest {
         assertTrue(searches.all { it.contains("-site:wikipedia.org") })
         assertTrue(o.diagnostics!!.diversifyQueries > 0)
     }
+
+    // ---- v1.0.72 ----
+    private val midiText = "Le canal du Midi est un canal de navigation français qui relie la Garonne à la mer Méditerranée. " +
+        "The Canal du Midi is a 240 km long canal in Southern France, built by Pierre-Paul Riquet between 1666 and 1681. ".repeat(10)
+
+    @Test fun offTopicAndRejectedSourcesNeverGetANumber() {
+        val reg = SourceRegistry()
+        val wiki = reg.record("https://en.wikipedia.org/wiki/Canal_du_Midi", "https://en.wikipedia.org/wiki/Canal_du_Midi", 200, "Canal du Midi - Wikipedia", midiText)!!
+        val vnf = reg.record("https://www.vnf.fr/canal-du-midi", "https://www.vnf.fr/canal-du-midi", 200, "Le canal du Midi | VNF", midiText + " Voies navigables de France.")!!
+        val pruned = reg.record("https://www.unesco.org/canal-du-midi", "https://www.unesco.org/canal-du-midi", 200, "Canal du Midi - UNESCO", midiText + " World Heritage.")!!
+        // Run report: canalplus.com loaded (e.g. from the Internet Archive after a 403) and the writer cited it.
+        val plus = reg.record("https://www.canalplus.com/", "https://www.canalplus.com/", 200, "CANAL+ : films, séries, sport en direct",
+            "Regardez CANAL+ en direct : films, séries, sport, documentaires et le journal. ".repeat(20))!!
+        reg.record("https://www.canalplus.com/live", "https://www.canalplus.com/live", 403, "", "", blocked = true)
+        val relevant = Recall.gate("Canal du Midi history", reg.all().filter { it.ok })
+        assertTrue(relevant(wiki) && relevant(vnf) && relevant(pruned)); assertFalse(relevant(plus))
+        val r = Grounding.bibliography("Built 1666 [S${wiki.id}]. Route [S${vnf.id}, S${plus.id}]. TV [S${plus.id}]. See https://www.canalplus.com/live too.", reg, relevant)
+        assertEquals("Built 1666 [1]. Route [2] [unverified source]. TV [unverified source]. See [unverified source] too.", r.text)
+        assertEquals(listOf(wiki.id, vnf.id), r.cited.map { it.id })
+        val sources = Grounding.sourcesSection(r.cited)
+        assertFalse(sources.contains("canalplus")); assertFalse(sources.contains("unesco")) // pruned (uncited) never listed
+        val d = ResearchDiagnostics(table = SourceTable.build(reg, r.cited.map { it.id }.toSet()))
+        assertEquals(1, d.offTopic); assertEquals(1, d.orphansPruned); assertEquals(2, d.cited); assertTrue(d.consistent)
+        assertEquals(SourceTable.OFF_TOPIC, d.rejected["https://www.canalplus.com/"])
+        // Notes never hand an off-topic page to the writer.
+        val notes = Grounding.notes(listOf(Grounding.Note("History?", WorkerOutput.parse("{\"findings\":[{\"claim\":\"a\",\"url\":\"https://www.canalplus.com/\",\"quote\":\"\"},{\"claim\":\"b\",\"url\":\"https://en.wikipedia.org/wiki/Canal_du_Midi\",\"quote\":\"\"}]}"))),
+            reg, Grounding.Stats(), relevant = relevant)
+        assertEquals(listOf(wiki.id), notes.second.map { it.id })
+    }
+
+    @Test fun topicGateFailsOpenWhenItWouldDropMostSources() {
+        val reg = SourceRegistry()
+        val a = reg.record("https://a.com/x", "https://a.com/x", 200, "Solar", page)!!
+        val b = reg.record("https://b.com/y", "https://b.com/y", 200, "Panels", page)!!
+        val g = Recall.gate("Quantum chromodynamics lattice", listOf(a, b))
+        assertTrue(g(a) && g(b))
+    }
+
+    @Test fun searchDegradedFromPerRunEngineHealth() {
+        // The Canal du Midi run: only Bing reliable; DDG/DDG Lite bot check ×2, Yahoo 500 ×4, Brave 429 ×4, Mojeek 403 ×2, Wikipedia 429 ×2.
+        val b = EngineBreaker(now = { 0L })
+        fun obs(vararg e: Pair<String, String>) = b.observe(buildJsonObject { put("engines", buildJsonObject { e.forEach { (k, v) -> put(k, v) } }) }.toString())
+        repeat(2) { obs("bing" to "ok (8)", "duckduckgo" to "error: bot check", "ddg_lite" to "error: bot check", "yahoo" to "error: HTTP 500",
+            "brave" to "error: HTTP 429", "mojeek" to "error: HTTP 403", "wikipedia" to "error: HTTP 429") }
+        repeat(2) { obs("bing" to "ok (8)", "duckduckgo" to "ok (5)", "ddg_lite" to "ok (3)", "yahoo" to "error: HTTP 500", "brave" to "error: HTTP 429", "wikipedia" to "ok (2)") }
+        repeat(8) { obs("bing" to "ok (8)", "duckduckgo" to "ok (5)", "wikipedia" to "ok (2)") }
+        assertEquals(setOf("brave", "ddg_lite", "duckduckgo", "mojeek", "wikipedia", "yahoo"), b.degradedEngines())
+        assertTrue(b.searchDegraded())
+        // Healthy run: three engines, one transient failure each → not degraded.
+        val h = EngineBreaker(now = { 0L })
+        fun ho(vararg e: Pair<String, String>) = h.observe(buildJsonObject { put("engines", buildJsonObject { e.forEach { (k, v) -> put(k, v) } }) }.toString())
+        ho("bing" to "error: HTTP 500", "brave" to "ok (8)", "mojeek" to "ok (6)")
+        repeat(5) { ho("bing" to "ok (8)", "brave" to "ok (8)", "mojeek" to "ok (6)") }
+        assertTrue(h.degradedEngines().isEmpty()); assertFalse(h.searchDegraded())
+    }
+
+    private fun results(vararg r: Triple<String, String, String>) = buildJsonObject {
+        put("results", kotlinx.serialization.json.buildJsonArray { r.forEach { (u, t, s) -> add(buildJsonObject { put("url", u); put("title", t); put("snippet", s) }) } })
+    }.toString()
+
+    @Test fun recallIsAccentFoldedEntityAwareAndIgnoresCanalPlus() {
+        val onTopic = results(
+            Triple("https://en.wikipedia.org/wiki/Canal_du_Midi", "Canal du Midi - Wikipedia", "The Canal du Midi is a 240 km canal in Southern France."),
+            Triple("https://fr.wikipedia.org/wiki/Canal_du_Midi", "Canal du Midi — Wikipédia", "Le canal du Midi est un canal de navigation français."),
+            Triple("https://www.vnf.fr/vnf/canal-du-midi/", "Le canal du Midi | VNF", "Voies navigables de France gère le canal."),
+            Triple("https://whc.unesco.org/en/list/770/", "Canal du Midi - UNESCO World Heritage Centre", "This 360-km network of navigable waterways…"))
+        for (q in listOf("Canal du Midi construction history Pierre-Paul Riquet 17th century", "canal du midi route locks Toulouse Sète",
+            "Canal du Midi engineering water supply Montagne Noire Saint-Ferréol", "canal du midi environnement platanes chancre coloré",
+            "histoire du canal du Midi Riquet", "Canal du Midi")) assertTrue(q, Recall.overlap(q, onTopic) >= Recall.WEAK)
+        assertTrue(Recall.overlap("Saint-Ferréol réservoir", results(Triple("https://x.fr/saint-ferreol", "Bassin de Saint-Ferreol", "Le reservoir"))) > 0.9) // accents folded
+        val plus = results(Triple("https://www.canalplus.com/", "CANAL+ : films, séries, sport en direct", "Regardez CANAL+ en direct et en replay."),
+            Triple("https://www.canalplus.com/series/", "Séries CANAL+", "Les meilleures séries sur myCANAL."))
+        assertTrue(Recall.overlap("canal du midi history", plus) < Recall.WEAK)
+        assertTrue(Recall.score("canal du midi history", "CANAL+ : films, séries", "canalplus.com") < 0.5)
+    }
+
+    @Test fun spamResultsAreFilteredBeforeWorkers() = runTest {
+        assertTrue(SpamFilter.spam("canal du midi velo", "https://bokep-indo.example.com/x", "Canal du Midi", ""))
+        assertTrue(SpamFilter.spam("q", "https://slot-gacor88.net/", "Slot", ""))
+        assertTrue(SpamFilter.spam("canal du midi", "https://abc123.xyz/p", "Video viral terbaru", "nonton gratis"))
+        assertFalse(SpamFilter.spam("canal du midi", "https://canal-du-midi.xyz/velo", "Canal du Midi à vélo", "")) // on-topic, spam TLD alone is not enough
+        assertFalse(SpamFilter.spam("javascript", "https://javascript.info/", "JavaScript", ""))
+        assertFalse(SpamFilter.spam("courts", "https://www.judiciary.uk/", "Judiciary", ""))
+        val state = ResearchRunState()
+        val raw = results(Triple("https://bokep1.com/a", "Canal du Midi bokep", ""), Triple("https://en.wikipedia.org/wiki/Canal_du_Midi", "Canal du Midi - Wikipedia", "canal"),
+            Triple("https://www.xxxvideos.net/b", "x", ""), Triple("https://www.casino-online.top/c", "Casino", ""), Triple("https://www.vnf.fr/canal-du-midi", "Le canal du Midi | VNF", ""))
+        val g = ResearchToolGuard({ _, _ -> ToolResult(raw, false) }, state, "Canal du Midi cycling and tourism?")
+        val r = g.execute("web_search", "{\"query\":\"canal du midi cycling tourism\"}")
+        assertFalse(r.json.contains("bokep") || r.json.contains("xxx") || r.json.contains("casino"))
+        assertTrue(r.json.contains("vnf.fr")); assertEquals(3, state.spamFiltered)
+        assertTrue(ResearchDiagnostics(spamFiltered = state.spamFiltered).json().toString().contains("\"search_results_spam_filtered\":3"))
+    }
+
+    @Test fun weakRecallOnlyWhenEvenTheBestSearchIsOffTopic() = runTest {
+        val state = ResearchRunState()
+        val off = results(Triple("https://www.canalplus.com/", "CANAL+ : films, séries", "Regardez CANAL+"))
+        val on = results(Triple("https://en.wikipedia.org/wiki/Canal_du_Midi", "Canal du Midi - Wikipedia", "The Canal du Midi is a canal."))
+        var n = 0
+        val g = ResearchToolGuard({ _, _ -> ToolResult(if (n++ < 2) off else on, false) }, state, "History of the Canal du Midi?")
+        g.execute("web_search", "{\"query\":\"canal history\"}")
+        assertTrue("History of the Canal du Midi?" in state.weakRecall)
+        g.execute("web_search", "{\"query\":\"Canal du Midi history\"}")
+        assertFalse("History of the Canal du Midi?" in state.weakRecall)
+    }
 }
