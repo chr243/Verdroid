@@ -543,6 +543,17 @@ class SelfTestRunner @Inject constructor(
             val parsed = com.verdroid.app.agent.research.WorkerOutput.parse("```json\n{\"findings\":[{\"claim\":\"c\",\"url\":\"https://a.example.com/p\"}]}\n```")
             check(parsed.structured && parsed.findings.size == 1) { "lenient worker JSON" }
             check(com.verdroid.app.agent.research.SourceChecks.grounded("alpha beta gamma delta", good.text)) { "quote grounding" }
+            run {
+                val sc = com.verdroid.app.agent.research.SourceChecks
+                check(sc.checkQuote("America's chickens are coming home to roost", "He said &quot;America&rsquo;s chickens[3] are coming&nbsp;home to roost&quot;.").verified) { "normalized quote grounding" }
+                check(sc.checkQuote("the failure to capture him alive in spite of him being unarmed at all", "critics noted the failure to capture him alive in spite of him being unarmed.").tier == "fuzzy") { "fuzzy quote grounding" }
+                check(!sc.checkQuote("The title of the sermon was The Audacity to Hope but he recalled it", "He borrowed the title from a sermon by his pastor.").verified) { "paraphrase rejected" }
+                check(sc.disambiguationSignal("Willow (disambiguation)", "Willow may refer to: a tree") != null) { "disambiguation title" }
+                check(sc.disambiguationSignal("A Promised Land", "For other uses, see Promised Land (disambiguation). " + "A memoir by Barack Obama. ".repeat(400)) == null) { "hatnote is not disambiguation" }
+                val u = "https://en.wikipedia.org/wiki/Yes_We_Can_(will.i.am_song)"
+                check(com.verdroid.app.agent.research.Urls.first("see $u.") == u && com.verdroid.app.agent.research.Urls.malformed(u) == null) { "balanced-paren URL" }
+                check(com.verdroid.app.agent.research.Urls.malformed(u.dropLast(1)) != null) { "malformed URL" }
+            }
             val bib = com.verdroid.app.agent.research.Grounding.bibliography("x [S${good.id}] y [S99]", reg)
             check(bib.cited.size == 1 && bib.text.contains("[1]") && bib.text.contains("[unverified source]")) { "bibliography: ${bib.text}" }
             "pipeline ok (plan → 2 workers → ${out.sources.size} deduped sources → report); registry, lenient parsing, quote grounding and bibliography ok"

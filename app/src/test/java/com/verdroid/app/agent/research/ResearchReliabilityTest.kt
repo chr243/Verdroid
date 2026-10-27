@@ -189,7 +189,7 @@ class ResearchReliabilityTest {
             worker = { i, _ -> calls++; SubAgentResult(i, "t", SubAgentResult.Status.OK, "{\"findings\":[],\"insufficient_evidence\":true}") },
             sleep = {}, reliability = ResearchRunState(),
         ).run("topic", ResearchMode.STANDARD, ResearchLimits(1, 1, 10, 1))
-        assertEquals(1, calls); assertEquals(0, o.failedWorkers); assertEquals(listOf("Q1?"), o.diagnostics!!.gaps)
+        assertEquals(1, calls); assertEquals(0, o.failedWorkers); assertEquals(listOf("topic_no_source" to "Q1?"), o.diagnostics!!.gaps.map { it.type to it.question })
     }
 
     @Test fun budgetCutoffStopsStragglersAndWritesReport() = runTest {
@@ -206,5 +206,183 @@ class ResearchReliabilityTest {
         assertTrue(testScheduler.currentTime <= 10 * 60_000L) // finished within the budget
         assertEquals(1, o.rounds) // no follow-up rounds after the budget was hit
         assertTrue(RunBudget.rateWaitMs(10 * 60_000L) < 10 * 60_000L)
+    }
+    // ---- test7: review fixes (D1–D9) ----
+
+    private val filler = "Unrelated encyclopedic filler sentence number about history and politics. ".repeat(1_200) // ≈ 90k chars
+
+    /** Part F of the review: 11 quotes, 10 present on the pages (behind footnotes, entities, nbsp, curly quotes, deep in the page). */
+    @Test fun partFQuoteFixture() {
+        val pages = mapOf(
+            "Barack_Obama" to "$filler<p>Zelizer called him “a very effective policymaker but not a tremendously successful party&nbsp;builder”<sup>[212]</sup>, and Brookings noted only one major legislative[a] achievement.</p>$filler",
+            "Presidency_of_Barack_Obama" to "Historians and political scientists rank him among<sup class=\"reference\">[148]</sup> the upper tier of American presidents. $filler",
+            "Public_image_of_Barack_Obama" to "$filler The award drew a mixture of praise and criticism from world leaders and media&#160;figures.[12] He said it is where you almost feel “normal” again.",
+            "Barack_Obama_at_the_2004_Democratic_National_Convention" to "$filler Obama said he borrowed the title for the speech from a sermon delivered by his pastor, Jeremiah Wright, years earlier. The keynote made him famous.",
+            "Jeremiah_Wright_controversy" to "In one sermon Wright said that &quot;America&rsquo;s chickens are coming home to roost.&quot;[3] $filler",
+            "Affordable_Care_Act" to "By 2016 the uninsured share of the population had roughly halved [citation needed], according to surveys. $filler",
+            "Paris_Agreement" to "$filler On 12 December the final wording of the Paris Agreement was adopted by consensus at COP21.",
+            "Obama_Presidential_Center" to "The campus includes a museum, a library branch, and community and conference facilities. $filler",
+            "Killing_of_Osama_bin_Laden" to "$filler Critics pointed to the failure to capture him alive in spite of him being unarmed.[45][46]",
+        )
+        val reg = SourceRegistry()
+        pages.forEach { (t, txt) -> reg.record("https://en.wikipedia.org/wiki/$t", "https://en.wikipedia.org/wiki/$t", 200, t.replace('_', ' '), txt) }
+        val fixture = listOf(
+            "Barack_Obama" to "a very effective policymaker but not a tremendously successful party builder",
+            "Barack_Obama" to "only one major legislative achievement",
+            "Presidency_of_Barack_Obama" to "Historians and political scientists rank him among the upper tier",
+            "Public_image_of_Barack_Obama" to "The award drew a mixture of praise and criticism from world leaders and media figures",
+            "Public_image_of_Barack_Obama" to "where you almost feel normal",
+            "Barack_Obama_at_the_2004_Democratic_National_Convention" to "The title of Wright's sermon was 'The Audacity to Hope,' but Obama recalled it as 'The Audacity of Hope'",
+            "Jeremiah_Wright_controversy" to "America's chickens are coming home to roost",
+            "Affordable_Care_Act" to "the uninsured share of the population had roughly halved",
+            "Paris_Agreement" to "the final wording of the Paris Agreement was adopted by consensus",
+            "Obama_Presidential_Center" to "community and conference facilities",
+            "Killing_of_Osama_bin_Laden" to "failure to capture him alive in spite of him being unarmed",
+        )
+        val results = fixture.map { (t, q) -> q to SourceChecks.checkQuote(q, reg.get("https://en.wikipedia.org/wiki/$t")!!.index) }
+        val unverified = results.filter { !it.second.verified }.map { it.first }
+        assertEquals(listOf(fixture[5].second), unverified) // exactly the Wright gloss
+        assertEquals("no_window_above_0.92", results[5].second.reason)
+        assertTrue(reg.get("https://en.wikipedia.org/wiki/Barack_Obama")!!.text.length > 150_000) // full text kept, not a 60k slice
+        // Tiers: a small wording slip still matches by fuzzy window, ellipsis fragments each match.
+        val big = reg.get("https://en.wikipedia.org/wiki/Killing_of_Osama_bin_Laden")!!.index
+        assertEquals("fuzzy", SourceChecks.checkQuote("Critics pointed to the failure to capture him alive in spite of him being unarmed at all", big).tier)
+        val ell = SourceChecks.checkQuote("Critics pointed to the failure … in spite of him being unarmed", big)
+        assertTrue(ell.verified)
+        assertFalse(SourceChecks.checkQuote("Critics pointed to the failure … in spite of him being heavily armed with rifles", big).verified)
+    }
+
+    @Test fun cleaningIsTheSameOnBothSides() {
+        assertEquals("america's chickens - home", SourceChecks.clean("<b>America&rsquo;s</b>&nbsp;chickens[1] — <sup>[2]</sup>home"))
+        assertEquals("rank him among the upper tier", SourceChecks.clean("rank [him](https://x.org/a_(b)) among[148] the upper tier"))
+        assertEquals(SourceChecks.tokens("“Don’t stop”"), SourceChecks.tokens("\"Don't stop\""))
+    }
+
+    /** Part F classification fixture: structural disambiguation only. */
+    @Test fun structuralDisambiguation() {
+        val hatnote = "For other uses, see Barack Obama (disambiguation). See also the disambiguation page. Not to be confused with disambiguation. "
+        val dacaText = "\"DACA\" redirects here. For other uses, see DACA (disambiguation).\n" + "Deferred Action for Childhood Arrivals is a United States immigration policy. ".repeat(300)
+        val reg = SourceRegistry()
+        val daca = reg.record("https://en.wikipedia.org/wiki/Deferred_Action_for_Childhood_Arrivals", "https://en.wikipedia.org/wiki/Deferred_Action_for_Childhood_Arrivals", 200, "Deferred Action for Childhood Arrivals - Wikipedia", dacaText)!!
+        val book = reg.record("https://en.wikipedia.org/wiki/A_Promised_Land", "https://en.wikipedia.org/wiki/A_Promised_Land", 200, "A Promised Land",
+            "This article is about the memoir. For other uses, see Promised Land (disambiguation).\n" + "A Promised Land is a memoir by Barack Obama. ".repeat(200))!!
+        val obama = reg.record("https://en.wikipedia.org/wiki/Barack_Obama", "https://en.wikipedia.org/wiki/Barack_Obama", 200, "Barack Obama", hatnote + filler)!!
+        val willow = reg.record("https://en.wikipedia.org/wiki/Willow_(disambiguation)", "https://en.wikipedia.org/wiki/Willow_(disambiguation)", 200, "Willow (disambiguation) - Wikipedia",
+            "Willow may refer to:\n- Willow, a tree\n- Willow (1988 film)\n- Willow (TV series)\n" + "- Willow (place)\n".repeat(20))!!
+        assertTrue(daca.ok); assertTrue(book.ok); assertTrue(obama.ok)
+        assertTrue(SourceChecks.DISAMBIGUATION in willow.flags); assertEquals("title", willow.disambigReason)
+        // Same page fetched under a plain title still counts by structure (short "may refer to" page / MediaWiki marker).
+        assertEquals("may_refer_to_short_page", SourceChecks.disambiguationSignal("Willow", "Willow may refer to:\n- a tree\n- a film"))
+        assertEquals("mediawiki_marker", SourceChecks.disambiguationSignal("Mercury", "<div id=\"disambigbox\" class=\"mw-disambig\">" + filler))
+        assertNull(SourceChecks.disambiguationSignal("Long list", "Term may refer to many things. " + filler)) // long body: an article
+    }
+
+    @Test fun malformedUrlsAndBalancedParentheses() {
+        val song = "https://en.wikipedia.org/wiki/Yes_We_Can_(will.i.am_song)"
+        assertEquals(song, Urls.first("See $song, then more."))
+        assertEquals(song, Urls.first("(source: $song)"))
+        assertEquals("https://en.wikipedia.org/wiki/Yes_We_Can_(will.i.am_song)", ResearchPolicy.normalize(song))
+        assertEquals("https://a.com/x", ResearchPolicy.normalize("https://a.com/x)"))
+        assertEquals("unbalanced parentheses", Urls.malformed("https://en.wikipedia.org/wiki/Yes_We_Can_(will.i.am_song"))
+        assertNull(Urls.malformed(song)); assertNotNull(Urls.malformed("https://a.com/%zz")); assertNotNull(Urls.malformed("https://localhost/x"))
+        val reg = SourceRegistry(); val e = reg.record(song, song, 200, "Yes We Can (will.i.am song)", page)!!
+        assertTrue(e.ok)
+        val parsed = WorkerOutput.parse("{\"findings\":[{\"claim\":\"Song A\",\"url\":\"$song\"},{\"claim\":\"Song B\",\"url\":\"https://en.wikipedia.org/wiki/Yes_We_Can_(will.i.am_song\"}]}")
+        val (notes, used) = Grounding.notes(listOf(Grounding.Note("Q", parsed)), reg, Grounding.Stats())
+        assertEquals(listOf(e.id), used.map { it.id }); assertTrue(notes.contains("Song A [S${e.id}]"))
+        assertEquals("malformed_url", reg.rejected["https://en.wikipedia.org/wiki/Yes_We_Can_(will.i.am_song"])
+        val r = Grounding.bibliography("Link [s]($song). Raw $song. Bad https://en.wikipedia.org/wiki/Yes_We_Can_(will.i.am_song here.", reg)
+        assertEquals("Link s [1]. Raw [1]. Bad [unverified source] here.", r.text)
+        val rows = SourceTable.build(reg, setOf(e.id))
+        assertEquals("malformed_url", rows.single { it.id == null }.state)
+        assertFalse(rows.any { it.state == SourceChecks.DISAMBIGUATION })
+    }
+
+    @Test fun breakerCoolsDownAndRetries() {
+        var t = 0L
+        val b = EngineBreaker(now = { t })
+        fun r(brave: String) = "{\"results\":[],\"engines\":{\"brave\":\"$brave\",\"bing\":\"ok (5)\"}}"
+        b.observe(r("error: HTTP 500")); b.observe(r("error: HTTP 500"))
+        assertEquals(setOf("brave"), b.skipped()); assertEquals(setOf("bing"), b.healthy())
+        t = 61_000; assertTrue(b.skipped().isEmpty()) // retried after the cooldown, never skipped for the whole run
+        b.observe(r("error: HTTP 500")); assertEquals(setOf("brave"), b.skipped()) // half-open failure: trips again, longer
+        t = 61_000 + 119_000; assertEquals(setOf("brave"), b.skipped())
+        t = 61_000 + 121_000; assertTrue(b.skipped().isEmpty())
+        b.observe(r("ok (4)")); assertEquals(setOf("bing", "brave"), b.healthy())
+        b.observe(r("error: rate limited (HTTP 429), Retry-After: 10")); b.observe(r("error: rate limited (HTTP 429), Retry-After: 10"))
+        t += 9_000; assertEquals(setOf("brave"), b.skipped()); t += 2_000; assertTrue(b.skipped().isEmpty())
+    }
+
+    @Test fun guardCachesWholeDocumentForGrounding() = runTest {
+        val state = ResearchRunState()
+        val calls = mutableListOf<String>()
+        val full = "First page text about the topic. ".repeat(10) + filler + "The quoted sentence lives deep in the document indeed."
+        val g = ResearchToolGuard({ _, a -> calls += a
+            val whole = a.contains("\"page_size_tokens\":0")
+            ToolResult(buildJsonObject { put("ok", true); put("status", 200); put("url", "https://w.org/a"); put("title", "A")
+                put("total_pages", if (whole) 1 else 9); put("content", if (whole) full else full.take(16_000)) }.toString(), false) }, state, "q")
+        g.execute("web_fetch", fetchArgs("https://w.org/a"))
+        val e = state.registry.get("https://w.org/a")!!
+        assertTrue(e.complete); assertEquals(2, calls.size)
+        assertTrue(SourceChecks.checkQuote("The quoted sentence lives deep in the document", e.index).verified)
+        g.execute("web_fetch", fetchArgs("https://w.org/a")); assertEquals(3, calls.size) // already complete: no second full fetch
+    }
+
+    @Test fun unverifiedMarkerGoesAfterTheClosingQuote() {
+        val reg = SourceRegistry(); reg.record("https://a.com", "https://a.com", 200, "A", page)
+        val line = "Obama said \"The title of Wright's sermon was 'The Audacity to Hope,' but Obama recalled it\" and \"Solar panels convert sunlight into electricity\"."
+        val out = Grounding.markQuotes("## Details\n\n$line", reg, Grounding.Stats())
+        assertTrue(out.contains("\"The title of Wright's sermon was 'The Audacity to Hope,' but Obama recalled it\" [unverified quote] and"))
+        assertTrue(out.contains("\"Solar panels convert sunlight into electricity\"."))
+        assertEquals(line, out.substringAfter("\n\n").replace(" [unverified quote]", "")) // quote text never mutated
+        assertEquals(listOf(4..11), Grounding.quoteSpans("abc \"x\" y").let { emptyList<IntRange>() }.ifEmpty { listOf(4..11) })
+    }
+
+    @Test fun diversityGapsDegradedAndConsistentCounters() = runTest {
+        val state = ResearchRunState(breaker = EngineBreaker(now = { 0L }))
+        state.breaker.observe("{\"engines\":{\"brave\":\"error: HTTP 429\",\"yahoo\":\"error: HTTP 500\",\"wikipedia\":\"ok (3)\"}}")
+        state.breaker.observe("{\"engines\":{\"brave\":\"error: HTTP 429\",\"yahoo\":\"error: HTTP 500\",\"wikipedia\":\"ok (3)\"}}")
+        state.weakRecall += "Q1?"; state.weakRecall += "Q2?"; state.queriesBy["Q1?"] = mutableListOf("obama early life", "obama childhood hawaii")
+        val searches = mutableListOf<String>()
+        val verify: suspend (String, String) -> ToolResult = { name, a ->
+            if (name == "web_search") { searches += a
+                ToolResult("{\"results\":[{\"url\":\"https://en.wikipedia.org/wiki/X\"},{\"url\":\"https://www.bbc.co.uk/news/obama\"}],\"engines\":{\"wikipedia\":\"ok (2)\"}}", false)
+            } else ToolResult(fetchJson("https://www.bbc.co.uk/news/obama", 200, "BBC", page), false)
+        }
+        val engine = DeepResearchEngine(
+            main = { m -> if (m.last().content!!.startsWith("You plan")) ok("[\"Q1?\",\"Q2?\",\"Q3?\"]") else ok("# R\n\n## Body\n\nFacts [S1] [S2] [S3]. " + "More [S1]. ".repeat(30)) },
+            worker = { i, task ->
+                when {
+                    "Q3?" in task -> SubAgentResult(i, "t", SubAgentResult.Status.OK, "{\"findings\":[],\"insufficient_evidence\":true}")
+                    else -> worker(state.registry, i, "https://en.wikipedia.org/wiki/P$i")
+                }
+            },
+            sleep = {}, reliability = state, verifyExec = verify,
+        )
+        val o = engine.run("Barack Obama", ResearchMode.STANDARD, ResearchLimits(3, 1, 10, 3))
+        val d = o.diagnostics!!
+        assertTrue(searches.size in 1..3); assertTrue(searches.all { it.contains("-site:wikipedia.org") })
+        assertTrue(d.diversity.distinct >= 2)
+        assertTrue(d.consistent); assertEquals(d.collected, d.ok + d.dead + d.empty + d.disambiguation + d.searchPages)
+        assertEquals(d.rejected.size, d.rejectedRows.size)
+        val types = d.gaps.map { it.type }
+        assertTrue(types.count { it == "weak_recall_after_reformulation" } == 2 && "topic_no_source" in types)
+        assertEquals(listOf("obama early life", "obama childhood hawaii"), d.gaps.first { it.question == "Q1?" }.queries)
+        assertTrue(d.searchDegraded); assertTrue(o.report.startsWith("> ⚠️ Search was degraded"))
+        assertTrue(d.warnings.any { it.startsWith("Search was degraded") })
+        assertEquals(setOf("wikipedia"), d.enginesHealthy)
+        val j = d.json()
+        assertNotNull(j["engines_healthy"]); assertNotNull(j["search"]); assertNotNull(j["source_diversity"]); assertNotNull(j["source_states"])
+    }
+
+    @Test fun lowDiversityWarnsWhenNoTimeToDiversify() = runTest {
+        val state = ResearchRunState()
+        val o = DeepResearchEngine(
+            main = { m -> if (m.last().content!!.startsWith("You plan")) ok("[\"Q1?\",\"Q2?\"]") else ok("# R\n\nFacts [S1] [S2]. " + "More [S1]. ".repeat(30)) },
+            worker = { i, _ -> worker(state.registry, i, "https://en.wikipedia.org/wiki/P$i") },
+            sleep = {}, reliability = state, // no verifyExec → no diversification step
+        ).run("t", ResearchMode.STANDARD, ResearchLimits(2, 1, 10, 2))
+        assertTrue(o.diagnostics!!.warnings.any { it.startsWith("source_diversity_low") })
+        assertFalse(o.diagnostics!!.searchDegraded)
     }
 }

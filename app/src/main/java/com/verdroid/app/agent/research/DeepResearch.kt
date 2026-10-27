@@ -67,7 +67,10 @@ object ResearchPolicy {
 
     /** Canonical form for dedupe: lowercase host without www, no fragment, no tracking params, no trailing slash. */
     fun normalize(url: String): String? = runCatching {
-        val u = URI(url.trim().trimEnd('.', ',', ';', ')', ']'))
+        // Keep a closing parenthesis that balances one in the URL (Wikipedia "Foo_(bar)"); drop only unmatched trailing ones.
+        var raw = url.trim().trimEnd('.', ',', ';', ']')
+        while (raw.endsWith(")") && raw.count { it == '(' } < raw.count { it == ')' }) raw = raw.dropLast(1).trimEnd('.', ',', ';', ']')
+        val u = URI(raw)
         val scheme = u.scheme?.lowercase() ?: return null
         if (scheme != "http" && scheme != "https") return null
         val host = u.host?.lowercase()?.removePrefix("www.") ?: return null
@@ -351,15 +354,31 @@ class DeepResearchEngine(
         val state = reliability!!
         val reg = state.registry
         val parsed = findings.map { (q, f) -> Grounding.Note(q, WorkerOutput.parse(f)) }
-        // Cited URLs no worker fetched: a few capped, deterministic checks (no model calls).
+        fun left(): Long = if (budget.limited) (budget.workerLeft() + budget.reserveMs / 2).coerceAtLeast(0) else Long.MAX_VALUE
+        // Deterministic checks before writing (no model calls), all within one capped verification window:
+        // cited URLs nobody fetched, then whole documents for quoted pages only seen partially.
         val exec = verifyExec
         if (exec != null) {
-            val unknown = parsed.flatMap { it.parsed.findings }.map { it.url }.filter { it.isNotBlank() && ResearchPolicy.usable(it) && reg.get(it) == null }.distinct().take(MAX_VERIFY_FETCHES)
-            val cap = if (budget.limited) minOf(VERIFY_TIME_MS, (budget.workerLeft() + budget.reserveMs / 2).coerceAtLeast(0)) else VERIFY_TIME_MS
-            if (unknown.isNotEmpty() && cap > 0) withTimeoutOrNull(cap) { for (u in unknown) state.verifyFetch(u, exec) }
+            val cited = parsed.flatMap { it.parsed.findings }.filter { it.url.isNotBlank() && Urls.malformed(it.url) == null && ResearchPolicy.usable(it.url) }
+            val unknown = cited.map { it.url }.filter { reg.get(it) == null }.distinct().take(MAX_VERIFY_FETCHES)
+            val cap = minOf(VERIFY_TIME_MS, left())
+            if (cap > 0) withTimeoutOrNull(cap) {
+                var used = 0
+                for (u in unknown) { state.verifyFetch(u, exec); used++ }
+                val partial = cited.filter { it.quote.isNotBlank() }.mapNotNull { reg.get(it.url) }.filter { it.ok && !it.complete }.distinctBy { it.id }
+                for (e in partial.take((MAX_VERIFY_FETCHES - used).coerceAtLeast(0))) state.fullText(e.url, exec)
+            }
+        }
+        // Source diversity: one small capped step when a single domain dominates and time remains.
+        var diversity = SourceDiversity.of(reg.all().filter { it.ok })
+        val extra = mutableListOf<SourceEntry>()
+        if (exec != null && diversity.share > SourceDiversity.LOW_SHARE && reg.all().count { it.ok } >= 2 && left() >= DIVERSIFY_MIN_LEFT_MS) {
+            val ids = withTimeoutOrNull(minOf(DIVERSIFY_TIME_MS, left() / 2)) { state.diversify(topic, diversity.top, exec) }.orEmpty()
+            extra += ids.mapNotNull { reg.byId(it) }
+            diversity = SourceDiversity.of(reg.all().filter { it.ok })
         }
         val stats = Grounding.Stats()
-        val (notes, noteSources) = Grounding.notes(parsed, reg, stats)
+        val (notes, noteSources) = Grounding.notes(parsed, reg, stats, extra = extra)
         var fallback = false
         val raw = if (noteSources.isEmpty()) {
             fallback = true
@@ -368,25 +387,45 @@ class DeepResearchEngine(
             ?: run { fallback = true; "# Research notes: $topic\n\n> The report writer failed (${lastError.ifEmpty { "empty reply" }}), so these are the grounded notes.\n\n$notes" }
         val quoted = Grounding.markQuotes(raw, reg, stats)
         val rendered = Grounding.bibliography(quoted, reg)
-        val all = reg.all()
-        val gaps = parsed.filter { n -> n.parsed.insufficient || n.parsed.findings.none { f -> reg.get(f.url)?.ok == true } }.map { it.question } +
-            failures.map { it.first }
-        val wb = all.count { it.servedFrom == "wayback" && it.ok }
+        val table = SourceTable.build(reg, rendered.cited.map { it.id }.toSet())
+        val citedDiversity = SourceDiversity.of(rendered.cited).takeIf { rendered.cited.isNotEmpty() } ?: diversity
+        // Gaps: every "tried and got nothing" path, with the queries tried.
+        fun qs(q: String) = state.queriesBy[q].orEmpty().toList()
+        val gaps = buildList {
+            state.weakRecall.sorted().forEach { add(Gap("weak_recall_after_reformulation", it, "search results stayed off-topic", qs(it))) }
+            parsed.filter { n -> n.parsed.findings.none { f -> reg.get(f.url)?.ok == true && Urls.malformed(f.url) == null } }.forEach { n ->
+                add(Gap("topic_no_source", n.question, if (n.parsed.insufficient) "worker reported insufficient_evidence" else "no finding with a usable source", qs(n.question)))
+            }
+            state.fetchFailedBy.forEach { (q, urls) ->
+                val still = urls.filter { reg.get(it)?.ok != true }
+                if (still.isNotEmpty()) add(Gap("fetch_failed", q, still.take(5).joinToString(" ") + " (live and archive fetch failed)", qs(q)))
+            }
+            failures.forEach { (q, f) -> add(Gap(if (f.kind == FailureKind.RUN_BUDGET) "budget_stopped" else "worker_failed", q, f.kind.label, qs(q))) }
+        }
+        val healthy = state.breaker.healthy()
+        val degraded = questions.isNotEmpty() && state.weakRecall.size * 2 > questions.size && healthy.size < 2
+        if (degraded) warnings += "Search was degraded: ${state.weakRecall.size} of ${questions.size} sub-questions got only off-topic results and ${healthy.size} search engine(s) were healthy (${healthy.joinToString().ifEmpty { "none" }}). Treat the report as incomplete."
         if (writerIsFree) warnings += "The report was written by a free model: check key claims against the cited sources."
         if (budget.hit) warnings += "Run time budget reached: ${failures.count { it.second.kind == FailureKind.RUN_BUDGET }} worker(s) were stopped or not started; the report uses what was collected."
         if (failures.isNotEmpty()) warnings += "${failures.size} of ${questions.size} sub-questions failed (see Failed workers)."
         if (fallback) warnings += "The report writer failed or had nothing grounded to write about."
-        if (state.breaker.reasons.isNotEmpty()) warnings += "Search engines skipped after repeated failures: ${state.breaker.reasons.keys.joinToString()}."
+        val paused = state.breaker.skipped()
+        if (paused.isNotEmpty()) warnings += "Search engines still cooling down after repeated failures: ${paused.joinToString()}."
+        if (rendered.cited.isNotEmpty() && (citedDiversity.share > SourceDiversity.LOW_SHARE || citedDiversity.distinct < 3))
+            warnings += "source_diversity_low: ${citedDiversity.distinct} distinct domain(s); ${citedDiversity.top} = ${Math.round(citedDiversity.share * 100)}% of cited sources."
         if (stats.checked > 0 && stats.verified < stats.checked) warnings += "${stats.checked - stats.verified} quote(s) could not be verified on the pages and are marked."
-        val diag = ResearchDiagnostics(
-            collected = all.size, ok = all.count { it.ok }, dead = all.count { SourceChecks.DEAD in it.flags || SourceChecks.EMPTY in it.flags },
-            disambiguation = all.count { SourceChecks.DISAMBIGUATION in it.flags }, searchPages = all.count { SourceChecks.SEARCH_PAGE in it.flags },
-            wayback = wb, cited = rendered.cited.size, orphansPruned = all.count { it.ok } - rendered.cited.size,
-            rejected = synchronized(reg) { LinkedHashMap(reg.rejected) }, quotesChecked = stats.checked, quotesVerified = stats.verified,
-            enginesFailed = LinkedHashMap(state.breaker.reasons), weakRecall = state.weakRecall.size, gaps = gaps.distinct(),
-            warnings = warnings.distinct(), budgetMs = budget.budgetMs, elapsedMs = budget.elapsed(), budgetHit = budget.hit,
+        var diag = ResearchDiagnostics(
+            table = table, wayback = reg.all().count { it.servedFrom == "wayback" && it.ok },
+            quotesChecked = stats.checked, quotesVerified = stats.verified, quoteMisses = LinkedHashMap(stats.misses), quoteTiers = LinkedHashMap(stats.tiers),
+            enginesFailed = synchronized(state.breaker) { LinkedHashMap(state.breaker.reasons) }, enginesHealthy = healthy,
+            queriesIssued = state.queriesIssued, pagesReturned = state.pagesReturned, reformulations = state.reformulations, diversifyQueries = state.diversifyQueries,
+            diversity = citedDiversity, weakRecall = state.weakRecall.size, gaps = gaps, searchDegraded = degraded,
+            warnings = emptyList(), budgetMs = budget.budgetMs, elapsedMs = budget.elapsed(), budgetHit = budget.hit,
         )
-        val stamp = if (writerIsFree) "> ℹ️ Written by a free model: verify key claims against the numbered sources.\n\n" else ""
+        if (!diag.consistent) warnings += "Internal: source counters do not add up (${diag.collected} collected); please report this."
+        diag = diag.copy(warnings = warnings.distinct())
+        val stamp = (if (degraded) "> ⚠️ Search was degraded: most sub-questions got only off-topic results and fewer than 2 search engines were healthy. This report is incomplete.\n\n" else "") +
+            (if (writerIsFree) "> ℹ️ Written by a free model: verify key claims against the numbered sources.\n\n" else "")
         val report = stamp + rendered.text + Grounding.sourcesSection(rendered.cited) + diag.runNotes() + FailureText.markdownSection(failures)
         return ResearchOutcome(topic, mode, report, rendered.cited.map { it.url }, questions, rounds, failures.size, fallback, failures, diag)
     }
@@ -414,6 +453,8 @@ class DeepResearchEngine(
     companion object {
         const val MAX_VERIFY_FETCHES = 5
         const val VERIFY_TIME_MS = 60_000L
+        const val DIVERSIFY_TIME_MS = 45_000L
+        const val DIVERSIFY_MIN_LEFT_MS = 60_000L
         fun host(url: String): String = runCatching { URI(url).host.orEmpty().removePrefix("www.") }.getOrDefault("")
     }
 }
