@@ -29,7 +29,7 @@ object SubAgentPolicy {
     /** Default parallel workers when the worker model is an OpenRouter free model (one shared ~20 req/min account limit). */
     const val FREE_DEFAULT_CONCURRENCY = 2
     /** Rate-limit waiting a sub-agent may do on top of its timeout. */
-    const val RATE_WAIT_BUDGET_MS = 8 * 60_000L
+    const val RATE_WAIT_BUDGET_MS = 15 * 60_000L
 
     /** The user's value if they set one; otherwise [FREE_DEFAULT_CONCURRENCY] for free models, else [setting]. */
     fun effectiveConcurrency(setting: Int, userSet: Boolean, freeModel: Boolean): Int =
@@ -104,6 +104,8 @@ data class SubAgentResult(
     val rateLimited: Boolean = false,
     /** Finished on the fallback model list after the worker model stayed rate-limited. */
     val usedFallback: Boolean = false,
+    /** Why it failed (null when OK). */
+    val failure: WorkerFailure? = null,
 ) {
     enum class Status { OK, ERROR, TIMEOUT }
 }
@@ -184,36 +186,57 @@ class SubAgentLoop(
     private val rateWaitBudgetMs: Long = 0,
 ) {
     private var waitedMs = 0L
+    private val meter = com.verdroid.app.data.network.PacingWaitMeter()
+    /** Rate-limit sleeps + client-side pacing queue time (shared free-model bucket): not counted as working time. */
+    private val totalWaitMs: Long get() = waitedMs + meter.ms.get()
+    private var attempts = 0
+    /** null = no fallback configured; else what happened with it. */
+    private var fallbackNote: String? = null
+    private val toolErrors = ArrayDeque<String>()
+    private var lastFailure: WorkerFailure? = null
 
     suspend fun run(index: Int, task: String): SubAgentResult {
         var steps = 0
         var lastModel: String? = null
         val start = now()
-        val out = withTimeoutOrNull(timeoutMs + rateWaitBudgetMs) {
+        if (fallback != null) fallbackNote = "not needed"
+        val out = withTimeoutOrNull(timeoutMs + rateWaitBudgetMs) { kotlinx.coroutines.withContext(meter) {
             val msgs = mutableListOf(ApiMessage("system", SubAgentPolicy.systemPrompt(allowed)), ApiMessage("user", task))
             val guard = RepeatCallGuard()
             val tools = toolSchemas.takeIf { it.isNotEmpty() }
             while (true) {
-                if (rateWaitBudgetMs > 0 && now() - start - waitedMs > timeoutMs) return@withTimeoutOrNull null
+                if (rateWaitBudgetMs > 0 && now() - start - totalWaitMs > timeoutMs) return@withContext null
                 if (steps >= maxSteps) {
                     // Last chance: ask for the answer without tools.
                     msgs += ApiMessage("system", "Step limit reached. Give your findings now, with sources, without calling tools.")
-                    val c = call(msgs, null) ?: return@withTimeoutOrNull fail(index, task, steps, lastModel)
+                    val c = call(msgs, null) ?: return@withContext fail(index, task, steps, lastModel)
                     lastModel = c.model
-                    return@withTimeoutOrNull done(index, task, c.completion.content, steps, lastModel)
+                    return@withContext done(index, task, c.completion.content, steps, lastModel, FailureKind.STEP_LIMIT)
                 }
                 steps++
-                val c = call(msgs, tools) ?: return@withTimeoutOrNull fail(index, task, steps, lastModel)
+                val c = call(msgs, tools) ?: return@withContext fail(index, task, steps, lastModel)
                 lastModel = c.model
                 val native = c.completion.toolCalls
                 val fenced = if (native.isEmpty()) FencedToolCallParser.deliberate(c.completion.content, allowed) else emptyList()
                 val calls = native.ifEmpty { fenced }
-                if (calls.isEmpty()) return@withTimeoutOrNull done(index, task, c.completion.content, steps, lastModel)
+                if (calls.isEmpty()) {
+                    if (c.completion.content.isNullOrBlank() && steps < maxSteps) {
+                        // Empty reply (common on free models): ask once more for the findings without tools.
+                        msgs += ApiMessage("system", "Your last reply was empty. Give your findings now, with sources, without calling tools.")
+                        val r = call(msgs, null) ?: return@withContext fail(index, task, steps, lastModel)
+                        return@withContext done(index, task, r.completion.content, steps, r.model, FailureKind.EMPTY_OUTPUT)
+                    }
+                    return@withContext done(index, task, c.completion.content, steps, lastModel, FailureKind.EMPTY_OUTPUT)
+                }
                 val repeats = guard.observe(calls)
                 if (repeats >= RepeatCallGuard.PAUSE_AT) {
                     msgs += ApiMessage("system", "You keep repeating the same call. Stop calling tools and give your findings now.")
                     val f = call(msgs, null)
-                    return@withTimeoutOrNull done(index, task, f?.completion?.content ?: "Stopped: repeated the same tool call ${repeats}×.", steps, f?.model ?: lastModel)
+                    val text = f?.completion?.content
+                    if (text.isNullOrBlank()) return@withContext failWith(index, task, steps, f?.model ?: lastModel,
+                        WorkerFailure(FailureKind.LOOP_GUARD, "repeated the same tool call ${repeats}× (${calls.joinToString { it.name }}), then no answer" +
+                            (lastFailure?.let { " (${it.kind.label}: ${it.detail})" } ?: ""), attempts, fallbackNote, toolErrors.toList()))
+                    return@withContext done(index, task, text, steps, f.model, FailureKind.LOOP_GUARD)
                 }
                 if (native.isNotEmpty()) {
                     msgs += ApiMessage("assistant", c.completion.content ?: "",
@@ -221,16 +244,29 @@ class SubAgentLoop(
                 } else msgs += ApiMessage("assistant", c.completion.content ?: "")
                 for (tc in calls) {
                     val r = runTool(tc)
+                    FailureText.toolError(tc.name, tc.argumentsJson, r.json, r.isError)?.let {
+                        toolErrors.addLast(it); while (toolErrors.size > 3) toolErrors.removeFirst()
+                    }
                     msgs += if (native.isNotEmpty()) ApiMessage("tool", r.json, toolCallId = tc.id, name = tc.name)
                         else ApiMessage("user", FencedToolCallParser.resultMessage(tc.name, r.json, tc.id))
                 }
                 if (repeats >= RepeatCallGuard.NUDGE_AT) msgs += ApiMessage("system", RepeatCallGuard.nudge(repeats, calls.joinToString { it.name }))
             }
             @Suppress("UNREACHABLE_CODE") null
-        }
-        return out ?: SubAgentResult(index, task, SubAgentResult.Status.TIMEOUT,
-            "Timed out after ${timeoutMs / 1000}s (step $steps)" + (if (waitedMs > 0) ", ${waitedMs / 1000}s of it waiting for rate limits." else "."),
-            steps, lastModel, rateLimited = waitedMs > 0)
+        } }
+        if (out != null) return out
+        val wall = now() - start
+        val waited = totalWaitMs
+        // Hit the hard wall (timeout + wait budget) while mostly waiting → the wait budget was the limit.
+        val budgetHit = rateWaitBudgetMs > 0 && wall >= timeoutMs + rateWaitBudgetMs - 1_000 && waited >= rateWaitBudgetMs
+        val kind = if (budgetHit) FailureKind.WAIT_BUDGET else FailureKind.WORKER_TIMEOUT
+        val detail = if (budgetHit) "waited ${waited / 1000}s for rate limits (budget ${rateWaitBudgetMs / 1000}s), step $steps"
+            else "no answer within ${timeoutMs / 1000}s of working time (step $steps/$maxSteps" +
+                (if (waited > 0) ", plus ${waited / 1000}s waiting for rate limits" else "") + ")"
+        val failure = WorkerFailure(kind, detail + (lastFailure?.let { "; last error: ${it.kind.label}: ${it.detail}" } ?: ""),
+            attempts, fallbackNote, toolErrors.toList(), lastFailure?.httpStatus)
+        return SubAgentResult(index, task, SubAgentResult.Status.TIMEOUT, failure.summary, steps, lastModel,
+            rateLimited = waited > 0, usedFallback = onFallback, failure = failure)
     }
 
     private var lastError = ""
@@ -250,28 +286,68 @@ class SubAgentLoop(
     private var rateLimitedOut = false
     private var onFallback = false
 
-    private fun fail(index: Int, task: String, steps: Int, model: String?) =
-        SubAgentResult(index, task, SubAgentResult.Status.ERROR, lastError, steps, model, rateLimited = rateLimitedOut, usedFallback = onFallback)
+    private fun fail(index: Int, task: String, steps: Int, model: String?): SubAgentResult {
+        val f = (lastFailure ?: WorkerFailure(FailureKind.OTHER, FailureText.sanitize(lastError)))
+            .copy(attempts = attempts, fallback = fallbackNote, toolErrors = toolErrors.toList())
+        return failWith(index, task, steps, model, f)
+    }
+
+    private fun failWith(index: Int, task: String, steps: Int, model: String?, f: WorkerFailure) =
+        SubAgentResult(index, task, SubAgentResult.Status.ERROR, f.summary, steps, model, rateLimited = rateLimitedOut,
+            usedFallback = onFallback, failure = f)
+
+    private fun classify(o: ChatOutcome): WorkerFailure = when (o) {
+        is ChatOutcome.NoApiKey -> WorkerFailure(FailureKind.NO_API_KEY, "no API key / model available")
+        is ChatOutcome.RateLimited -> WorkerFailure(if (o.dailyQuota) FailureKind.DAILY_QUOTA else FailureKind.RATE_LIMIT,
+            FailureText.sanitize(o.message), httpStatus = FailureText.httpStatus(o.message) ?: 429)
+        is ChatOutcome.Failure -> WorkerFailure(when {
+            FailureText.isNetwork(o.message) -> FailureKind.NETWORK
+            FailureText.isEmptyOutput(o.message) -> FailureKind.EMPTY_OUTPUT
+            FailureText.httpStatus(o.message) != null -> FailureKind.HTTP
+            else -> FailureKind.OTHER
+        }, FailureText.sanitize(o.message), httpStatus = FailureText.httpStatus(o.message))
+        is ChatOutcome.Success -> WorkerFailure(FailureKind.OTHER, "")
+    }
+
+    /** Switches to the fallback list once; false if there is none or it is already in use. */
+    private fun switchToFallback(why: String): Boolean {
+        if (fallback == null || onFallback) return false
+        onFallback = true; fallbackNote = "tried after $why"
+        return true
+    }
 
     /**
      * Model call with retries. Rate limits: wait for the provider's Retry-After / reset time (or 2 s, 4 s, 8 s … backoff),
      * plus jitter, up to [maxRetries] times; then switch once to [fallback] (if set) with a fresh retry budget. Daily quota
-     * skips straight to the fallback. Other failures retry once.
+     * skips straight to the fallback. Other failures retry twice (5 s, then 20 s: past a short model cooldown), then try the fallback.
      */
     private suspend fun call(msgs: List<ApiMessage>, tools: JsonArray?): ChatOutcome.Success? {
         var attempt = 0
         var failures = 0
         while (true) {
             val m = if (onFallback) fallback!! else model
-            when (val o = m(msgs, tools)) {
+            attempts++
+            val o = m(msgs, tools)
+            if (o is ChatOutcome.Success) {
+                if (onFallback) fallbackNote = (fallbackNote ?: "tried") + ", succeeded"
+                return o
+            }
+            val f = classify(o)
+            lastFailure = f
+            when (o) {
                 is ChatOutcome.Success -> return o
-                is ChatOutcome.NoApiKey -> { lastError = "No API key / model available."; return null }
+                is ChatOutcome.NoApiKey -> {
+                    lastError = "No API key / model available."
+                    if (switchToFallback("no API key")) { attempt = 0; failures = 0; continue }
+                    noteFallbackFailed(f); return null
+                }
                 is ChatOutcome.RateLimited -> {
                     if (o.dailyQuota || attempt >= maxRetries) {
-                        if (fallback != null && !onFallback) { onFallback = true; attempt = 0; failures = 0; continue }
+                        if (switchToFallback(if (o.dailyQuota) "daily quota" else "rate limits")) { attempt = 0; failures = 0; continue }
                         lastError = "Rate limited after ${attempt} retries${if (onFallback) " (fallback model too)" else ""}: ${o.message}"
+                        lastFailure = f.copy(detail = FailureText.sanitize("after $attempt waits: ${o.message}"))
                         rateLimitedOut = true
-                        return null
+                        noteFallbackFailed(f); return null
                     }
                     val w = backoffMs(attempt, o.resumeAt - now()) + jitter()
                     onWait(true)
@@ -280,20 +356,30 @@ class SubAgentLoop(
                     attempt++
                 }
                 is ChatOutcome.Failure -> {
-                    if (failures >= 1) { lastError = o.message; return null }
-                    failures++; sleep(2_000)
+                    if (failures >= 2) {
+                        if (switchToFallback("errors")) { attempt = 0; failures = 0; continue }
+                        lastError = o.message; noteFallbackFailed(f); return null
+                    }
+                    val w = if (failures == 0) 5_000L else 20_000L
+                    failures++; sleep(w); waitedMs += w
                 }
             }
         }
     }
 
-    private fun done(index: Int, task: String, content: String?, steps: Int, model: String?): SubAgentResult {
+    private fun noteFallbackFailed(f: WorkerFailure) {
+        if (onFallback) fallbackNote = (fallbackNote ?: "tried") + ", also failed (${f.kind.label})"
+    }
+
+    private fun done(index: Int, task: String, content: String?, steps: Int, model: String?, emptyKind: FailureKind = FailureKind.EMPTY_OUTPUT): SubAgentResult {
         val text = content?.trim().orEmpty()
-        return if (text.isEmpty()) SubAgentResult(index, task, SubAgentResult.Status.ERROR, "The sub-agent returned no answer.", steps, model)
+        return if (text.isEmpty()) failWith(index, task, steps, model, WorkerFailure(emptyKind,
+            "the model returned no answer" + (if (emptyKind == FailureKind.STEP_LIMIT) " after $steps/$maxSteps steps" else "") +
+                (model?.let { " ($it)" } ?: ""), attempts, fallbackNote, toolErrors.toList()))
         else {
             val r = UrlVerifier.verify(text, seenUrls)
             SubAgentResult(index, task, SubAgentResult.Status.OK, r.text.take(maxFindingsChars), steps, model,
-                sources = r.verified, corrected = r.corrected, unverified = r.unverified, tools = allowed)
+                sources = r.verified, corrected = r.corrected, unverified = r.unverified, tools = allowed, usedFallback = onFallback)
         }
     }
 

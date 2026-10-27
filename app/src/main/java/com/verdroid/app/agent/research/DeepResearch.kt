@@ -192,6 +192,8 @@ data class ResearchOutcome(
     val rounds: Int,
     val failedWorkers: Int,
     val reportFallback: Boolean,
+    /** Sub-questions that still failed after the retry pass, with the reason. */
+    val failures: List<Pair<String, com.verdroid.app.agent.subagents.WorkerFailure>> = emptyList(),
 )
 
 /**
@@ -209,6 +211,8 @@ class DeepResearchEngine(
     private val now: () -> Long = System::currentTimeMillis,
     /** Workers sleeping on a rate limit (shown in progress instead of failures). */
     private val waits: com.verdroid.app.agent.subagents.RateWaitCounter? = null,
+    /** Called for every failed worker (question, reason, after retry?) — diagnostic log. */
+    private val onWorkerFailed: suspend (String, com.verdroid.app.agent.subagents.WorkerFailure, Boolean) -> Unit = { _, _, _ -> },
 ) {
     suspend fun run(topic: String, mode: ResearchMode, limits: ResearchLimits, language: String? = null): ResearchOutcome {
         onProgress(ResearchProgress("Planning", 1, limits.rounds))
@@ -220,6 +224,10 @@ class DeepResearchEngine(
         var failed = 0
         var roundsDone = 0
         val failedQs = mutableListOf<String>()
+        val firstFailure = mutableMapOf<String, com.verdroid.app.agent.subagents.WorkerFailure>()
+        val finalFailures = mutableListOf<Pair<String, com.verdroid.app.agent.subagents.WorkerFailure>>()
+        fun failureOf(r: SubAgentResult) = r.failure ?: com.verdroid.app.agent.subagents.WorkerFailure(
+            com.verdroid.app.agent.subagents.FailureKind.OTHER, com.verdroid.app.agent.subagents.FailureText.sanitize(r.findings))
         for (round in 1..limits.rounds) {
             if (questions.isEmpty() || sources.size >= limits.maxSources) break
             roundsDone = round
@@ -231,7 +239,7 @@ class DeepResearchEngine(
                 waits = waits,
             ) { i, q -> worker(i, ResearchPolicy.workerTask(topic, q, limits.perWorkerSources, sources)) }
             for ((i, r) in results.withIndex()) {
-                if (r.status != SubAgentResult.Status.OK) { failedQs += qs[i]; continue }
+                if (r.status != SubAgentResult.Status.OK) { failedQs += qs[i]; firstFailure[qs[i]] = failureOf(r); onWorkerFailed(qs[i], failureOf(r), false); continue }
                 val room = limits.maxSources - sources.size
                 sources += ResearchPolicy.dedupe(r.sources, room.coerceAtLeast(0), sources)
                 findings += qs[i] to r.findings
@@ -253,17 +261,26 @@ class DeepResearchEngine(
                 waits = waits,
             ) { i, q -> worker(i, ResearchPolicy.workerTask(topic, q, limits.perWorkerSources, sources)) }
             for ((i, r) in results.withIndex()) {
-                if (r.status != SubAgentResult.Status.OK) { failed++; continue }
+                if (r.status != SubAgentResult.Status.OK) {
+                    failed++
+                    val f = failureOf(r)
+                    val first = firstFailure[retry[i]]
+                    val merged = if (first != null && first.kind != f.kind) f.copy(detail = f.detail + " (first try: ${first.kind.label})") else f
+                    finalFailures += retry[i] to merged.copy(attempts = merged.attempts + (first?.attempts ?: 0))
+                    onWorkerFailed(retry[i], merged, true)
+                    continue
+                }
                 sources += ResearchPolicy.dedupe(r.sources, (limits.maxSources - sources.size).coerceAtLeast(0), sources)
                 findings += retry[i] to r.findings
             }
-        } else failed += failedQs.size
+        } else { failed += failedQs.size; failedQs.forEach { q -> firstFailure[q]?.let { finalFailures += q to it.copy(detail = it.detail + " (not retried: source limit reached)") } } }
         onProgress(ResearchProgress("Writing report", roundsDone, limits.rounds, null, sources.size))
         var fallback = false
         val body = if (findings.isEmpty()) { fallback = true; "# Research: $topic\n\nNo sub-question returned usable findings ($failed failed). Try again later or with another worker model." }
         else ask(ResearchPolicy.reportPrompt(topic, mode, ResearchPolicy.notes(findings), sources, language))?.trim()?.takeIf { it.length > 200 }
             ?: run { fallback = true; ResearchPolicy.fallbackReport(topic, findings, lastError.ifEmpty { "empty reply" }) }
-        return ResearchOutcome(topic, mode, body + ResearchPolicy.sourcesSection(sources), sources, allQuestions, roundsDone, failed, fallback)
+        return ResearchOutcome(topic, mode, body + ResearchPolicy.sourcesSection(sources) +
+            com.verdroid.app.agent.subagents.FailureText.markdownSection(finalFailures), sources, allQuestions, roundsDone, failed, fallback, finalFailures)
     }
 
     private var lastError = ""

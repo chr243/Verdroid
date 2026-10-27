@@ -4,6 +4,7 @@ import android.content.Context
 import com.verdroid.app.agent.subagents.SubAgentLoop
 import com.verdroid.app.agent.subagents.SubAgentPolicy
 import com.verdroid.app.agent.subagents.SubAgentPrefs
+import com.verdroid.app.agent.subagents.logWorkerFailure
 import com.verdroid.app.agent.tools.ToolRegistry
 import com.verdroid.app.data.network.OpenRouterClient
 import com.verdroid.app.data.settings.ModelPin
@@ -79,6 +80,7 @@ class DeepResearchService @Inject constructor(
     private val prefs: ResearchPrefs,
     private val shared: SharedFolder,
     private val tasks: TaskRepository,
+    private val diagLog: com.verdroid.app.domain.repository.RateLimitRepository,
 ) : DeepResearchBackend {
     override suspend fun research(taskId: Long, topic: String, mode: ResearchMode, language: String?): DeepResearchResult {
         val reg = registry.get()
@@ -108,6 +110,8 @@ class DeepResearchService @Inject constructor(
                     ).run(i, task)
                 },
                 waits = waits,
+                onWorkerFailed = { q, f, final -> diagLog.logWorkerFailure(taskId, "research worker", q.take(80), pin?.model, f,
+                    if (final) "Research worker failed after retry" else "Research worker failed → will retry") },
                 onProgress = { p ->
                     ResearchLive.set(taskId, p)
                     if (taskId > 0) runCatching { tasks.updateSubtitle(taskId, p.label) }

@@ -86,6 +86,7 @@ class SubAgentService @Inject constructor(
     private val registry: Provider<ToolRegistry>,
     private val prefs: SubAgentPrefs,
     private val tasks: TaskRepository,
+    private val diagLog: com.verdroid.app.domain.repository.RateLimitRepository,
 ) : SubAgentBackend {
     override suspend fun runAll(parentTaskId: Long, tasks: List<SubAgentTask>, modelOverride: String?): SubAgentBatch {
         val reg = registry.get()
@@ -119,6 +120,9 @@ class SubAgentService @Inject constructor(
                     toolSchemas = schemasFor(choice.tools), allowed = choice.tools, maxSteps = maxSteps, timeoutMs = timeoutMs,
                     fallback = fallback, onWait = waits::set, rateWaitBudgetMs = SubAgentPolicy.RATE_WAIT_BUDGET_MS,
                 ).run(i, t.prompt).copy(tools = choice.tools, rejectedTools = choice.rejected)
+            }
+            results.filter { it.status != SubAgentResult.Status.OK }.forEach { r ->
+                r.failure?.let { diagLog.logWorkerFailure(parentTaskId, "sub-agent #${r.index + 1}", tasks.getOrNull(r.index)?.prompt?.take(80).orEmpty(), r.model, it, "Sub-agent failed") }
             }
             return SubAgentBatch(results, pin?.model, conc, allowed)
         } catch (e: CancellationException) { throw e }

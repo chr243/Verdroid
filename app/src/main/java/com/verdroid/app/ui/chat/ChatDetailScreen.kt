@@ -561,6 +561,8 @@ internal fun ToolCallCard(call: ToolCallRecord) {
                     else remember(call.resultJson) { com.verdroid.app.agent.subagents.SpawnSubagentsTool.summary(call.resultJson) }
                 line?.let { Text("🤖 $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp)) }
+                if (call.status != ToolCallStatus.PENDING) FailedWorkersList(remember(call.resultJson) {
+                    com.verdroid.app.agent.subagents.SpawnSubagentsTool.failedWorkers(call.resultJson) })
             }
             if (call.name == com.verdroid.app.agent.research.ResearchPolicy.TOOL_NAME) {
                 val live by com.verdroid.app.agent.research.ResearchLive.progress.collectAsState()
@@ -568,6 +570,8 @@ internal fun ToolCallCard(call: ToolCallRecord) {
                     else remember(call.resultJson) { com.verdroid.app.agent.research.DeepResearchTool.summary(call.resultJson) }
                 line?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp)) }
+                if (call.status != ToolCallStatus.PENDING) FailedWorkersList(remember(call.resultJson) {
+                    com.verdroid.app.agent.research.DeepResearchTool.failedWorkers(call.resultJson) })
             }
             if (call.name == com.verdroid.app.agent.tools.ChartTool.NAME && call.status == ToolCallStatus.SUCCESS) {
                 remember(call.resultJson) { com.verdroid.app.agent.tools.ChartSpecs.fromResult(call.resultJson) }
@@ -581,6 +585,24 @@ internal fun ToolCallCard(call: ToolCallRecord) {
                     CodeBlock("arguments", pretty(call.argumentsJson), if (call.name == "run_shell") "json" else null)
                     CodeBlock("result", pretty(call.resultJson).ifEmpty { "…running" }, null)
                 }
+            }
+        }
+    }
+}
+
+/** "⚠️ 3 workers failed ▼" → tap to list each failed worker with its reason (separate from the card's own expand). */
+@Composable
+private fun FailedWorkersList(failed: List<Pair<String, String>>) {
+    if (failed.isEmpty()) return
+    var open by remember(failed) { mutableStateOf(false) }
+    Column(Modifier.padding(top = 4.dp)) {
+        Text("⚠️ ${failed.size} worker${if (failed.size == 1) "" else "s"} failed " + if (open) "▲" else "▼",
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error,
+            modifier = Modifier.clickable { open = !open })
+        AnimatedVisibility(open) {
+            SelectionContainer {
+                Text(com.verdroid.app.agent.subagents.FailureText.cardLines(failed), style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 2.dp))
             }
         }
     }

@@ -206,6 +206,7 @@ class OpenRouterClient @Inject constructor(
         var sawRateLimit = false
         val dailyKeys = HashSet<String>()
         var sawResetHeader = false
+        var skippedCooling = 0
 
         keyLoop@ for (key in keys) {
             val now0 = System.currentTimeMillis()
@@ -220,7 +221,7 @@ class OpenRouterClient @Inject constructor(
             }
             for (model in models) {
                 val now = System.currentTimeMillis()
-                if (cooldowns.modelUntil(key.id, model) > now) continue
+                if (cooldowns.modelUntil(key.id, model) > now) { skippedCooling++; continue }
                 status("Calling $model…")
                 limiter.acquire(key.id, limits.requestsPerMinute)
                 val free = ClientRateLimiter.isFreeModel(model)
@@ -250,7 +251,7 @@ class OpenRouterClient @Inject constructor(
                         if (parsed != null) { _lastModel.value = model; return ChatOutcome.Success(parsed, parsed.model ?: model, key.displayName) }
                         DetectedApiError(ApiErrorKind.UPSTREAM, 502, "Empty or unparsable completion", null)
                     }
-                lastError = "$model: ${err.message}"
+                lastError = "$model: HTTP ${err.code}: ${err.message}"
                 when (err.kind) {
                     ApiErrorKind.RATE_LIMIT -> {
                         sawRateLimit = true
@@ -310,6 +311,8 @@ class OpenRouterClient @Inject constructor(
             val allDaily = keys.all { it.id in dailyKeys || cooldowns.keyUntil(it.id) >= ClientRateLimiter.nextUtcMidnight(now) - 1000 }
             return ChatOutcome.RateLimited(resumeAt, lastError, dailyQuota = allDaily, explicitReset = sawResetHeader)
         }
+        if (lastError == "No model available" && skippedCooling > 0)
+            lastError = "All models are cooling down after recent errors (Settings → Limits → model cooldown)"
         return ChatOutcome.Failure(lastError)
     }
 

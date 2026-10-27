@@ -52,6 +52,7 @@ class ClientRateLimiter @Inject constructor(
                 }
             }
             if (wait == 0L) return
+            kotlinx.coroutines.currentCoroutineContext()[PacingWaitMeter]?.ms?.addAndGet(wait)
             sleeper(wait)
         }
     }
@@ -158,6 +159,7 @@ class SharedRatePacer(private val clock: () -> Long, private val sleeper: suspen
                 if (waits <= 0L) { q.addLast(now); lastAt[bucket] = now; 0L } else waits.coerceAtLeast(50)
             }
             if (wait == 0L) return
+            kotlinx.coroutines.currentCoroutineContext()[PacingWaitMeter]?.ms?.addAndGet(wait)
             sleeper(wait)
         }
     }
@@ -168,4 +170,13 @@ class SharedRatePacer(private val clock: () -> Long, private val sleeper: suspen
     }
 
     fun pausedUntil(bucket: String): Long = paused[bucket] ?: 0L
+}
+
+/**
+ * Coroutine context element that adds up client-side pacing waits (per-key window, shared free-model bucket) of one caller,
+ * so a sub-agent can exclude queueing for the shared rate limit from its own working-time timeout.
+ */
+class PacingWaitMeter : kotlin.coroutines.AbstractCoroutineContextElement(Key) {
+    val ms = java.util.concurrent.atomic.AtomicLong()
+    companion object Key : kotlin.coroutines.CoroutineContext.Key<PacingWaitMeter>
 }

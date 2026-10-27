@@ -59,6 +59,9 @@ class DeepResearchTool(private val backend: DeepResearchBackend) : AgentTool {
             put("topic", o.topic); put("mode", o.mode.id)
             put("rounds", o.rounds); put("sub_questions", o.questions.size); put("failed_workers", o.failedWorkers)
             put("sources_count", o.sources.size)
+            if (o.failures.isNotEmpty()) put("failed_worker_details", JsonArray(o.failures.map { (q, f) ->
+                buildJsonObject { put("question", q.take(200)); put("reason", f.summary); put("failure", f.json()) }
+            }))
             r.workerModel?.let { put("worker_model", it) }
             put("saved_to", r.savedPath ?: "not saved (no storage access)")
             if (o.reportFallback) put("note", "The report writer failed; the report contains the raw notes per sub-question.")
@@ -73,7 +76,11 @@ class DeepResearchTool(private val backend: DeepResearchBackend) : AgentTool {
             val o = kotlinx.serialization.json.Json.parseToJsonElement(resultJson ?: return null) as JsonObject
             if (o["error"] != null) return null
             val n = o["sources_count"]?.jsonPrimitive?.content ?: return null
-            "🔎 Research done · $n sources · ${o["saved_to"]?.jsonPrimitive?.content.orEmpty().substringAfterLast('/')}"
+            val failed = o["failed_workers"]?.jsonPrimitive?.content?.toIntOrNull() ?: 0
+            "🔎 Research done · $n sources" + (if (failed > 0) " · $failed failed" else "") +
+                " · ${o["saved_to"]?.jsonPrimitive?.content.orEmpty().substringAfterLast('/')}"
         }.getOrNull()
+
+        fun failedWorkers(resultJson: String?): List<Pair<String, String>> = com.verdroid.app.agent.subagents.FailedWorkersJson.parse(resultJson)
     }
 }

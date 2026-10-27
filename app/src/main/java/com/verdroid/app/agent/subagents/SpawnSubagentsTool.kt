@@ -88,6 +88,13 @@ class SpawnSubagentsTool(
             b.model?.let { put("model", it) }
             put("concurrency", b.concurrency)
             put("allowed_tools", JsonArray(b.tools.sorted().map(::JsonPrimitive)))
+            val bad = b.results.filter { it.status != SubAgentResult.Status.OK }
+            if (bad.isNotEmpty()) put("failed_worker_details", JsonArray(bad.map { r ->
+                buildJsonObject {
+                    put("index", r.index + 1); put("task", tasks.getOrElse(r.index) { r.task }.take(120))
+                    put("reason", r.failure?.summary ?: r.findings.take(300))
+                }
+            }))
             put("results", JsonArray(b.results.map { r ->
                 buildJsonObject {
                     put("index", r.index + 1)
@@ -96,6 +103,7 @@ class SpawnSubagentsTool(
                     put("steps", r.steps)
                     r.model?.let { put("model", it) }
                     put(if (r.status == SubAgentResult.Status.OK) "findings" else "error", r.findings)
+                    r.failure?.let { put("failure", it.json()) }
                     put("sources", JsonArray(r.sources.map(::JsonPrimitive)))
                     if (r.corrected.isNotEmpty()) put("corrected_urls", buildJsonObject { r.corrected.forEach { (k, v) -> put(k, v) } })
                     if (r.unverified.isNotEmpty()) put("unverified_urls", JsonArray(r.unverified.map(::JsonPrimitive)))
@@ -112,5 +120,8 @@ class SpawnSubagentsTool(
             val failed = (o["failed"] as? JsonPrimitive)?.content?.toInt() ?: 0
             "Sub-agents $total/$total done" + if (failed > 0) " · $failed failed" else ""
         }.getOrNull()
+
+        /** (task, reason) per failed sub-agent from a finished result (expandable list in the chat card). */
+        fun failedWorkers(resultJson: String?): List<Pair<String, String>> = FailedWorkersJson.parse(resultJson)
     }
 }
