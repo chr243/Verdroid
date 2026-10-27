@@ -145,6 +145,10 @@ fun ProviderScreen(onBack: () -> Unit, onOpenModels: () -> Unit = {}, initial: S
                     ModelPriorityHint(onOpenModels)
                 }
                 "local" -> LocalProviderPanel(onOpenModels)
+                "freellmapi" -> key(selected, version) {
+                    FreeLlmApiPanel(open)
+                    CompatibleProviderPanel(ProviderPresets.byId(selected), vm, open, onOpenModels)
+                }
                 else -> key(selected, version) { CompatibleProviderPanel(ProviderPresets.byId(selected), vm, open, onOpenModels) }
             }
             Spacer(Modifier.height(24.dp))
@@ -200,6 +204,7 @@ private fun CompatibleProviderPanel(p: ProviderPreset, vm: ProviderViewModel, op
 
     SectionTitle(p.label, if (ready) "Ready" else if (p.needsKey) "Needs a key" else "Needs an address")
     Help(when {
+        p.id == "freellmapi" -> "Paste the API key from the FreeLLMAPI dashboard. It's stored encrypted and only sent to 127.0.0.1 (this phone)."
         p.needsKey -> "Paste your ${p.shortName} API key. It's stored encrypted on this phone and only sent to ${p.shortName}."
         p.id == "custom" -> "Any service that speaks the OpenAI API. Enter its address and, if it needs one, a key."
         else -> "${p.note}. No key needed. On this phone use http://localhost; another device needs an https address or a *.local name."
@@ -270,5 +275,5 @@ private fun CompatibleProviderPanel(p: ProviderPreset, vm: ProviderViewModel, op
 
 private val MODEL_EXAMPLES = mapOf(
     "openai" to "gpt-4o-mini", "groq" to "llama-3.1-8b-instant", "deepseek" to "deepseek-chat",
-    "together" to "meta-llama/Llama-3.3-70B-Instruct-Turbo", "ollama" to "llama3.2", "lmstudio" to "the loaded model's id",
+    "together" to "meta-llama/Llama-3.3-70B-Instruct-Turbo", "ollama" to "llama3.2", "lmstudio" to "the loaded model's id", "freellmapi" to "auto",
 )

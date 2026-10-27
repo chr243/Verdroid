@@ -42,6 +42,7 @@ object ProviderPresets {
         ProviderPreset("together", "Together", "https://api.together.xyz/v1/", true, keyUrl = "https://api.together.ai/settings/api-keys"),
         ProviderPreset("ollama", "Ollama (local)", "http://localhost:11434/v1/", false, "Ollama server on this phone (e.g. in Termux) or another device"),
         ProviderPreset("lmstudio", "LM Studio (local)", "http://localhost:1234/v1/", false, "LM Studio's local server on a computer"),
+        ProviderPreset("freellmapi", "FreeLLMAPI (Termux)", com.verdroid.app.data.termux.FreeLlmApi.BASE_URL, true, "Experimental local gateway in Termux"),
         ProviderPreset("custom", "Custom", "", false, "Any service with an OpenAI-compatible API"),
     )
     fun byId(id: String?) = ALL.firstOrNull { it.id == id } ?: ALL.last()

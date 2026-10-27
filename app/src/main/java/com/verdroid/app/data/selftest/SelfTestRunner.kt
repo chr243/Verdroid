@@ -523,6 +523,20 @@ class SelfTestRunner @Inject constructor(
             check(g.observe(c) == com.verdroid.app.agent.RepeatCallGuard.NUDGE_AT) { "repeat counting" }
             "repeated identical tool calls: nudge at ${com.verdroid.app.agent.RepeatCallGuard.NUDGE_AT}, pause at ${com.verdroid.app.agent.RepeatCallGuard.PAUSE_AT}"
         },
+        "freellmapi" to {
+            // Offline script/preset checks always; live health only when the user saved a key (local server off = SKIP).
+            val F = com.verdroid.app.data.termux.FreeLlmApi
+            val p = com.verdroid.app.data.network.ProviderPresets.find(F.PROVIDER_ID) ?: throw IllegalStateException("preset missing")
+            check(p.baseUrl == F.BASE_URL && com.verdroid.app.data.network.ProviderUrls.cleartextAllowed(p.baseUrl) && com.verdroid.app.data.network.ProviderProbe.isLocal(p.baseUrl)) { "preset url" }
+            val inst = F.installScript()
+            check("nodejs-lts" in inst && "${F.MIN_NODE}" in inst && "pull --ff-only" in inst && "install.log" in inst && "rm " !in inst) { "install script" }
+            check("termux-wake-lock" in F.startScript() && "npm run dev" in F.startScript() && "termux-wake-unlock" in F.stopScript()) { "start/stop script" }
+            check(F.startMessage(F.NOT_INSTALLED).contains("Install")) { "start message" }
+            if (!customStore.isConfigured(F.PROVIDER_ID)) "scripts ok (no FreeLLMAPI key saved, health skipped)"
+            else customLlm.listModels(F.PROVIDER_ID).fold({ "scripts ok, running: ${it.size} models" }, { e ->
+                if (com.verdroid.app.data.network.ProviderProbe.isUnreachable(e)) throw SkipCheck("FreeLLMAPI not running at ${F.BASE_URL}")
+                else throw IllegalStateException("FreeLLMAPI: ${e.message}") })
+        },
         "deep_research" to {
             // Offline: the whole pipeline with a fake model and fake workers (no network, no model requests).
             tool(com.verdroid.app.agent.research.ResearchPolicy.TOOL_NAME)
