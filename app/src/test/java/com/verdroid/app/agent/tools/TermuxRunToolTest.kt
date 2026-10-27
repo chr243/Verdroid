@@ -164,4 +164,12 @@ class TermuxRunToolTest {
         assertEquals("42 s", LiveOutput.duration(42)); assertEquals("5 min", LiveOutput.duration(300))
         assertTrue(LiveOutput.read(java.io.File("/nonexistent/a"), java.io.File("/nonexistent/b"), 0, 300, now = 1_000).lines.isEmpty())
     }
+
+    @Test fun `finished output stays on the card from the saved result`() {
+        val f = FinalOutput.fromResult(TermuxRunTool.result(124, "a\nb\n", "boom\n", 90, 300, 95_000))!!
+        assertEquals(listOf("a", "b", "! boom"), f.lines); assertEquals(124, f.exitCode); assertTrue(f.timedOut)
+        assertEquals("✖ exit 124 · timed out · 1 min 35 s · 3 lines", f.header())
+        assertEquals("✔ exit 0 · no output", FinalOutput.fromResult(TermuxRunTool.result(0, "", "", 90, 300))!!.header())
+        assertNull(FinalOutput.fromResult("""{"error":"Termux is not installed"}""")); assertNull(FinalOutput.fromResult("junk"))
+    }
 }

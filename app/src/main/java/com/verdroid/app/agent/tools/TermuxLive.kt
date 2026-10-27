@@ -44,6 +44,29 @@ data class LiveOutput(val lines: List<String>, val bytes: Long, val elapsedMs: L
     }
 }
 
+/** Final termux_run output rebuilt from the saved result JSON, so the terminal panel stays on the card (also after restart). */
+data class FinalOutput(val lines: List<String>, val exitCode: Int?, val durationMs: Long?, val timedOut: Boolean) {
+    companion object {
+        fun fromResult(json: String?): FinalOutput? {
+            if (json.isNullOrBlank()) return null
+            val o = runCatching { kotlinx.serialization.json.Json.parseToJsonElement(json) as? kotlinx.serialization.json.JsonObject }.getOrNull() ?: return null
+            fun s(k: String) = (o[k] as? kotlinx.serialization.json.JsonPrimitive)?.takeIf { it.isString }?.content
+            fun p(k: String) = o[k] as? kotlinx.serialization.json.JsonPrimitive
+            val out = s("stdout"); val err = s("stderr")
+            if (out == null && err == null) return null
+            val lines = (LiveOutput.lastLines(out.orEmpty(), LiveOutput.MAX_LINES) +
+                LiveOutput.lastLines(err.orEmpty(), LiveOutput.MAX_LINES).map { "! $it" }).takeLast(LiveOutput.MAX_LINES)
+            return FinalOutput(lines, p("exit_code")?.content?.toIntOrNull(), p("duration_ms")?.content?.toLongOrNull(),
+                p("timed_out")?.content == "true")
+        }
+    }
+    /** "✔ exit 0 · 1 min 5 s · 42 lines" header for the finished panel. */
+    fun header(): String = (if (exitCode == 0) "✔ exit 0" else "✖ exit ${exitCode ?: "?"}") +
+        (if (timedOut) " · timed out" else "") +
+        (durationMs?.let { " · " + LiveOutput.duration((it / 1000).toInt()) } ?: "") +
+        (if (lines.isEmpty()) " · no output" else " · ${lines.size} line${if (lines.size == 1) "" else "s"}")
+}
+
 /** Live termux_run output per chat (task id), like ResearchLive. */
 object TermuxLive {
     private val _live = MutableStateFlow<Map<Long, LiveOutput>>(emptyMap())

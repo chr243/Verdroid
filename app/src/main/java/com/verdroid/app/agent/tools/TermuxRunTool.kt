@@ -76,7 +76,7 @@ class TermuxRunTool(
             }
         } ?: return errorJson("Termux did not answer within $waitS s. Check that allow-external-apps = true is set in Termux. $SETUP")
         if (r.err != null && r.err != RESULT_OK && r.exitCode == null) return errorJson("Termux could not run the command: ${r.errmsg ?: "error ${r.err}"}")
-        return result(r.exitCode ?: -1, r.stdout, r.stderr, timeout, idle)
+        return result(r.exitCode ?: -1, r.stdout, r.stderr, timeout, idle, System.currentTimeMillis() - started)
     }
 
     companion object {
@@ -90,11 +90,12 @@ class TermuxRunTool(
         internal const val STOP_MARK = "__VERDROID_STOPPED__"
 
         /** Final JSON for the model (same keys/limits as before; idle/overall timeouts add a clear `error` with the last lines). */
-        internal fun result(code: Int, stdoutRaw: String, stderrRaw: String, timeoutS: Int, idleS: Int): String {
+        internal fun result(code: Int, stdoutRaw: String, stderrRaw: String, timeoutS: Int, idleS: Int, durationMs: Long = -1): String {
             val idled = stderrRaw.contains(IDLE_MARK)
             val stderr = stderrRaw.lineSequence().filterNot { it.startsWith(IDLE_MARK) || it.startsWith(STOP_MARK) }.joinToString("\n")
             return buildJsonObject {
                 put("exit_code", code)
+                if (durationMs >= 0) put("duration_ms", durationMs)
                 if (code == 124) {
                     put("timed_out", true)
                     val last = LiveOutput.lastLines(stdoutRaw + (if (stderr.isNotBlank()) "\n" + stderr else ""), 15).joinToString("\n")

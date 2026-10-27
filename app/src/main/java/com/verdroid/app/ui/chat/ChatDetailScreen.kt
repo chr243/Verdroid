@@ -577,6 +577,9 @@ internal fun ToolCallCard(call: ToolCallRecord) {
                 val live by com.verdroid.app.agent.tools.TermuxLive.live.collectAsState()
                 live[call.taskId]?.let { LiveOutputView(it) }
             }
+            if (call.name == "termux_run" && call.status != ToolCallStatus.PENDING) {
+                remember(call.resultJson) { com.verdroid.app.agent.tools.FinalOutput.fromResult(call.resultJson) }?.let { FinalOutputView(it) }
+            }
             if (call.name == com.verdroid.app.agent.tools.ChartTool.NAME && call.status == ToolCallStatus.SUCCESS) {
                 remember(call.resultJson) { com.verdroid.app.agent.tools.ChartSpecs.fromResult(call.resultJson) }
                     ?.let { (spec, png) -> com.verdroid.app.ui.chart.ChartCard(spec, png) }
@@ -611,6 +614,27 @@ private fun LiveOutputView(o: com.verdroid.app.agent.tools.LiveOutput) {
             val shown = if (open) o.lines else o.lines.takeLast(L.COLLAPSED_LINES)
             val scroll = rememberScrollState()
             LaunchedEffect(shown.size, shown.lastOrNull(), open) { scroll.scrollTo(scroll.maxValue) }
+            Box(Modifier.fillMaxWidth().padding(top = 4.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surface)
+                .heightIn(max = if (open) 320.dp else 200.dp).verticalScroll(scroll).padding(8.dp)) {
+                Text(shown.joinToString("\n"), fontFamily = FontFamily.Monospace, fontSize = 11.sp, lineHeight = 14.sp)
+            }
+        }
+    }
+}
+
+/** Finished termux_run: same terminal panel, kept on the card with exit code / duration / timeout. */
+@Composable
+private fun FinalOutputView(o: com.verdroid.app.agent.tools.FinalOutput) {
+    var open by remember { mutableStateOf(false) }
+    val L = com.verdroid.app.agent.tools.LiveOutput
+    Column(Modifier.padding(top = 4.dp)) {
+        Text(o.header() + (if (o.lines.size > L.COLLAPSED_LINES) if (open) " ▲" else " ▼" else ""),
+            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.clickable { open = !open })
+        if (o.lines.isNotEmpty()) {
+            val shown = if (open) o.lines else o.lines.takeLast(L.COLLAPSED_LINES)
+            val scroll = rememberScrollState()
+            LaunchedEffect(shown.size, open) { scroll.scrollTo(scroll.maxValue) }
             Box(Modifier.fillMaxWidth().padding(top = 4.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surface)
                 .heightIn(max = if (open) 320.dp else 200.dp).verticalScroll(scroll).padding(8.dp)) {
                 Text(shown.joinToString("\n"), fontFamily = FontFamily.Monospace, fontSize = 11.sp, lineHeight = 14.sp)

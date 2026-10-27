@@ -457,7 +457,8 @@ class SelfTestRunner @Inject constructor(
             check(R.script("ls", 10, 300, "/x/run-1").let { "/x/run-1'.stop" in it && "-ge 300" in it }) { "termux_run live files + idle watchdog" }
             check(R.result(124, "a", "${R.IDLE_MARK}\n", 10, 300).let { "no output" in it && "__VERDROID" !in it }) { "idle timeout error" }
             check(com.verdroid.app.agent.tools.LiveOutput.lastLines("1%\r9%\nx\n", 5) == listOf("9%", "x")) { "live tail lines" }
-            "git 401/403/404 mapping, web_fetch note, git cwd in Termux home, termux_run live output + idle timeout"
+            check(com.verdroid.app.agent.tools.FinalOutput.fromResult(R.result(0, "hi\n", "", 10, 300, 2_000))?.header() == "✔ exit 0 · 2 s · 1 line") { "termux_run output kept after finish" }
+            "git 401/403/404 mapping, web_fetch note, git cwd in Termux home, termux_run live output + idle timeout + kept output"
         },
         "git_repos" to {
             // Temp copies of the real layout (shared Documents/Verdroid + private workspace) in the cache dir; nothing real is touched.
