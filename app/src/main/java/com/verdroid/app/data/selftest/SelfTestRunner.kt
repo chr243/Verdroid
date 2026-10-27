@@ -529,7 +529,7 @@ class SelfTestRunner @Inject constructor(
             val p = com.verdroid.app.data.network.ProviderPresets.find(F.PROVIDER_ID) ?: throw IllegalStateException("preset missing")
             check(p.baseUrl == F.BASE_URL && com.verdroid.app.data.network.ProviderUrls.cleartextAllowed(p.baseUrl) && com.verdroid.app.data.network.ProviderProbe.isLocal(p.baseUrl)) { "preset url" }
             val inst = F.installScript()
-            check("nodejs-lts" in inst && "${F.MIN_NODE}" in inst && "pull --ff-only" in inst && "install.log" in inst && "rm " !in inst) { "install script" }
+            check("nodejs-lts" in inst && "${F.MIN_NODE}" in inst && "pull --ff-only" in inst && "--include=dev" in inst && "concurrently tsx vite" in inst && "node_modules/.bin/concurrently" in F.startScript() && "install.log" in inst && "rm " !in inst) { "install script" }
             check("termux-wake-lock" in F.startScript() && "npm run dev" in F.startScript() && "termux-wake-unlock" in F.stopScript()) { "start/stop script" }
             check(F.startMessage(F.NOT_INSTALLED).contains("Install")) { "start message" }
             if (!customStore.isConfigured(F.PROVIDER_ID)) "scripts ok (no FreeLLMAPI key saved, health skipped)"

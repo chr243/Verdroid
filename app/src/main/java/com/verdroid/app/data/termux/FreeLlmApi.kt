@@ -37,21 +37,33 @@ else
   git clone --depth 1 $REPO "${'$'}D" || { echo "ERROR: git clone failed"; exit 1; }
 fi
 cd "${'$'}D" || exit 1
-npm install --no-audit --no-fund || npm install --no-audit --no-fund
-[ -x node_modules/.bin/concurrently ] || { echo "ERROR: npm install did not finish (see the first non-optional error above)"; exit 1; }
+unset NODE_ENV npm_config_production npm_config_omit
+export NODE_ENV=development
+# Dev deps (concurrently, tsx, vite) are needed: the documented Android start is dev mode. Don't omit optional deps:
+# esbuild/rollup ship their Android binaries as optional packages (better-sqlite3 is optional and unused on Android).
+fla_ok() { for b in concurrently tsx vite; do [ -x node_modules/.bin/${'$'}b ] || [ -x server/node_modules/.bin/${'$'}b ] || [ -x client/node_modules/.bin/${'$'}b ] || { echo "missing: ${'$'}b"; return 1; }; done; }
+npm install --include=dev --include=optional --no-audit --no-fund
+if ! fla_ok; then echo "Some tools are missing, retrying npm install once…"; npm install --include=dev --include=optional --no-audit --no-fund; fi
+fla_ok || { echo "ERROR: npm install did not finish: concurrently/tsx/vite are missing (see the first non-optional error above). Check free storage, then tap Install / Update again."; exit 1; }
 [ -d node_modules/esbuild ] && (npm rebuild esbuild >/dev/null 2>&1 || true)
 echo "Note: a warning about the optional better-sqlite3 package is harmless on Android."
 echo "DONE. Go back to Verdroid and tap Start."
 ) 2>&1 | tee -a "${'$'}L/install.log"
+rc=${'$'}{PIPESTATUS[0]}
+echo
+if [ "${'$'}rc" = 0 ]; then echo "RESULT: OK. Go back to Verdroid and tap Start."; else echo "RESULT: FAILED (exit ${'$'}rc). Scroll up for the ERROR line; the log is in ${'$'}L/install.log"; fi
+echo "Press Enter to close this window."
+read -r _
 """.trimStart()
 
     /** Background start (dev mode, the only documented way; dashboard + API both on localhost). */
     fun startScript(): String = PRELUDE + """
-[ -f "${'$'}D/package.json" ] && [ -d "${'$'}D/node_modules" ] || { echo $NOT_INSTALLED; exit 3; }
+[ -f "${'$'}D/package.json" ] && [ -x "${'$'}D/node_modules/.bin/concurrently" ] || { echo $NOT_INSTALLED; exit 3; }
 p=${'$'}(cat "${'$'}L/server.pid" 2>/dev/null)
 if [ -n "${'$'}p" ] && kill -0 "${'$'}p" 2>/dev/null; then echo $ALREADY_RUNNING; exit 0; fi
 termux-wake-lock 2>/dev/null
 cd "${'$'}D" || exit 1
+unset NODE_ENV npm_config_production npm_config_omit
 echo "== start ${'$'}(date)" > "${'$'}L/server.log"
 if command -v setsid >/dev/null; then setsid nohup npm run dev >>"${'$'}L/server.log" 2>&1 </dev/null &
 else nohup npm run dev >>"${'$'}L/server.log" 2>&1 </dev/null & fi
@@ -75,14 +87,15 @@ echo $STOPPED
     /** Maps a start script stdout to a short user message. */
     fun startMessage(stdout: String?): String = when {
         stdout == null -> "Termux didn't answer. Is Termux set up (Settings → Tools → Termux)?"
-        NOT_INSTALLED in stdout -> "FreeLLMAPI isn't installed yet. Tap Install / Update first."
+        NOT_INSTALLED in stdout -> "FreeLLMAPI isn't (fully) installed: its dev tools are missing. Run Install / Update again."
         ALREADY_RUNNING in stdout -> "Already running."
         STARTED in stdout -> "Starting… the first start takes up to a minute. Then open the dashboard."
         else -> "Start failed: " + stdout.trim().take(200)
     }
 
     const val HELP = "Experimental. FreeLLMAPI is a free, open-source gateway that pools free tiers (Groq, Cerebras, Mistral, Gemini, " +
-        "OpenRouter free models, …) behind one key, with failover. It runs in Termux on this phone (≈1 GB storage, a few hundred MB RAM).\n" +
+        "OpenRouter free models, …) behind one key, with failover. It runs in Termux on this phone (≈1 GB storage, a few hundred MB RAM). " +
+        "Install switches Termux's Node.js to the LTS package (nodejs-lts replaces nodejs).\n" +
         "1. Install / Update (opens Termux, takes a few minutes).  2. Start.  3. Open dashboard, add your free provider keys there " +
         "and copy its unified API key.  4. Paste that key below, Save, then add models.\n" +
         "Keep it running: turn off battery optimization for Termux. On Android 12+, if it gets killed in the background, enable " +

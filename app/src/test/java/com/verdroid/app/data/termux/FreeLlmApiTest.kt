@@ -25,19 +25,24 @@ class FreeLlmApiTest {
         assertTrue("git -C \"\$D\" pull --ff-only" in s && "git clone --depth 1" in s)
         assertTrue("tee -a \"\$L/install.log\"" in s)
         assertFalse("rm " in s)
+        assertTrue("--include=dev" in s && "NODE_ENV=development" in s && "unset NODE_ENV" in s)
+        assertFalse("--omit=optional" in s)
+        assertTrue("read -r _" in s && "PIPESTATUS" in s)
+        assertTrue("concurrently tsx vite" in s && "retrying npm install once" in s)
     }
 
     @Test fun startStopScripts() {
         val start = FreeLlmApi.startScript()
         assertTrue("termux-wake-lock" in start && "nohup npm run dev" in start && FreeLlmApi.ALREADY_RUNNING in start)
         assertFalse("0.0.0.0" in start)
+        assertTrue("node_modules/.bin/concurrently" in start)
         val stop = FreeLlmApi.stopScript()
         assertTrue("termux-wake-unlock" in stop && FreeLlmApi.STOPPED in stop)
         assertFalse("rm " in stop)
     }
 
     @Test fun startMessages() {
-        assertTrue("Install" in FreeLlmApi.startMessage(FreeLlmApi.NOT_INSTALLED))
+        assertTrue("Install / Update again" in FreeLlmApi.startMessage(FreeLlmApi.NOT_INSTALLED))
         assertEquals("Already running.", FreeLlmApi.startMessage(FreeLlmApi.ALREADY_RUNNING))
         assertTrue("Starting" in FreeLlmApi.startMessage("x\n" + FreeLlmApi.STARTED))
         assertTrue("Termux" in FreeLlmApi.startMessage(null))
