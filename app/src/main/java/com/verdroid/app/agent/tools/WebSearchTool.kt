@@ -36,7 +36,9 @@ class WebSearchTool(private val searcher: WebSearcher = WebSearcher()) : AgentTo
         val max = (args.int("max_results") ?: 8).coerceIn(0, 30)
         val detailed = args.str("detail") == "detailed"
         val query = if (site != null) "$q site:$site" else q
-        val out = searcher.search(SearchRequest(query, max, freshness, region, safe))
+        // Not in the schema: set by deep research's per-run engine circuit breaker.
+        val skip = args.str("skip_engines")?.split(',')?.map { it.trim() }?.filter { it.isNotEmpty() }?.toSet().orEmpty()
+        val out = searcher.search(SearchRequest(query, max, freshness, region, safe, skip))
         return buildJsonObject {
             put("ok", out.results.isNotEmpty())
             put("query", query)

@@ -535,7 +535,17 @@ class SelfTestRunner @Inject constructor(
                 sleep = {},
             ).run("self-test topic", com.verdroid.app.agent.research.ResearchMode.STANDARD, com.verdroid.app.agent.research.ResearchLimits(2, 1, 10, 2))
             check(out.sources.size == 2 && !out.reportFallback && out.report.contains("## Sources")) { "pipeline: ${out.sources} fallback=${out.reportFallback}" }
-            "pipeline ok (plan → 2 workers → ${out.sources.size} deduped sources → report)"
+            // Reliability (offline): registry flags, lenient worker JSON, quote grounding, bibliography of cited sources only.
+            val reg = com.verdroid.app.agent.research.SourceRegistry()
+            val good = reg.record("https://a.example.com/p?utm_source=x#top", "https://a.example.com/p", 200, "A", "Alpha beta gamma delta is the answer. " + "filler ".repeat(30))!!
+            reg.record("https://en.wikipedia.org/wiki/Foo_(disambiguation)", "https://en.wikipedia.org/wiki/Foo_(disambiguation)", 200, "Foo (disambiguation)", "Foo may refer to: " + "x ".repeat(80))
+            check(reg.get("https://a.example.com/p/")?.id == good.id && reg.all().count { it.ok } == 1) { "registry normalize/flags" }
+            val parsed = com.verdroid.app.agent.research.WorkerOutput.parse("```json\n{\"findings\":[{\"claim\":\"c\",\"url\":\"https://a.example.com/p\"}]}\n```")
+            check(parsed.structured && parsed.findings.size == 1) { "lenient worker JSON" }
+            check(com.verdroid.app.agent.research.SourceChecks.grounded("alpha beta gamma delta", good.text)) { "quote grounding" }
+            val bib = com.verdroid.app.agent.research.Grounding.bibliography("x [S${good.id}] y [S99]", reg)
+            check(bib.cited.size == 1 && bib.text.contains("[1]") && bib.text.contains("[unverified source]")) { "bibliography: ${bib.text}" }
+            "pipeline ok (plan → 2 workers → ${out.sources.size} deduped sources → report); registry, lenient parsing, quote grounding and bibliography ok"
         },
         "key_wipe_notice" to {
             check(com.verdroid.app.data.secure.KeyWipeNotice.message(setOf("Git token")).contains("Git token")) { "wipe message" }

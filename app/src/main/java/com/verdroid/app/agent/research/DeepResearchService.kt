@@ -43,6 +43,13 @@ class ResearchPrefs @Inject constructor(@ApplicationContext context: Context) {
     val concurrency: StateFlow<Int> = _conc.asStateFlow()
     /** false until the user moves the slider: free worker models then default to SubAgentPolicy.FREE_DEFAULT_CONCURRENCY. */
     val concurrencyUserSet: Boolean get() = prefs.contains("concurrency")
+    private val _stdBudget = flow("std_budget_min", RunBudget.STANDARD_MIN, RunBudget.STANDARD_MIN_RANGE)
+    /** Run time budget, minutes (standard / deep). */
+    val standardBudgetMin: StateFlow<Int> = _stdBudget.asStateFlow()
+    private val _deepBudget = flow("deep_budget_min", RunBudget.DEEP_MIN, RunBudget.DEEP_MIN_RANGE)
+    val deepBudgetMin: StateFlow<Int> = _deepBudget.asStateFlow()
+    fun setStandardBudgetMin(v: Int) = set(_stdBudget, "std_budget_min", v, RunBudget.STANDARD_MIN_RANGE)
+    fun setDeepBudgetMin(v: Int) = set(_deepBudget, "deep_budget_min", v, RunBudget.DEEP_MIN_RANGE)
     private val _model = MutableStateFlow(ModelPins.decode(prefs.getString("model", null)))
     /** null = Settings → Sub-agents → Model (which itself defaults to the main model). */
     val model: StateFlow<ModelPin?> = _model.asStateFlow()
@@ -91,25 +98,30 @@ class DeepResearchService @Inject constructor(
         })
         val pin = prefs.model.value ?: subPrefs.model.value
         val conc = SubAgentPolicy.effectiveConcurrency(prefs.concurrency.value, prefs.concurrencyUserSet, client.firstModelIsFree(pin))
-        val limits = ResearchPolicy.limits(mode, prefs.standardSources.value, prefs.deepSources.value, prefs.deepRounds.value, conc)
+        val budgetMs = (if (mode == ResearchMode.DEEP) prefs.deepBudgetMin.value else prefs.standardBudgetMin.value) * 60_000L
+        val limits = ResearchPolicy.limits(mode, prefs.standardSources.value, prefs.deepSources.value, prefs.deepRounds.value, conc).copy(budgetMs = budgetMs)
+        val state = ResearchRunState()
+        val rawExec: suspend (String, String) -> com.verdroid.app.agent.tools.ToolResult = { name, args -> reg.execute(name, args, taskId) }
         val fallback: (suspend (List<com.verdroid.app.data.network.ApiMessage>, JsonArray?) -> com.verdroid.app.data.network.ChatOutcome)? =
             if (subPrefs.fallbackOnRateLimit.value && pin != null) { m, t -> client.complete(m, t, taskId) } else null
         val waits = com.verdroid.app.agent.subagents.RateWaitCounter()
         val steps = subPrefs.maxSteps.value.coerceAtLeast(limits.perWorkerSources + 4)
-        val timeoutMs = maxOf(subPrefs.timeoutSec.value, 300) * 1000L
+        val timeoutMs = minOf(maxOf(subPrefs.timeoutSec.value, 300) * 1000L, budgetMs)
         try {
             val out = DeepResearchEngine(
                 main = { msgs -> client.complete(msgs, null, taskId) },
                 worker = { i, task ->
                     SubAgentLoop(
                         model = { m, t -> client.completeSubAgent(m, t, taskId, pin) },
-                        execute = { name, args -> reg.execute(name, args, taskId) },
+                        execute = ResearchToolGuard(rawExec, state, task.lineSequence().firstOrNull { it.startsWith("Your sub-question:") }
+                            ?.removePrefix("Your sub-question:")?.trim() ?: task.take(200))::execute,
                         toolSchemas = schemas, allowed = tools, maxSteps = steps, timeoutMs = timeoutMs,
                         maxFindingsChars = ResearchPolicy.WORKER_FINDINGS_CHARS,
-                        fallback = fallback, onWait = waits::set, rateWaitBudgetMs = SubAgentPolicy.RATE_WAIT_BUDGET_MS,
+                        fallback = fallback, onWait = waits::set, rateWaitBudgetMs = RunBudget.rateWaitMs(budgetMs),
                     ).run(i, task)
                 },
                 waits = waits,
+                reliability = state, verifyExec = rawExec, writerIsFree = client.firstModelIsFree(null),
                 onWorkerFailed = { q, f, final -> diagLog.logWorkerFailure(taskId, "research worker", q.take(80), pin?.model, f,
                     if (final) "Research worker failed after retry" else "Research worker failed → will retry") },
                 onProgress = { p ->

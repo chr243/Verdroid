@@ -352,6 +352,8 @@ fun SubAgentSettingsScreen(onBack: () -> Unit, vm: SettingsViewModel = hiltViewM
     val rStd by rp.standardSources.collectAsStateWithLifecycle()
     val rDeep by rp.deepSources.collectAsStateWithLifecycle()
     val rRounds by rp.deepRounds.collectAsStateWithLifecycle()
+    val rStdBudget by rp.standardBudgetMin.collectAsStateWithLifecycle()
+    val rDeepBudget by rp.deepBudgetMin.collectAsStateWithLifecycle()
     val rConc by rp.concurrency.collectAsStateWithLifecycle()
     var pickResearch by remember { mutableStateOf(false) }
     @Composable fun rSlider(label: String, value: Int, range: IntRange, set: (Int) -> Unit) {
@@ -422,6 +424,9 @@ fun SubAgentSettingsScreen(onBack: () -> Unit, vm: SettingsViewModel = hiltViewM
             rSlider("Standard: max sources $rStd (1 round, ${R.STANDARD_QUESTIONS} sub-questions)", rStd, R.SOURCES_RANGE) { rp.setStandardSources((it / 5) * 5) }
             rSlider("Deep: max sources $rDeep (${R.DEEP_QUESTIONS} sub-questions)", rDeep, R.SOURCES_RANGE) { rp.setDeepSources((it / 5) * 5) }
             rSlider("Deep: rounds $rRounds (follow-up questions fill gaps)", rRounds, R.ROUNDS_RANGE, rp::setDeepRounds)
+            val B = com.verdroid.app.agent.research.RunBudget
+            rSlider("Standard: time budget $rStdBudget min (then the report is written with what exists)", rStdBudget, B.STANDARD_MIN_RANGE, rp::setStandardBudgetMin)
+            rSlider("Deep: time budget $rDeepBudget min", rDeepBudget, B.DEEP_MIN_RANGE, rp::setDeepBudgetMin)
             rSlider("Parallel workers: $rConc (lower if you hit rate limits)", rConc, P.MIN_CONCURRENCY..P.MAX_CONCURRENCY, rp::setConcurrency)
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 12.dp)) {
                 Text("Tools sub-agents may use", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))

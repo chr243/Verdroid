@@ -16,6 +16,8 @@ data class SearchRequest(
     val freshness: String = "any",
     val region: String = "us-en",
     val safesearch: String = "moderate",
+    /** Engines to skip (deep research circuit breaker). Ignored if it would skip every engine. */
+    val skipEngines: Set<String> = emptySet(),
 ) {
     val country: String get() = region.substringBefore('-').lowercase()
     val lang: String get() = region.substringAfter('-', "en").lowercase()

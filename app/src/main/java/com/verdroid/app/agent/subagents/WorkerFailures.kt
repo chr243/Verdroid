@@ -21,6 +21,7 @@ enum class FailureKind(val id: String, val label: String) {
     EMPTY_OUTPUT("empty_output", "Empty / unparseable model output"),
     TOOL_FAILURE("tool_failure", "Web tools failed"),
     CANCELLED("cancelled", "Cancelled"),
+    RUN_BUDGET("run_budget", "Stopped: run time budget"),
     OTHER("other", "Error"),
 }
 

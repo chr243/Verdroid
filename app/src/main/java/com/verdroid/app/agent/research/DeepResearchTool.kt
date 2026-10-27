@@ -28,7 +28,9 @@ class DeepResearchTool(private val backend: DeepResearchBackend) : AgentTool {
             "summarize many pages, filters/dedupes URLs, then writes the report. mode=standard (~25 sources, one round, a few minutes) or " +
             "mode=deep (more sub-questions, follow-up rounds, up to ~100 sources, slow). Use it when the user asks for research, a report or an " +
             "in-depth comparison; choose mode=deep when they ask for deep/thorough/exhaustive/comprehensive research, otherwise standard. Not for a quick fact. Call it once per topic; after it returns, show the user " +
-            "the report (or its key sections if very long) and the saved file path. Never call it again for the same topic in a loop."
+            "the report (or its key sections if very long) and the saved file path. Each run has a time budget (Settings), so some workers may " +
+            "fail. ALWAYS tell the user about every entry in diagnostics.warnings and the gaps. A long report is not inlined: the result gives " +
+            "its path, size and a section index (read sections from the file if needed). Never call it again for the same topic in a loop."
     override val parameters: JsonObject = buildJsonObject {
         put("type", "object")
         put("properties", buildJsonObject {
@@ -66,9 +68,16 @@ class DeepResearchTool(private val backend: DeepResearchBackend) : AgentTool {
             put("saved_to", r.savedPath ?: "not saved (no storage access)")
             if (o.reportFallback) put("note", "The report writer failed; the report contains the raw notes per sub-question.")
             put("sources", JsonArray(o.sources.map(::JsonPrimitive)))
+            o.diagnostics?.let { d -> put("diagnostics", d.json()); if (d.warnings.isNotEmpty()) put("warnings", JsonArray(d.warnings.map(::JsonPrimitive))) }
+            put("report_chars", o.report.length)
+            put("report_bytes", o.report.toByteArray().size)
+            put("sections", JsonArray(Grounding.sectionIndex(o.report).map { (h, line) -> buildJsonObject { put("heading", h); put("line", line) } }))
             val truncated = o.report.length > ResearchPolicy.RESULT_REPORT_CHARS
             put("report_truncated", truncated)
-            put("report", if (truncated) o.report.take(ResearchPolicy.RESULT_REPORT_CHARS) + "\n…(full report in the saved file)" else o.report)
+            if (truncated) {
+                put("report_excerpt", o.report.take(ResearchPolicy.RESULT_REPORT_CHARS))
+                put("report_note", "Report is ${o.report.length} chars; only the first ${ResearchPolicy.RESULT_REPORT_CHARS} are here. Full report: ${r.savedPath ?: "not saved"} (see sections for line numbers).")
+            } else put("report", o.report)
         }
 
         /** "Deep research done · 27 sources" (chat card after the run). */

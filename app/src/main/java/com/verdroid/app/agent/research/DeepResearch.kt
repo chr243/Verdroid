@@ -5,7 +5,11 @@ import com.verdroid.app.agent.subagents.SubAgentProgress
 import com.verdroid.app.agent.subagents.SubAgentResult
 import com.verdroid.app.data.network.ApiMessage
 import com.verdroid.app.data.network.ChatOutcome
+import com.verdroid.app.agent.subagents.FailureKind
+import com.verdroid.app.agent.subagents.FailureText
+import com.verdroid.app.agent.subagents.WorkerFailure
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
@@ -24,6 +28,8 @@ data class ResearchLimits(
     val rounds: Int,
     val maxSources: Int,
     val concurrency: Int,
+    /** Overall wall-clock budget of the run (0 = none): near it, no new workers/rounds start and stragglers are stopped. */
+    val budgetMs: Long = 0L,
 ) {
     val perWorkerSources: Int get() = (maxSources / questions.coerceAtLeast(1)).coerceIn(2, 12)
 }
@@ -39,7 +45,7 @@ object ResearchPolicy {
     val QUESTIONS_RANGE = 2..20
     val SOURCES_RANGE = 5..150
     val ROUNDS_RANGE = 1..3
-    const val WORKER_FINDINGS_CHARS = 6_000
+    const val WORKER_FINDINGS_CHARS = 8_000
     /** Max characters of worker notes handed to the report writer (keeps free-model context sane). */
     const val REPORT_INPUT_CHARS = 60_000
     /** Report text returned to the main agent (the full report is in the file). */
@@ -69,6 +75,8 @@ object ResearchPolicy {
         val path = (u.rawPath ?: "").trimEnd('/')
         "https://$host$path" + (if (q.isNullOrEmpty()) "" else "?$q")
     }.getOrNull()
+
+    fun isSearchPage(url: String): Boolean = SEARCH_PAGE.containsMatchIn(url.lowercase())
 
     /** Useful as a cited source? Drops search-result pages, ad/redirect/social-login hosts and static assets. */
     fun usable(url: String): Boolean {
@@ -111,13 +119,33 @@ object ResearchPolicy {
 
     fun workerTask(topic: String, question: String, sources: Int, skip: Collection<String>): String = buildString {
         append("Overall research topic: $topic\nYour sub-question: $question\n\n")
-        append("Use web_search (try 1-3 different queries), pick the $sources most relevant and trustworthy results (prefer primary sources, ")
-        append("official sites, papers, reputable news; skip ads, SEO spam, forums with no substance, paywalled stubs), then web_fetch each ")
-        append("one (format=markdown) and read it. Skip a page that fails to load and take the next result.\n")
+        append("First decide exactly which entity or meaning the sub-question is about (e.g. the company, not the fruit) and put it in ")
+        append("\"entity\"; add disambiguating words to your queries. Use web_search (try 1-3 different queries), pick the $sources most ")
+        append("relevant and trustworthy results (prefer primary sources, official sites, papers, reputable news; skip ads, SEO spam, ")
+        append("disambiguation pages, search-result pages, paywalled stubs), then web_fetch each one (format=markdown) and read it. ")
+        append("Skip a page that fails to load and take the next result.\n")
         if (skip.isNotEmpty()) append("Already covered by other researchers, do not fetch again: ${skip.take(40).joinToString(" ")}\n")
-        append("\nReply in this exact format, one block per source you actually read:\n")
-        append("### <page title>\nURL: <exact url>\n- <key fact, figure, date or claim from that page>\n- <more facts, 3-8 bullets>\n\n")
-        append("End with a line 'Summary:' and 2-4 sentences answering the sub-question. No information that is not from the pages.")
+        append("\nRules: no URL, no claim. Every claim comes from ONE page you fetched and carries that page's exact URL; never combine ")
+        append("facts from different pages into one claim. \"quote\" is a short sentence copied verbatim from that page (or \"\"). ")
+        append("If the pages do not answer the sub-question, set \"insufficient_evidence\": true with empty findings; that is fine.\n")
+        append("Reply ONLY with JSON in this shape (5-15 findings):\n")
+        append("{\"entity\":\"Mercury (planet)\",\"findings\":[{\"claim\":\"Mercury orbits the Sun in about 88 days.\",")
+        append("\"url\":\"https://en.wikipedia.org/wiki/Mercury_(planet)\",\"quote\":\"Mercury orbits the Sun once every 88 days\",")
+        append("\"confidence\":\"high\"}],\"insufficient_evidence\":false,\"summary\":\"2-4 sentences answering the sub-question.\"}")
+    }
+
+    /** Report prompt for a registry-backed run: cite only the [S<id>] markers of the listed sources. */
+    fun groundedReportPrompt(topic: String, mode: ResearchMode, notes: String, sources: List<SourceEntry>, language: String?): String = buildString {
+        append("Write a ${if (mode == ResearchMode.DEEP) "long, very detailed (2000-4000 words)" else "detailed (1000-2000 words)"} research report ")
+        append("in Markdown on: $topic\n\n")
+        append("Use ONLY the research notes below. Structure: '# <title>', '## Executive summary', then sections with '##' headings ")
+        append("(and tables where useful), then '## Key takeaways' and '## Open questions / limitations'. Cite every claim inline with ")
+        append("the marker of its source exactly as given, like [S3] or [S3, S7]. Never write URLs, never invent sources, numbers or quotes. ")
+        append("Only quote text marked 'verified quote'. If notes conflict, say so. Do NOT add a sources list (the app adds it).")
+        language?.let { append(" Write in $it.") }
+        append("\n\nSources:\n")
+        sources.forEach { append("[S${it.id}] ${it.label.take(120)} (${DeepResearchEngine.host(it.finalUrl)})\n") }
+        append("\nResearch notes:\n").append(notes)
     }
 
     fun reportPrompt(topic: String, mode: ResearchMode, notes: String, sources: List<String>, language: String?): String = buildString {
@@ -194,6 +222,8 @@ data class ResearchOutcome(
     val reportFallback: Boolean,
     /** Sub-questions that still failed after the retry pass, with the reason. */
     val failures: List<Pair<String, com.verdroid.app.agent.subagents.WorkerFailure>> = emptyList(),
+    /** Registry-backed runs: honest numbers + warnings (null for legacy runs without a registry). */
+    val diagnostics: ResearchDiagnostics? = null,
 )
 
 /**
@@ -213,8 +243,15 @@ class DeepResearchEngine(
     private val waits: com.verdroid.app.agent.subagents.RateWaitCounter? = null,
     /** Called for every failed worker (question, reason, after retry?) — diagnostic log. */
     private val onWorkerFailed: suspend (String, com.verdroid.app.agent.subagents.WorkerFailure, Boolean) -> Unit = { _, _, _ -> },
+    /** Source registry + web tool state of this run; null = legacy (no grounding). */
+    private val reliability: ResearchRunState? = null,
+    /** web_fetch for cited-but-never-fetched URLs (capped); null = skip. */
+    private val verifyExec: (suspend (String, String) -> com.verdroid.app.agent.tools.ToolResult)? = null,
+    /** The report writer (main model) is a free model: stamp a note on the report. */
+    private val writerIsFree: Boolean = false,
 ) {
     suspend fun run(topic: String, mode: ResearchMode, limits: ResearchLimits, language: String? = null): ResearchOutcome {
+        val budget = RunBudget(limits.budgetMs, now)
         onProgress(ResearchProgress("Planning", 1, limits.rounds))
         val planned = ResearchPolicy.parseQuestions(ask(ResearchPolicy.planPrompt(topic, limits.questions, mode)), limits.questions)
         var questions = planned.ifEmpty { listOf(topic) }
@@ -224,20 +261,36 @@ class DeepResearchEngine(
         var failed = 0
         var roundsDone = 0
         val failedQs = mutableListOf<String>()
-        val firstFailure = mutableMapOf<String, com.verdroid.app.agent.subagents.WorkerFailure>()
-        val finalFailures = mutableListOf<Pair<String, com.verdroid.app.agent.subagents.WorkerFailure>>()
-        fun failureOf(r: SubAgentResult) = r.failure ?: com.verdroid.app.agent.subagents.WorkerFailure(
-            com.verdroid.app.agent.subagents.FailureKind.OTHER, com.verdroid.app.agent.subagents.FailureText.sanitize(r.findings))
+        val firstFailure = mutableMapOf<String, WorkerFailure>()
+        val finalFailures = mutableListOf<Pair<String, WorkerFailure>>()
+        val warnings = mutableListOf<String>()
+        fun failureOf(r: SubAgentResult) = r.failure ?: WorkerFailure(FailureKind.OTHER, FailureText.sanitize(r.findings))
+        fun budgetFail(i: Int, q: String, started: Boolean): SubAgentResult {
+            budget.hit = true
+            val why = if (started) "stopped after ${budget.elapsed() / 1000} s: run time budget (${limits.budgetMs / 60_000} min) reached"
+                else "not started: run time budget (${limits.budgetMs / 60_000} min) nearly used up"
+            return SubAgentResult(i, q, SubAgentResult.Status.TIMEOUT, why, failure = WorkerFailure(FailureKind.RUN_BUDGET, why))
+        }
+        suspend fun runWorker(i: Int, q: String): SubAgentResult {
+            val task = ResearchPolicy.workerTask(topic, q, limits.perWorkerSources, sources)
+            if (!budget.limited) return worker(i, task)
+            val left = budget.workerLeft()
+            if (left < RunBudget.MIN_WORKER_MS) return budgetFail(i, q, false)
+            return withTimeoutOrNull(left) { worker(i, task) } ?: budgetFail(i, q, true)
+        }
+        val failedPred = { r: SubAgentResult -> r.status != SubAgentResult.Status.OK }
         for (round in 1..limits.rounds) {
             if (questions.isEmpty() || sources.size >= limits.maxSources) break
+            if (round > 1 && budget.limited && budget.workerLeft() < limits.budgetMs / 4) {
+                budget.hit = true; warnings += "Skipped follow-up round $round to stay within the run time budget."; break
+            }
             roundsDone = round
             allQuestions += questions
             val qs = questions
             val results = SubAgentPool.run(qs, limits.concurrency,
                 onProgress = { p -> onProgress(ResearchProgress("Researching", round, limits.rounds, p, sources.size)) },
-                failed = { r: SubAgentResult -> r.status != SubAgentResult.Status.OK },
-                waits = waits,
-            ) { i, q -> worker(i, ResearchPolicy.workerTask(topic, q, limits.perWorkerSources, sources)) }
+                failed = failedPred, waits = waits,
+            ) { i, q -> runWorker(i, q) }
             for ((i, r) in results.withIndex()) {
                 if (r.status != SubAgentResult.Status.OK) { failedQs += qs[i]; firstFailure[qs[i]] = failureOf(r); onWorkerFailed(qs[i], failureOf(r), false); continue }
                 val room = limits.maxSources - sources.size
@@ -245,24 +298,25 @@ class DeepResearchEngine(
                 findings += qs[i] to r.findings
             }
             onProgress(ResearchProgress("Round $round done", round, limits.rounds, null, sources.size))
-            if (round < limits.rounds && sources.size < limits.maxSources && findings.isNotEmpty()) {
+            val timeForMore = !budget.limited || budget.workerLeft() >= limits.budgetMs / 4
+            if (round < limits.rounds && sources.size < limits.maxSources && findings.isNotEmpty() && timeForMore) {
                 onProgress(ResearchProgress("Finding gaps", round + 1, limits.rounds, null, sources.size))
                 val n = (limits.questions / 2).coerceAtLeast(2)
                 questions = ResearchPolicy.parseQuestions(ask(ResearchPolicy.followUpPrompt(topic, ResearchPolicy.notes(findings, 20_000), n)), n)
                     .filter { q -> allQuestions.none { it.equals(q, ignoreCase = true) } }
-            }
+            } else if (round < limits.rounds && !timeForMore) { budget.hit = true; warnings += "Skipped follow-up rounds to stay within the run time budget."; break }
         }
-        // Failed sub-questions (rate limits, timeouts, errors) get one more try at the end.
-        if (failedQs.isNotEmpty() && sources.size < limits.maxSources) {
-            val retry = failedQs.toList()
+        // Failed sub-questions (rate limits, timeouts, errors) get one more try at the end, if the time budget allows.
+        val retryable = failedQs.filter { firstFailure[it]?.kind != FailureKind.RUN_BUDGET }
+        val retryTime = !budget.limited || budget.workerLeft() >= 60_000
+        if (retryable.isNotEmpty() && sources.size < limits.maxSources && retryTime) {
+            val retry = retryable
             val results = SubAgentPool.run(retry, limits.concurrency,
                 onProgress = { p -> onProgress(ResearchProgress("Retrying failed questions", roundsDone, limits.rounds, p, sources.size)) },
-                failed = { r: SubAgentResult -> r.status != SubAgentResult.Status.OK },
-                waits = waits,
-            ) { i, q -> worker(i, ResearchPolicy.workerTask(topic, q, limits.perWorkerSources, sources)) }
+                failed = failedPred, waits = waits,
+            ) { i, q -> runWorker(i, q) }
             for ((i, r) in results.withIndex()) {
                 if (r.status != SubAgentResult.Status.OK) {
-                    failed++
                     val f = failureOf(r)
                     val first = firstFailure[retry[i]]
                     val merged = if (first != null && first.kind != f.kind) f.copy(detail = f.detail + " (first try: ${first.kind.label})") else f
@@ -273,14 +327,68 @@ class DeepResearchEngine(
                 sources += ResearchPolicy.dedupe(r.sources, (limits.maxSources - sources.size).coerceAtLeast(0), sources)
                 findings += retry[i] to r.findings
             }
-        } else { failed += failedQs.size; failedQs.forEach { q -> firstFailure[q]?.let { finalFailures += q to it.copy(detail = it.detail + " (not retried: source limit reached)") } } }
+            (failedQs - retry.toSet()).forEach { q -> firstFailure[q]?.let { finalFailures += q to it } }
+        } else {
+            val why = when { retryable.isEmpty() -> ""; !retryTime -> " (not retried: run time budget)"; else -> " (not retried: source limit reached)" }
+            failedQs.forEach { q -> firstFailure[q]?.let { finalFailures += q to it.copy(detail = it.detail + why) } }
+        }
+        failed = finalFailures.size
         onProgress(ResearchProgress("Writing report", roundsDone, limits.rounds, null, sources.size))
+        if (reliability != null) return finishGrounded(topic, mode, language, findings, allQuestions, roundsDone, finalFailures, budget, warnings)
         var fallback = false
         val body = if (findings.isEmpty()) { fallback = true; "# Research: $topic\n\nNo sub-question returned usable findings ($failed failed). Try again later or with another worker model." }
         else ask(ResearchPolicy.reportPrompt(topic, mode, ResearchPolicy.notes(findings), sources, language))?.trim()?.takeIf { it.length > 200 }
             ?: run { fallback = true; ResearchPolicy.fallbackReport(topic, findings, lastError.ifEmpty { "empty reply" }) }
         return ResearchOutcome(topic, mode, body + ResearchPolicy.sourcesSection(sources) +
-            com.verdroid.app.agent.subagents.FailureText.markdownSection(finalFailures), sources, allQuestions, roundsDone, failed, fallback, finalFailures)
+            FailureText.markdownSection(finalFailures), sources, allQuestions, roundsDone, failed, fallback, finalFailures)
+    }
+
+    /** Registry-backed finish: grounded notes → writer ([S<id>] markers) → bibliography of cited OK sources, quote marks, run notes. */
+    private suspend fun finishGrounded(
+        topic: String, mode: ResearchMode, language: String?, findings: List<Pair<String, String>>, questions: List<String>, rounds: Int,
+        failures: List<Pair<String, WorkerFailure>>, budget: RunBudget, warnings: MutableList<String>,
+    ): ResearchOutcome {
+        val state = reliability!!
+        val reg = state.registry
+        val parsed = findings.map { (q, f) -> Grounding.Note(q, WorkerOutput.parse(f)) }
+        // Cited URLs no worker fetched: a few capped, deterministic checks (no model calls).
+        val exec = verifyExec
+        if (exec != null) {
+            val unknown = parsed.flatMap { it.parsed.findings }.map { it.url }.filter { it.isNotBlank() && ResearchPolicy.usable(it) && reg.get(it) == null }.distinct().take(MAX_VERIFY_FETCHES)
+            val cap = if (budget.limited) minOf(VERIFY_TIME_MS, (budget.workerLeft() + budget.reserveMs / 2).coerceAtLeast(0)) else VERIFY_TIME_MS
+            if (unknown.isNotEmpty() && cap > 0) withTimeoutOrNull(cap) { for (u in unknown) state.verifyFetch(u, exec) }
+        }
+        val stats = Grounding.Stats()
+        val (notes, noteSources) = Grounding.notes(parsed, reg, stats)
+        var fallback = false
+        val raw = if (noteSources.isEmpty()) {
+            fallback = true
+            "# Research: $topic\n\nNo finding came with a source that loaded correctly (${failures.size} workers failed). Try again later or with another worker model."
+        } else ask(ResearchPolicy.groundedReportPrompt(topic, mode, notes, noteSources, language))?.trim()?.takeIf { it.length > 200 }
+            ?: run { fallback = true; "# Research notes: $topic\n\n> The report writer failed (${lastError.ifEmpty { "empty reply" }}), so these are the grounded notes.\n\n$notes" }
+        val quoted = Grounding.markQuotes(raw, reg, stats)
+        val rendered = Grounding.bibliography(quoted, reg)
+        val all = reg.all()
+        val gaps = parsed.filter { n -> n.parsed.insufficient || n.parsed.findings.none { f -> reg.get(f.url)?.ok == true } }.map { it.question } +
+            failures.map { it.first }
+        val wb = all.count { it.servedFrom == "wayback" && it.ok }
+        if (writerIsFree) warnings += "The report was written by a free model: check key claims against the cited sources."
+        if (budget.hit) warnings += "Run time budget reached: ${failures.count { it.second.kind == FailureKind.RUN_BUDGET }} worker(s) were stopped or not started; the report uses what was collected."
+        if (failures.isNotEmpty()) warnings += "${failures.size} of ${questions.size} sub-questions failed (see Failed workers)."
+        if (fallback) warnings += "The report writer failed or had nothing grounded to write about."
+        if (state.breaker.reasons.isNotEmpty()) warnings += "Search engines skipped after repeated failures: ${state.breaker.reasons.keys.joinToString()}."
+        if (stats.checked > 0 && stats.verified < stats.checked) warnings += "${stats.checked - stats.verified} quote(s) could not be verified on the pages and are marked."
+        val diag = ResearchDiagnostics(
+            collected = all.size, ok = all.count { it.ok }, dead = all.count { SourceChecks.DEAD in it.flags || SourceChecks.EMPTY in it.flags },
+            disambiguation = all.count { SourceChecks.DISAMBIGUATION in it.flags }, searchPages = all.count { SourceChecks.SEARCH_PAGE in it.flags },
+            wayback = wb, cited = rendered.cited.size, orphansPruned = all.count { it.ok } - rendered.cited.size,
+            rejected = synchronized(reg) { LinkedHashMap(reg.rejected) }, quotesChecked = stats.checked, quotesVerified = stats.verified,
+            enginesFailed = LinkedHashMap(state.breaker.reasons), weakRecall = state.weakRecall.size, gaps = gaps.distinct(),
+            warnings = warnings.distinct(), budgetMs = budget.budgetMs, elapsedMs = budget.elapsed(), budgetHit = budget.hit,
+        )
+        val stamp = if (writerIsFree) "> ℹ️ Written by a free model: verify key claims against the numbered sources.\n\n" else ""
+        val report = stamp + rendered.text + Grounding.sourcesSection(rendered.cited) + diag.runNotes() + FailureText.markdownSection(failures)
+        return ResearchOutcome(topic, mode, report, rendered.cited.map { it.url }, questions, rounds, failures.size, fallback, failures, diag)
     }
 
     private var lastError = ""
@@ -304,6 +412,8 @@ class DeepResearchEngine(
     }
 
     companion object {
+        const val MAX_VERIFY_FETCHES = 5
+        const val VERIFY_TIME_MS = 60_000L
         fun host(url: String): String = runCatching { URI(url).host.orEmpty().removePrefix("www.") }.getOrDefault("")
     }
 }

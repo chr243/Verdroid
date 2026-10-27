@@ -25,7 +25,8 @@ class WebSearcher(
     private val fetch: suspend (HttpCall) -> HttpReply = OkHttpFetcher()::fetch,
 ) {
     suspend fun search(req: SearchRequest): SearchOutcome = coroutineScope {
-        val outputs = engines.map { e -> async { runWithFallback(e, req) } }.awaitAll()
+        val active = engines.filter { it.name !in req.skipEngines }.ifEmpty { engines }
+        val outputs = active.map { e -> async { runWithFallback(e, req) } }.awaitAll()
         val tagged = outputs.flatMap { (engine, out) -> out.results.map { Triple(out.engine, engine.group, it) } }
         val fused = Fusion.fuse(Fusion.dedupe(tagged))
         val warnings = buildList {
