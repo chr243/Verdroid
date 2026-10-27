@@ -670,7 +670,11 @@ class SelfTestRunner @Inject constructor(
                 check(r("Output/a.png")["ok"]?.jsonPrimitive?.boolean == true) { "shows a file in Documents/Verdroid" }
                 check(r("../x.png")["error"] != null && r("Output/a.txt")["error"] != null && r("http://example.com/a.png")["error"] != null) { "traversal / non-image / http refused" }
             } finally { base.deleteRecursively() }
-            "show_image: type sniff, root limits, private hosts refused"
+            val I = com.verdroid.app.ui.chat.InlineImages
+            check(I.split("a ![x](Output/p.png) b").count { it is com.verdroid.app.ui.chat.InlineImages.Seg.Image } == 1 &&
+                I.resolve("Output/p.png", "x")?.path?.endsWith("/Output/p.png") == true && I.resolve("../p.png", null) == null &&
+                I.resolve("http://e.com/a.png", null) == null) { "markdown images in replies" }
+            "show_image: type sniff, root limits, private hosts refused; inline ![](…) images in replies"
         },
         "shared_deletes" to {
             val S = com.verdroid.app.agent.tools.SharedFolderDeletes

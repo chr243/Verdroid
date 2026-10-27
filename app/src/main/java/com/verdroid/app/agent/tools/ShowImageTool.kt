@@ -92,7 +92,9 @@ class ShowImageTool(
     override val name = NAME
     override val description = "Show an image to the user inline in the chat (tap = fullscreen with pinch-zoom, share). source = a file under " +
         "Documents/Verdroid (Output/, Input/, Repos/<name>/… ; relative to it or absolute) or an https:// image URL. png/jpg/webp/gif, max 15 MB. " +
-        "Use it for screenshots, generated images, photos, diagrams you saved to Output/. Add a short caption. Charts: use the chart tool."
+        "Use it for screenshots, generated images, photos, diagrams you saved to Output/. Add a short caption. Charts: use the chart tool. " +
+        "You can also embed images directly in your reply text with markdown ![caption](Output/plot.png) or ![caption](https://…/x.png) " +
+        "(same rules: https or files under Documents/Verdroid; up to 8 per reply)."
     override val parameters = schema(listOf("source"),
         "source" to prop("string", "Path under Documents/Verdroid (e.g. Output/plot.png) or an https:// image URL"),
         "caption" to prop("string", "Short caption shown under the image"))

@@ -484,8 +484,18 @@ internal fun AgentBubble(text: String, model: String?) {
     Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.Start) {
         Surface(color = b.agent, shape = RoundedCornerShape(18.dp, 18.dp, 18.dp, 4.dp),
             modifier = Modifier.widthIn(max = 320.dp)) {
-            SelectionContainer {
+            val segs = remember(text) { InlineImages.split(text) }
+            if (segs.size == 1 && segs[0] is InlineImages.Seg.Text) SelectionContainer {
                 MarkdownText(text, color = b.onAgent, modifier = Modifier.padding(horizontal = 14.dp, vertical = 9.dp))
+            } else Column(Modifier.padding(horizontal = 14.dp, vertical = 9.dp)) {
+                segs.forEach { seg ->
+                    when (seg) {
+                        is InlineImages.Seg.Text -> SelectionContainer { MarkdownText(seg.text, color = b.onAgent) }
+                        is InlineImages.Seg.Image -> remember(seg) { InlineImages.resolve(seg.src, seg.alt) }?.let { ShownImageCard(it) }
+                            ?: Text("🖼️ ${seg.alt.ifBlank { "Image" }} (can't show: ${seg.src.take(80)})",
+                                style = MaterialTheme.typography.bodySmall, color = b.onAgent, modifier = Modifier.padding(vertical = 4.dp))
+                    }
+                }
             }
         }
         if (model != null) Text(model, fontSize = 10.sp, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 8.dp, top = 2.dp))
