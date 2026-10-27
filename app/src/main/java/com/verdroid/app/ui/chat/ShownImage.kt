@@ -46,7 +46,7 @@ private sealed interface Load { data object Loading : Load; data class Ok(val bm
 /** Decodes off the main thread, downscaled to [maxSide] (URLs come from / go to the cache dir). */
 private suspend fun load(ctx: android.content.Context, ref: ShownImageRef, maxSide: Int): Load = withContext(Dispatchers.IO) {
     val file = when {
-        ref.path != null -> File(ref.path).takeIf { it.isFile } ?: return@withContext Load.Missing("Image no longer available: ${ref.path}")
+        ref.path != null -> File(ref.path).takeIf { it.isFile } ?: return@withContext Load.Missing("Image not found: ${ref.path}")
         else -> ShownImages.fetch(ref.url!!, ctx.cacheDir).getOrElse { return@withContext Load.Missing("Couldn't load the image (${it.message})") }
     }
     val bmp = runCatching { com.verdroid.app.data.storage.AttachmentImages.thumbnail(file, maxSide) }.getOrNull()
@@ -71,7 +71,7 @@ fun ShownImageCard(ref: ShownImageRef) {
                 is Load.Missing -> Text("🖼️ ${s.why}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(12.dp))
             }
         }
-        ref.caption?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp)) }
+        ref.caption?.let { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp, bottom = 6.dp)) }
     }
     val ok = state as? Load.Ok
     if (full && ok != null) ShownImageFullscreen(ref, ok.file) { full = false }

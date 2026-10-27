@@ -24,8 +24,10 @@ object InlineImages {
             if (line.trimStart().startsWith("```")) inFence = !inFence
             if (inFence || !line.contains("![")) { buf.append(line).append('\n'); continue }
             var last = 0
+            val code = codeSpans(line)
             for (m in IMG.findAll(line)) {
                 if (n >= MAX_IMAGES) break
+                if (code.any { m.range.first < it.last + 1 && it.first < m.range.last + 1 }) continue
                 buf.append(line, last, m.range.first); flush()
                 out += Seg.Image(m.groupValues[1].trim(), m.groupValues[2]); n++; last = m.range.last + 1
             }
@@ -34,6 +36,9 @@ object InlineImages {
         flush()
         return out.ifEmpty { listOf(Seg.Text(text)) }
     }
+
+    /** Inline `code` spans (any number of backticks) on one line: images inside stay literal text. */
+    internal fun codeSpans(line: String): List<IntRange> = Regex("(`+)(.+?)(?<!`)\\1(?!`)").findAll(line).map { it.range }.toList()
 
     /** The ref to load, or null when [src] isn't allowed. */
     fun resolve(src: String, alt: String?, root: String = ROOT): ShownImageRef? {

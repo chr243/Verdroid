@@ -3,6 +3,7 @@ package com.verdroid.app.agent.tools
 import com.verdroid.app.data.storage.SharedFolder
 import kotlinx.serialization.json.*
 import okhttp3.OkHttpClient
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.Request
 import java.io.File
 import java.security.MessageDigest
@@ -55,6 +56,15 @@ object ShownImages {
             .followRedirects(true).followSslRedirects(false).build()
     }
 
+    /** Browser-like headers: some image hosts answer 400/403 to bare or unusual clients. */
+    const val USER_AGENT = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36 Verdroid"
+    fun request(u: okhttp3.HttpUrl): Request = Request.Builder().url(u).header("User-Agent", USER_AGENT)
+        .header("Accept", "image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8,*/*;q=0.5").build()
+
+    private val WIKI_THUMB = Regex("""^(https://upload\.wikimedia\.org/[^?#]*?)/thumb(/[0-9a-f]/[0-9a-f]{2}/[^/]+)/[^/]+$""")
+    /** Wikimedia thumbnail URL → the original file (only standard widths exist, others return 400); null if not one. */
+    fun wikimediaOriginal(url: String): String? = WIKI_THUMB.find(url)?.let { it.groupValues[1] + it.groupValues[2] }
+
     /** Downloads [url] into the cache (size-capped, type-checked); returns the cached file or an error message. */
     fun fetch(url: String, cacheDir: File, client: OkHttpClient = CLIENT, allowHttp: Boolean = false): Result<File> = runCatching {
         val u = with(okhttp3.HttpUrl.Companion) { url.toHttpUrlOrNull() } ?: error("not a valid URL")
@@ -62,8 +72,12 @@ object ShownImages {
         if (!allowHttp && !hostAllowed(u.host)) error("local/private hosts are not allowed")
         val cached = cacheFile(cacheDir, url)
         if (cached.isFile && cached.length() > 0) return@runCatching cached
-        client.newCall(Request.Builder().url(u).header("User-Agent", "Mozilla/5.0 (Android) Verdroid").header("Accept", "image/*").build()).execute().use { r ->
-            if (!r.isSuccessful) error("HTTP ${r.code}")
+        var resp = client.newCall(request(u)).execute()
+        if (!resp.isSuccessful) wikimediaOriginal(u.toString())?.let { alt -> // odd thumbnail widths get HTTP 400 from Wikimedia
+            resp.close(); resp = client.newCall(request(alt.toHttpUrl())).execute()
+        }
+        resp.use { r ->
+            if (!r.isSuccessful) error("HTTP ${r.code} from ${u.host}")
             val body = r.body ?: error("empty response")
             if (body.contentLength() > MAX_BYTES) error("image too large (max 15 MB)")
             cached.parentFile?.mkdirs()
@@ -94,7 +108,9 @@ class ShowImageTool(
         "Documents/Verdroid (Output/, Input/, Repos/<name>/… ; relative to it or absolute) or an https:// image URL. png/jpg/webp/gif, max 15 MB. " +
         "Use it for screenshots, generated images, photos, diagrams you saved to Output/. Add a short caption. Charts: use the chart tool. " +
         "You can also embed images directly in your reply text with markdown ![caption](Output/plot.png) or ![caption](https://…/x.png) " +
-        "(same rules: https or files under Documents/Verdroid; up to 8 per reply)."
+        "(same rules: https or files under Documents/Verdroid; up to 8 per reply). Only use image URLs you actually found " +
+        "(e.g. from a search or page), not guessed ones; for Wikimedia prefer the original upload.wikimedia.org file URL, not a /thumb/ URL. " +
+        "When showing markdown syntax as an example, put it in `inline code` so it isn't rendered."
     override val parameters = schema(listOf("source"),
         "source" to prop("string", "Path under Documents/Verdroid (e.g. Output/plot.png) or an https:// image URL"),
         "caption" to prop("string", "Short caption shown under the image"))

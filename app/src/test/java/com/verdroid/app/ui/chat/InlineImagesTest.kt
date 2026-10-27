@@ -26,4 +26,11 @@ class InlineImagesTest {
         assertNull(InlineImages.resolve("../secret.png", null, r)); assertNull(InlineImages.resolve("/data/data/x.png", null, r))
         assertNull(InlineImages.resolve("Output/notes.txt", null, r))
     }
+
+    @Test fun `images inside inline code stay text`() {
+        val line = "- **Markdown embed** — `![caption](/storage/emulated/0/Documents/Verdroid/Output/file.png)` works"
+        assertEquals(listOf(Seg.Text(line)), InlineImages.split(line))
+        assertEquals(listOf(Seg.Text("a ``x ![c](https://e.com/a.png) y`` b")), InlineImages.split("a ``x ![c](https://e.com/a.png) y`` b"))
+        assertEquals(1, InlineImages.split("`code` then ![c](https://e.com/a.png)").count { it is Seg.Image })
+    }
 }

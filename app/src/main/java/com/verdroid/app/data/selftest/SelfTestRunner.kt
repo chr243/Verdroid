@@ -674,6 +674,8 @@ class SelfTestRunner @Inject constructor(
             check(I.split("a ![x](Output/p.png) b").count { it is com.verdroid.app.ui.chat.InlineImages.Seg.Image } == 1 &&
                 I.resolve("Output/p.png", "x")?.path?.endsWith("/Output/p.png") == true && I.resolve("../p.png", null) == null &&
                 I.resolve("http://e.com/a.png", null) == null) { "markdown images in replies" }
+            check(I.split("x `![c](Output/p.png)` y").none { it is com.verdroid.app.ui.chat.InlineImages.Seg.Image } &&
+                S.wikimediaOriginal("https://upload.wikimedia.org/wikipedia/commons/thumb/4/47/P.png/333px-P.png") != null) { "inline code literal, wikimedia thumb fallback" }
             "show_image: type sniff, root limits, private hosts refused; inline ![](…) images in replies"
         },
         "shared_deletes" to {
