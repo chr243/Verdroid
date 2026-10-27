@@ -1,6 +1,5 @@
 package com.verdroid.app.ui.menu
 
-import kotlinx.coroutines.async
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.verdroid.app.chathead.ChatHeadController
@@ -30,33 +29,7 @@ class SettingsViewModel @Inject constructor(
     val subAgents: com.verdroid.app.agent.subagents.SubAgentPrefs,
     val research: com.verdroid.app.agent.research.ResearchPrefs,
     val toolPrefs: com.verdroid.app.data.tools.ToolPrefs,
-    val tracker: com.verdroid.app.data.network.KeyHealthTracker,
-    private val cooldowns: com.verdroid.app.data.network.CooldownTracker,
-    private val providerStore: com.verdroid.app.data.network.CustomProviderStore,
-    private val customLlm: com.verdroid.app.data.network.CustomLlmClient,
 ) : ViewModel() {
-    /** Settings → OpenRouter key → Reset: clears its cooldowns and status. */
-    fun resetOpenRouterKey(id: String) { cooldowns.unblockKey(id); tracker.reset(com.verdroid.app.data.network.KeyHealthTracker.OPENROUTER, id) }
-
-    /** Model picker: models listed by each configured OpenAI-compatible provider (GET /models), merged. */
-    val discovered = MutableStateFlow<Map<String, List<String>>>(emptyMap())
-    val discovering = MutableStateFlow(false)
-    val discoverErrors = MutableStateFlow<List<String>>(emptyList())
-    fun providerName(id: String) = com.verdroid.app.data.network.ProviderNames.short(id)
-    fun discover() = viewModelScope.launch { kotlinx.coroutines.coroutineScope {
-        discovering.value = true
-        val errs = ArrayList<String>(); val out = LinkedHashMap<String, List<String>>()
-        try {
-            val ps = providerStore.allProviders().filter { providerStore.isConfigured(it.id) }
-            val results = ps.map { p -> p to async { customLlm.listModels(p.id) } }
-            for ((p, r) in results) r.await().fold({ if (it.isNotEmpty()) out[p.id] = it }, { errs += "${p.shortName}: ${it.message}" })
-            if (ps.isEmpty()) errs += "No other providers set up (Settings → LLM providers)"
-        } finally { discovered.value = out; discoverErrors.value = errs; discovering.value = false } }
-    }
-    fun addProviderModel(providerId: String, model: String) = viewModelScope.launch {
-        val id = com.verdroid.app.data.network.ModelIds.prov(providerId, model)
-        if (id !in models.value) settings.setModelPriority(models.value + id)
-    }
     /** Kilo requests in the last hour (in-app counter, refreshed every 5 s while visible). */
     val kiloUsedThisHour: StateFlow<Int> = kotlinx.coroutines.flow.flow {
         while (true) { emit(kiloUsage.counter.used()); kotlinx.coroutines.delay(5_000) }

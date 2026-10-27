@@ -60,7 +60,7 @@ object ModelIds {
     /** Label for chats / lists: "kilo-auto/free (Kilo)", "llama3 (Groq)", OpenRouter ids unchanged. */
     fun label(id: String): String = when (provider(id)) {
         ModelProvider.KILO -> "${bare(id)} (Kilo)"
-        ModelProvider.CUSTOM -> "${bare(id)} (${providerIdOf(id)?.let { ProviderNames.short(it) } ?: "Custom"})"
+        ModelProvider.CUSTOM -> "${bare(id)} (${providerIdOf(id)?.let { ProviderPresets.byId(it).shortName } ?: "Custom"})"
         ModelProvider.LOCAL -> "${bare(id)} (on device)"
         else -> id
     }

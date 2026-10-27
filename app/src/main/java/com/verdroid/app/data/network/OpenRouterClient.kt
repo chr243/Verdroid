@@ -58,9 +58,7 @@ class OpenRouterClient @Inject constructor(
     private val vision: ModelCapabilities,
     private val pins: com.verdroid.app.data.settings.ChatModelPinStore,
     private val profiles: com.verdroid.app.data.profiles.ProfileLookup,
-    private val tracker: KeyHealthTracker,
 ) {
-    private val breaker get() = tracker.breaker
     /** Keeps images only for models whose metadata lists image input. */
     private suspend fun forModel(id: String, msgs: List<ApiMessage>): List<ApiMessage> =
         if (msgs.none { !it.images.isNullOrEmpty() } || runCatching { vision.supportsImages(id) }.getOrDefault(false)) msgs
@@ -108,14 +106,12 @@ class OpenRouterClient @Inject constructor(
     }
 
     private suspend fun completeWith(
-        allModels: List<String>,
+        models: List<String>,
         messages: List<ApiMessage>,
         tools: JsonArray?,
         taskId: Long?,
         status: suspend (String) -> Unit,
     ): ChatOutcome {
-        // Circuit breaker: providers that keep failing are skipped for a while (unless nothing else is left).
-        val models = allModels.filter { breaker.allow(CircuitBreaker.providerOf(it)) }.ifEmpty { allModels }
         val kiloModels = models.filter(ModelIds::isKilo)
         val customModels = models.filter(ModelIds::isCustom)
         val localModels = models.filter(ModelIds::isLocal)
@@ -125,15 +121,14 @@ class OpenRouterClient @Inject constructor(
         val cooldownMs = settings.currentLimits().modelCooldownSeconds.coerceAtLeast(1) * 1000L
         var kiloMiss: KiloResult.Unavailable? = null
 
-        suspend fun tryKilo(list: List<String> = kiloModels): ChatOutcome? {
-            if (list.isEmpty()) return null
+        suspend fun tryKilo(): ChatOutcome? {
+            if (kiloModels.isEmpty()) return null
             val msgs = if (appPrefs.sendMemoriesToKilo.value) messages else MemoryRedaction.strip(messages)
-            return when (val r = kilo.complete(list, msgs, tools, cooldownMs, status, ::forModel)) {
-                is KiloResult.Success -> { breaker.success("kilo"); _lastModel.value = r.id; ChatOutcome.Success(r.completion, r.label, KiloApi.KEY_LABEL) }
+            return when (val r = kilo.complete(kiloModels, msgs, tools, cooldownMs, status, ::forModel)) {
+                is KiloResult.Success -> { _lastModel.value = r.id; ChatOutcome.Success(r.completion, r.label, KiloApi.KEY_LABEL) }
                 is KiloResult.Unavailable -> {
                     kiloMiss = r
-                    if (!r.rateLimited) breaker.failure("kilo")
-                    rateLimitLog.log(RateLimitEvent(0, System.currentTimeMillis(), taskId, list.joinToString(),
+                    rateLimitLog.log(RateLimitEvent(0, System.currentTimeMillis(), taskId, kiloModels.joinToString(),
                         KiloApi.KEY_LABEL, if (r.rateLimited) 429 else 0, null, null, r.resumeAt?.toString(),
                         if (r.rateLimited) "kilo_rate_limit" else "kilo_error", r.message, "Kilo unavailable → fallback to OpenRouter"))
                     null
@@ -142,44 +137,26 @@ class OpenRouterClient @Inject constructor(
         }
 
         var customMiss: KiloResult.Unavailable? = null
-        suspend fun tryCustom(list: List<String> = customModels): ChatOutcome? {
-            if (list.isEmpty()) return null
-            return when (val r = custom.complete(list, messages, tools, cooldownMs, status, ::forModel, taskId)) {
-                is KiloResult.Success -> { _lastModel.value = r.id; ChatOutcome.Success(r.completion, r.label, ProviderNames.short(custom.providerOf(r.id))) }
+        suspend fun tryCustom(): ChatOutcome? {
+            if (customModels.isEmpty()) return null
+            return when (val r = custom.complete(customModels, messages, tools, cooldownMs, status, ::forModel)) {
+                is KiloResult.Success -> { _lastModel.value = r.id; ChatOutcome.Success(r.completion, r.label, "Custom provider") }
                 is KiloResult.Unavailable -> { customMiss = r; null }
             }
         }
         var localMiss: KiloResult.Unavailable? = null
-        suspend fun tryLocal(list: List<String> = localModels): ChatOutcome? {
-            if (list.isEmpty()) return null
-            return when (val r = local.complete(list, messages, tools, status)) {
+        suspend fun tryLocal(): ChatOutcome? {
+            if (localModels.isEmpty()) return null
+            return when (val r = local.complete(localModels, messages, tools, status)) {
                 is KiloResult.Success -> { _lastModel.value = r.id; ChatOutcome.Success(r.completion, r.label, "On-device") }
                 is KiloResult.Unavailable -> {
                     localMiss = r
-                    rateLimitLog.log(RateLimitEvent(0, System.currentTimeMillis(), taskId, list.joinToString(),
+                    rateLimitLog.log(RateLimitEvent(0, System.currentTimeMillis(), taskId, localModels.joinToString(),
                         "On-device", 0, null, null, null, "local_unavailable", r.message, "On-device model unavailable → fallback"))
                     null
                 }
             }
         }
-
-        if (tracker.strictOrder.value) {
-            // Settings → Model priority → "Follow this order exactly": each run of same-provider entries in list order.
-            var orOut: ChatOutcome? = null
-            for (run in FallbackOrder.runs(models)) {
-                val p = ModelIds.provider(run.first())
-                val out = when (p) {
-                    ModelProvider.LOCAL -> tryLocal(run)
-                    ModelProvider.KILO -> tryKilo(run)
-                    ModelProvider.CUSTOM -> tryCustom(run)
-                    ModelProvider.OPENROUTER -> if (ModelIds.openRouterUsable(run, keys.size))
-                        completeOpenRouter(keys, run, messages, tools, taskId, status).also { o -> if (o !is ChatOutcome.Success) orOut = FallbackOrder.better(orOut, o) } else null
-                }
-                if (out is ChatOutcome.Success) return out
-            }
-            return merge(orOut, kiloMiss ?: customMiss ?: localMiss)
-        }
-
         // On-device models go first when one heads the priority list (then the rest in order); otherwise they are the last fallback.
         val localFirst = ModelIds.isLocal(models.first())
         if (localFirst) tryLocal()?.let { return it }
@@ -196,16 +173,15 @@ class OpenRouterClient @Inject constructor(
         if (!kiloFirst) tryKilo()?.let { return it }
         if (!customFirst) tryCustom()?.let { return it }
         if (!localFirst) tryLocal()?.let { return it }
-        return merge(orOutcome, kiloMiss ?: customMiss ?: localMiss)
-    }
-
-    private fun merge(orOutcome: ChatOutcome?, miss: KiloResult.Unavailable?): ChatOutcome = when {
-        orOutcome == null && miss == null -> ChatOutcome.NoApiKey
-        orOutcome == null -> if (miss!!.resumeAt != null) ChatOutcome.RateLimited(miss.resumeAt!!, miss.message)
-            else ChatOutcome.Failure(miss.message)
-        orOutcome is ChatOutcome.RateLimited && miss?.resumeAt != null && miss.resumeAt < orOutcome.resumeAt ->
-            ChatOutcome.RateLimited(miss.resumeAt, orOutcome.message)
-        else -> orOutcome
+        val miss = kiloMiss ?: customMiss ?: localMiss
+        return when {
+            orOutcome == null && miss == null -> ChatOutcome.NoApiKey
+            orOutcome == null -> if (miss!!.resumeAt != null) ChatOutcome.RateLimited(miss.resumeAt!!, miss.message)
+                else ChatOutcome.Failure(miss.message)
+            orOutcome is ChatOutcome.RateLimited && miss?.resumeAt != null && miss.resumeAt < orOutcome.resumeAt ->
+                ChatOutcome.RateLimited(miss.resumeAt, orOutcome.message)
+            else -> orOutcome
+        }
     }
 
     private suspend fun completeOpenRouter(
@@ -223,9 +199,7 @@ class OpenRouterClient @Inject constructor(
         val dailyKeys = HashSet<String>()
         var sawResetHeader = false
 
-        val order = if (tracker.roundRobin.value) tracker.health.order(KeyHealthTracker.OPENROUTER, keys, { it.id }, true) +
-            keys.filter { k -> tracker.status(KeyHealthTracker.OPENROUTER, k.id).coolingDown(System.currentTimeMillis()) } else keys
-        keyLoop@ for (key in order) {
+        keyLoop@ for (key in keys) {
             val now0 = System.currentTimeMillis()
             if (cooldowns.keyUntil(key.id) > now0) { sawRateLimit = true; continue }
             if (limiter.usedToday(key.id) >= limits.requestsPerDay) {
@@ -241,7 +215,6 @@ class OpenRouterClient @Inject constructor(
                 if (cooldowns.modelUntil(key.id, model) > now) continue
                 status("Calling $model…")
                 limiter.acquire(key.id, limits.requestsPerMinute)
-                tracker.health.onRequest(KeyHealthTracker.OPENROUTER, key.id)
                 val response = try {
                     api.chatCompletions("Bearer ${key.key}", model, key.displayName,
                         ChatRequest(model = model, messages = forModel(model, messages), tools = tools, toolChoice = if (tools != null) "auto" else null))
@@ -249,7 +222,6 @@ class OpenRouterClient @Inject constructor(
                     throw e
                 } catch (e: IOException) {
                     lastError = "Network error: ${e.message ?: e.javaClass.simpleName}"
-                    breaker.failure("openrouter"); tracker.changed()
                     continue
                 }
                 val body = try {
@@ -259,28 +231,14 @@ class OpenRouterClient @Inject constructor(
                 val err = ApiErrorDetector.detect(response.code(), body)
                     ?: run {
                         val parsed = body?.let { CompletionParser.parse(it) }
-                        if (parsed != null) {
-                            tracker.health.onSuccess(KeyHealthTracker.OPENROUTER, key.id); breaker.success("openrouter"); tracker.changed()
-                            _lastModel.value = model; return ChatOutcome.Success(parsed, parsed.model ?: model, key.displayName)
-                        }
+                        if (parsed != null) { _lastModel.value = model; return ChatOutcome.Success(parsed, parsed.model ?: model, key.displayName) }
                         DetectedApiError(ApiErrorKind.UPSTREAM, 502, "Empty or unparsable completion", null)
                     }
                 lastError = "$model: ${err.message}"
-                val retry = RetryAfter.parse({ response.headers()[it] }, body)
-                val fault = KeyPolicy.classify(err)
-                val sc = KeyHealthTracker.OPENROUTER
-                if (fault == KeyFault.MODEL) {
-                    // Model-specific (not found / no endpoints / not in plan): lock only this model on this key.
-                    tracker.health.onFailure(sc, key.id, model, fault, err.message); tracker.changed()
-                    cooldowns.coolModel(key.id, model, now + KeyPolicy.MODEL_LOCK_MS)
-                    log(taskId, model, key, response.code(), headers, err.errorType ?: "model_unavailable", err.message, "Model locked on this key ${KeyPolicy.MODEL_LOCK_MS / 60_000} min → next model")
-                    continue
-                }
                 when (err.kind) {
                     ApiErrorKind.RATE_LIMIT -> {
                         sawRateLimit = true
                         val keyWide = (headers.remaining == 0 && (headers.resetAtMs ?: 0) > now + cooldownMs) ||
-                            (retry ?: 0) > 10 * 60_000L ||
                             err.message.contains("per-day", ignoreCase = true) ||
                             err.message.contains("per day", ignoreCase = true)
                         if (keyWide) {
@@ -289,39 +247,28 @@ class OpenRouterClient @Inject constructor(
                                 headers.resetAtMs == null || (headers.resetAtMs - now) > 60 * 60_000L
                             if (daily) dailyKeys += key.id
                             if (headers.resetAtMs != null && headers.resetAtMs > now) sawResetHeader = true
-                            val until = headers.resetAtMs?.takeIf { it > now } ?: retry?.let { now + it } ?: ClientRateLimiter.nextUtcMidnight(now)
-                            if (retry != null) sawResetHeader = true
+                            val until = headers.resetAtMs?.takeIf { it > now } ?: ClientRateLimiter.nextUtcMidnight(now)
                             cooldowns.blockKey(key.id, until)
-                            tracker.health.onFailure(sc, key.id, model, KeyFault.RATE_LIMIT, err.message, until - now); tracker.changed()
                             log(taskId, model, key, response.code(), headers, err.errorType, err.message, "Key quota exhausted → rotating to next key")
                             continue@keyLoop
                         }
                         val headerReset = headers.resetAtMs?.takeIf { it - now in 1..(10 * 60_000L) }
                         if (headerReset != null) sawResetHeader = true
-                        if (headerReset != null || retry != null) sawResetHeader = true
-                        // Retry-After (header or body) wins; otherwise per-key exponential backoff (at least the model cooldown).
-                        val wait = tracker.health.onModelRateLimit(sc, key.id, err.message, retry, cooldownMs); tracker.changed()
-                        val until = maxOf(now + wait, headerReset ?: 0)
+                        val until = maxOf(now + cooldownMs, headerReset ?: 0)
                         cooldowns.coolModel(key.id, model, until)
                         log(taskId, model, key, response.code(), headers, err.errorType, err.message,
                             "Model cooldown ${(until - now) / 1000}s → next model")
                     }
-                    ApiErrorKind.PAYMENT, ApiErrorKind.AUTH -> {
-                        // Out of credits / invalid or deactivated key: long cooldown, rotate.
-                        val f = if (fault == KeyFault.INVALID || fault == KeyFault.CREDITS) fault else if (err.kind == ApiErrorKind.PAYMENT) KeyFault.CREDITS else KeyFault.INVALID
-                        val wait = tracker.health.onFailure(sc, key.id, model, f, err.message, retry); tracker.changed()
-                        cooldowns.blockKey(key.id, now + wait)
-                        log(taskId, model, key, response.code(), headers, err.errorType ?: if (f == KeyFault.CREDITS) "payment_required" else "invalid_key", err.message,
-                            "${response.code()} → key paused ${wait / 3_600_000}h, rotating key")
+                    ApiErrorKind.PAYMENT -> {
+                        cooldowns.blockKey(key.id, now + 60 * 60_000L)
+                        log(taskId, model, key, response.code(), headers, err.errorType ?: "payment_required", err.message, "402 → key paused 1h, rotating key")
+                        continue@keyLoop
+                    }
+                    ApiErrorKind.AUTH -> {
+                        cooldowns.blockKey(key.id, now + 60 * 60_000L)
                         continue@keyLoop
                     }
                     ApiErrorKind.UPSTREAM, ApiErrorKind.BAD_REQUEST, ApiErrorKind.OTHER -> {
-                        if (fault == KeyFault.CREDITS || fault == KeyFault.INVALID) {
-                            val wait = tracker.health.onFailure(sc, key.id, model, fault, err.message, retry); tracker.changed()
-                            cooldowns.blockKey(key.id, now + wait); continue@keyLoop
-                        }
-                        if (err.kind == ApiErrorKind.UPSTREAM) breaker.failure("openrouter")
-                        tracker.health.onFailure(sc, key.id, model, fault, err.message); tracker.changed()
                         cooldowns.coolModel(key.id, model, now + cooldownMs)
                     }
                 }

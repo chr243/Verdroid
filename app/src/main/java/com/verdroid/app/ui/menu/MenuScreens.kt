@@ -124,8 +124,6 @@ private fun MenuItem(title: String, subtitle: String, index: Int, onClick: () ->
 @Composable
 fun OpenRouterKeysSection(vm: SettingsViewModel = hiltViewModel()) {
     val keys by vm.apiKeys.collectAsStateWithLifecycle()
-    val tv by vm.tracker.version.collectAsStateWithLifecycle()
-    val rr by vm.tracker.roundRobin.collectAsStateWithLifecycle()
     var label by remember { mutableStateOf("") }
     var key by remember { mutableStateOf("") }
     var editing by remember { mutableStateOf<ApiKey?>(null) }
@@ -135,9 +133,6 @@ fun OpenRouterKeysSection(vm: SettingsViewModel = hiltViewModel()) {
                 Text(modifier = Modifier.padding(bottom = 10.dp), text = "Keys are stored encrypted (Android Keystore + EncryptedSharedPreferences). The primary key is used first; " +
                     "others are used in order when a key is rate-limited.", style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (keys.size > 1) ListItem(headlineContent = { Text("Spread requests across keys") },
-                    supportingContent = { Text("Round-robin instead of primary first (applies to all providers)") },
-                    trailingContent = { Switch(rr, vm.tracker::setRoundRobin) })
             }
             keys.forEachIndexed { i, k ->
                 Surface(color = Zebra.color(i), shape = Zebra.shape(i, keys.size), modifier = Modifier.fillMaxWidth()) {
@@ -149,9 +144,6 @@ fun OpenRouterKeysSection(vm: SettingsViewModel = hiltViewModel()) {
                                 if (k.isPrimary) { Spacer(Modifier.width(6.dp)); SmallBadge("primary") }
                             }
                             Text(k.masked, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
-                            val st = remember(tv) { vm.tracker.status(com.verdroid.app.data.network.KeyHealthTracker.OPENROUTER, k.id) }
-                            com.verdroid.app.ui.provider.KeyStatusText(st)
-                            if (st.coolUntil > System.currentTimeMillis()) TextButton(onClick = { vm.resetOpenRouterKey(k.id) }) { Text("Reset") }
                         }
                         IconButton(onClick = { vm.moveKey(k.id, -1) }, enabled = i > 0) { Icon(Icons.Filled.KeyboardArrowUp, "Move up") }
                         IconButton(onClick = { vm.moveKey(k.id, 1) }, enabled = i < keys.lastIndex) { Icon(Icons.Filled.KeyboardArrowDown, "Move down") }
@@ -187,11 +179,6 @@ fun OpenRouterKeysSection(vm: SettingsViewModel = hiltViewModel()) {
 fun ModelPriorityScreen(onBack: () -> Unit, vm: SettingsViewModel = hiltViewModel()) {
     val models by vm.models.collectAsStateWithLifecycle()
     val kiloUsed by vm.kiloUsedThisHour.collectAsStateWithLifecycle()
-    val strict by vm.tracker.strictOrder.collectAsStateWithLifecycle()
-    val discovered by vm.discovered.collectAsStateWithLifecycle()
-    val discovering by vm.discovering.collectAsStateWithLifecycle()
-    val discoverErrors by vm.discoverErrors.collectAsStateWithLifecycle()
-    var filter by remember { mutableStateOf("") }
     var newModel by remember { mutableStateOf("") }
     SubScreen("Model priority", onBack, actions = {
         TextButton(onClick = { vm.resetModels() }) { Text("Reset") }
@@ -220,30 +207,6 @@ fun ModelPriorityScreen(onBack: () -> Unit, vm: SettingsViewModel = hiltViewMode
                     OutlinedTextField(newModel, { newModel = it }, label = { Text("Model id, e.g. vendor/model:free or kilo:id") }, singleLine = true, modifier = Modifier.weight(1f))
                     Spacer(Modifier.width(8.dp))
                     Button(onClick = { vm.addModel(newModel); newModel = "" }, enabled = newModel.isNotBlank()) { Text("Add") }
-                }
-            }
-            item {
-                ListItem(headlineContent = { Text("Follow this order exactly") },
-                    supportingContent = { Text("On: models are tried strictly top to bottom across all providers. Off (default): " +
-                        "providers are grouped as before (the provider at the top goes first). A provider that keeps failing is skipped for a while either way.") },
-                    trailingContent = { Switch(strict, vm.tracker::setStrictOrder) })
-                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
-                    Text("Models from your providers", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
-                    if (discovering) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                    else TextButton(onClick = { vm.discover() }) { Text(if (discovered.isEmpty()) "Load" else "Refresh") }
-                }
-                discoverErrors.forEach { Text(it, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
-                if (discovered.isNotEmpty()) OutlinedTextField(filter, { filter = it }, label = { Text("Filter") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-            }
-            discovered.forEach { (pid, list) ->
-                val shown = list.filter { filter.isBlank() || it.contains(filter.trim(), true) }
-                    .filter { com.verdroid.app.data.network.ModelIds.prov(pid, it) !in models }.take(60)
-                if (shown.isNotEmpty()) item(key = "h-$pid") { Text(vm.providerName(pid), style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp)) }
-                items(shown, key = { "d-$pid-$it" }) { m ->
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text(m, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
-                        TextButton(onClick = { vm.addProviderModel(pid, m) }) { Text("Add") }
-                    }
                 }
             }
         }
