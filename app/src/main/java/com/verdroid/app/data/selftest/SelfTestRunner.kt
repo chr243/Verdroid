@@ -523,6 +523,25 @@ class SelfTestRunner @Inject constructor(
             check(g.observe(c) == com.verdroid.app.agent.RepeatCallGuard.NUDGE_AT) { "repeat counting" }
             "repeated identical tool calls: nudge at ${com.verdroid.app.agent.RepeatCallGuard.NUDGE_AT}, pause at ${com.verdroid.app.agent.RepeatCallGuard.PAUSE_AT}"
         },
+        "voice" to {
+            // Offline: markdown → speech text, chunking, auto-send/hands-free rules, prefs defaults; then device services.
+            val V = com.verdroid.app.data.voice.VoiceText
+            val spoken = V.forSpeech("## Hi **there**\n```kotlin\nval x = 1\n```\nSee [docs](https://x.y) and `code`.")
+            check("Hi there" in spoken && "val x" !in spoken && "docs" in spoken && "https" !in spoken && "*" !in spoken && "#" !in spoken && "`" !in spoken) { "markdown strip: $spoken" }
+            check(V.chunks("a. ".repeat(3000)).all { it.length <= V.CHUNK }) { "chunking" }
+            check(V.shouldAutoSend(true, "", "hi") && !V.shouldAutoSend(true, "typed", "hi") && !V.shouldAutoSend(false, "", "hi")) { "auto-send rule" }
+            check(V.listenAfterSpeech(true, true, false, false) && !V.listenAfterSpeech(false, true, false, false) && !V.listenAfterSpeech(true, true, true, false)) { "hands-free rule" }
+            check(V.shouldSpeak(true, false, true, true, 5L, null) && !V.shouldSpeak(true, false, true, true, 5L, 5L) && !V.shouldSpeak(false, false, true, true, 5L, null)) { "speak-once rule" }
+            val declared = context.packageManager.getPackageInfo(context.packageName, android.content.pm.PackageManager.GET_PERMISSIONS)
+                .requestedPermissions.orEmpty().contains(android.Manifest.permission.RECORD_AUDIO)
+            check(declared) { "RECORD_AUDIO not declared" }
+            val rec = runCatching { android.speech.SpeechRecognizer.isRecognitionAvailable(context) }.getOrDefault(false)
+            val fallback = context.packageManager.queryIntentActivities(android.content.Intent(android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH), 0).isNotEmpty()
+            val ttsEngines = context.packageManager.queryIntentServices(android.content.Intent("android.intent.action.TTS_SERVICE"), 0).size
+            val mic = androidx.core.content.ContextCompat.checkSelfPermission(context, android.Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED
+            if (!rec && !fallback) throw SkipCheck("rules ok; no speech recognizer on this phone (install/enable a voice typing app)")
+            "rules ok; recognizer=${if (rec) "service" else "intent fallback"}, tts engines=$ttsEngines, mic permission=${if (mic) "granted" else "not yet (asked on first mic tap)"}, language=${java.util.Locale.getDefault().toLanguageTag()}"
+        },
         "freellmapi" to {
             // Offline script/preset checks always; live health only when the user saved a key (local server off = SKIP).
             val F = com.verdroid.app.data.termux.FreeLlmApi

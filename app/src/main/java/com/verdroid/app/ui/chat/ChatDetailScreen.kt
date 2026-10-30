@@ -134,6 +134,63 @@ fun ChatDetailScreen(onBack: () -> Unit, onChatMemory: (Long) -> Unit = {}, vm: 
         )
     }
 
+    // ---- voice: speech-to-text mic + read replies aloud + hands-free (Settings → Voice)
+    val voicePrefs = vm.voicePrefs
+    val speakOn by voicePrefs.speakReplies.collectAsStateWithLifecycle()
+    val autoSend by voicePrefs.autoSend.collectAsStateWithLifecycle()
+    val handsFree by voicePrefs.handsFree.collectAsStateWithLifecycle()
+    val micOn by voicePrefs.micButton.collectAsStateWithLifecycle()
+    val voice = remember { com.verdroid.app.ui.voice.VoiceController(context.applicationContext) }
+    DisposableEffect(Unit) { onDispose { voice.release() } }
+    val voiceText = com.verdroid.app.data.voice.VoiceText
+    val currentInput by rememberUpdatedState(input)
+    val currentGenerating by rememberUpdatedState(generating)
+    val onRecognized: (String) -> Unit = { text ->
+        if (voiceText.shouldAutoSend(autoSend, currentInput, text) && !currentGenerating) { voice.stopSpeaking(); vm.send(text); input = "" }
+        else input = voiceText.merge(currentInput, text)
+    }
+    val speechFallback = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { r ->
+        r.data?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()?.let(onRecognized)
+    }
+    val startMicNow: () -> Unit = {
+        if (voice.needsIntentFallback()) {
+            voice.stopSpeaking()
+            runCatching { speechFallback.launch(voice.recognizeIntent()) }.onFailure {
+                Toast.makeText(context, "No speech recognition service on this phone. Install or enable Google voice typing (or another recognizer).", Toast.LENGTH_LONG).show()
+            }
+        } else voice.startListening()
+    }
+    val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        if (granted) startMicNow()
+        else Toast.makeText(context, "Microphone access was denied, so voice input is off. You can allow it in Android Settings → Apps → Verdroid → Permissions.", Toast.LENGTH_LONG).show()
+    }
+    val startMic: () -> Unit = {
+        val needsPermission = !voice.needsIntentFallback() &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED
+        if (needsPermission) { voice.stopSpeaking(); micPermission.launch(Manifest.permission.RECORD_AUDIO) } else startMicNow()
+    }
+    SideEffect {
+        voice.onResult = onRecognized
+        voice.onError = { code ->
+            if (!(handsFree && voiceText.isSilence(code))) Toast.makeText(context, voiceText.errorMessage(code), Toast.LENGTH_SHORT).show()
+        }
+        voice.onSpeechDone = { if (voiceText.listenAfterSpeech(handsFree, speakOn, currentGenerating, false)) startMic() }
+    }
+    LaunchedEffect(speakOn) { if (!speakOn) voice.stopSpeaking() }
+    var sawRun by remember { mutableStateOf(false) }
+    var spokenId by remember { mutableStateOf<Long?>(null) }
+    LaunchedEffect(generating) { if (generating) sawRun = true }
+    run {
+        val newest = visible.lastOrNull()
+        val newestIsReply = newest != null && newest.role == MessageRole.ASSISTANT && !newest.content.isNullOrBlank() && newest.toolCallsJson.isNullOrBlank()
+        LaunchedEffect(generating, newest?.id, newest?.content, speakOn) {
+            if (voiceText.shouldSpeak(speakOn, generating, sawRun, newestIsReply, newest?.id, spokenId)) {
+                sawRun = false; spokenId = newest?.id
+                voice.speak(newest?.content)
+            } else if (!generating && sawRun && newestIsReply && !speakOn) { sawRun = false; spokenId = newest?.id }
+        }
+    }
+
     // Hold DB writes until the container transform settles so nothing re-emits mid-morph.
     val transitioning = com.verdroid.app.ui.navTransitionRunning()
     // Latches true once the enter transition settles (and stays true so the close morph keeps the content).
@@ -366,6 +423,18 @@ fun ChatDetailScreen(onBack: () -> Unit, onChatMemory: (Long) -> Unit = {}, vm: 
                             TextButton(onClick = vm::clearAttachError) { Text("Dismiss") }
                         }
                     }
+                    if (voice.mic != com.verdroid.app.ui.voice.VoiceController.Mic.IDLE || voice.speaking) {
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                            val listening = voice.mic != com.verdroid.app.ui.voice.VoiceController.Mic.IDLE
+                            Text(
+                                if (listening) (if (voice.partial.isBlank()) (if (voice.mic == com.verdroid.app.ui.voice.VoiceController.Mic.LISTENING) "🎙 Listening…" else "🎙 Recognizing…") else "🎙 ${voice.partial}")
+                                else "🔊 Speaking…",
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary,
+                                maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
+                            )
+                            TextButton(onClick = { if (listening) voice.cancelListening() else voice.stopSpeaking() }) { Text(if (listening) "Cancel" else "Stop") }
+                        }
+                    }
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         IconButton(onClick = { attachPicker.launch(arrayOf("*/*")) }, enabled = !generating) {
                             Icon(Icons.Filled.Add, "Attach file")
@@ -375,9 +444,16 @@ fun ChatDetailScreen(onBack: () -> Unit, onChatMemory: (Long) -> Unit = {}, vm: 
                             placeholder = { Text(if (task == null) "Describe a new task…" else "Message Verdroid…") },
                             shape = RoundedCornerShape(24.dp), maxLines = 5,
                         )
-                        Spacer(Modifier.width(6.dp))
+                        if (micOn) {
+                            val listening = voice.mic != com.verdroid.app.ui.voice.VoiceController.Mic.IDLE
+                            IconButton(onClick = { if (listening) voice.stopListening() else startMic() }) {
+                                Icon(androidx.compose.ui.res.painterResource(com.verdroid.app.R.drawable.ic_mic),
+                                    if (listening) "Stop listening" else "Voice input",
+                                    tint = if (listening) MaterialTheme.colorScheme.error else LocalContentColor.current)
+                            }
+                        } else Spacer(Modifier.width(6.dp))
                         FilledIconButton(
-                            onClick = { vm.send(input); input = "" },
+                            onClick = { voice.stopSpeaking(); vm.send(input); input = "" },
                             enabled = (input.isNotBlank() || pending != null) && !generating,
                             modifier = Modifier.size(48.dp),
                         ) { Icon(Icons.AutoMirrored.Filled.Send, "Send") }

@@ -81,7 +81,8 @@ fun SettingsScreen(onNavigate: (String) -> Unit, onBack: () -> Unit, unreadNotif
                 item("Background & battery", "Keep-alive service, battery optimisation, HyperOS autostart", Routes.KEEP_ALIVE),
                 item("Shizuku & Git", "run_shell via Shizuku, rish, Git token", Routes.SHIZUKU),
             ))
-            SettingsGroup("Appearance", listOf(item("Theme", "Light / dark mode and color palette", Routes.THEME)))
+            SettingsGroup("Appearance", listOf(item("Theme", "Light / dark mode and color palette", Routes.THEME),
+                item("Voice", "Mic button (speech to text), read replies aloud, hands-free mode", Routes.VOICE)))
             SettingsGroup("App", listOf({ i -> AppUpdateRow(vm.updater, i) },
                 { i -> CrashLogRow(i) },
                 { i -> LinkItem("Feedback / Feature request", "Report a bug or suggest an idea on GitHub", i) { com.verdroid.app.data.feedback.FeedbackLinks.CHOOSER } }))
