@@ -22,6 +22,8 @@ import com.verdroid.app.data.cookies.CookieStore
 import com.verdroid.app.data.cookies.CookieVault
 import com.verdroid.app.ui.theme.VerdroidTheme
 import kotlinx.coroutines.CompletableDeferred
+import androidx.compose.ui.res.stringResource
+import com.verdroid.app.R
 
 /** Outcome of a WebView login: sites saved and how many cookies (never values). */
 data class CookieLoginResult(
@@ -184,9 +186,9 @@ class CookieLoginActivity : ComponentActivity() {
                 var error by remember { mutableStateOf<String?>(null) }
                 Scaffold(topBar = {
                     TopAppBar(
-                        title = { Text("Log in, then tap Done", style = MaterialTheme.typography.titleMedium) },
-                        navigationIcon = { TextButton(onClick = { done(url, save = false) }) { Text("Cancel") } },
-                        actions = { Button(onClick = { done(url, save = true) }) { Text("Done") } },
+                        title = { Text(stringResource(R.string.log_in_then_done), style = MaterialTheme.typography.titleMedium) },
+                        navigationIcon = { TextButton(onClick = { done(url, save = false) }) { Text(stringResource(R.string.cancel)) } },
+                        actions = { Button(onClick = { done(url, save = true) }) { Text(stringResource(R.string.done)) } },
                     )
                 }) { padding ->
                     Column(Modifier.fillMaxSize().padding(padding)) {
@@ -197,7 +199,7 @@ class CookieLoginActivity : ComponentActivity() {
                         error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall,
                             modifier = Modifier.padding(horizontal = 12.dp(), vertical = 4.dp())) }
                         if (error != null && CookieLoginBridge.isReddit(url) && web?.url?.contains("old.reddit.com") != true)
-                            TextButton(onClick = { error = null; web?.loadUrl(CookieLoginBridge.REDDIT_OLD_URL) }) { Text("Try old Reddit login") }
+                            TextButton(onClick = { error = null; web?.loadUrl(CookieLoginBridge.REDDIT_OLD_URL) }) { Text(stringResource(R.string.try_old_reddit)) }
                         AndroidView(modifier = Modifier.fillMaxWidth().weight(1f), factory = { ctx ->
                             WebView(ctx).also { web = it }.apply {
                                 layoutParams = android.view.ViewGroup.LayoutParams(android.view.ViewGroup.LayoutParams.MATCH_PARENT, android.view.ViewGroup.LayoutParams.MATCH_PARENT)

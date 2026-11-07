@@ -21,6 +21,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
+import androidx.compose.ui.res.stringResource
+import com.verdroid.app.R
 import com.verdroid.app.data.local.ScheduleEntity
 import com.verdroid.app.data.schedule.ScheduleHealth
 import com.verdroid.app.data.schedule.ScheduleManager
@@ -48,7 +50,7 @@ class SchedulesViewModel @Inject constructor(val manager: ScheduleManager) : Vie
         viewModelScope.launch {
             runCatching { manager.create(kind, text.take(40), text, spec, onlyIfChanged) }
                 .onSuccess { manager.checkHealth(); onDone() }
-                .onFailure { onError(it.message ?: "Couldn't create the schedule") }
+                .onFailure { onError(it.message ?: "") }
         }
 }
 
@@ -65,16 +67,15 @@ fun SchedulesScreen(onBack: () -> Unit, onOpenChat: (Long) -> Unit, onOpenKeepAl
     val zone = remember(refresh) { ZoneId.systemDefault() }
     Scaffold(
         topBar = {
-            TopAppBar(title = { Text("Schedules") },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } })
+            TopAppBar(title = { Text(stringResource(R.string.schedules)) },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back)) } })
         },
-        floatingActionButton = { ExtendedFloatingActionButton(onClick = { adding = true }, icon = { Icon(Icons.Filled.Add, null) }, text = { Text("Add") }) },
+        floatingActionButton = { ExtendedFloatingActionButton(onClick = { adding = true }, icon = { Icon(Icons.Filled.Add, null) }, text = { Text(stringResource(R.string.add)) }) },
     ) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             item { HealthBanner(health, vm.manager, onOpenKeepAlive) }
             if (list.isEmpty()) item {
-                Text("No schedules yet. Ask in a chat, e.g. \"remind me in 10 minutes about my soup\", \"every day at 10am check cnn.com " +
-                    "and give me a summary\" or \"every 15 minutes check this blog, only tell me if there's a new post\" — or tap Add.",
+                Text(stringResource(R.string.no_schedules_hint),
                     style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(8.dp))
             }
             items(list, key = { it.id }) { s ->
@@ -82,19 +83,17 @@ fun SchedulesScreen(onBack: () -> Unit, onOpenChat: (Long) -> Unit, onOpenKeepAl
                     onDelete = { confirmDelete = s }, onOpenChat = s.chatTaskId?.let { c -> { onOpenChat(c) } })
             }
             item {
-                Text("Times are in this phone's time zone (${zone.id}). Repeating runs need at least ${ScheduleSpec.MIN_INTERVAL_MINUTES} minutes " +
-                    "between them. Scheduled runs happen without you: tools that need your confirmation (posting, deleting, installing, " +
-                    "phone control) are blocked in them.", style = MaterialTheme.typography.bodySmall,
+                Text(stringResource(R.string.schedules_tz_note, zone.id, ScheduleSpec.MIN_INTERVAL_MINUTES), style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(8.dp, 8.dp, 8.dp, 80.dp))
             }
         }
     }
     confirmDelete?.let { s ->
         AlertDialog(onDismissRequest = { confirmDelete = null },
-            title = { Text("Delete this schedule?") },
+            title = { Text(stringResource(R.string.delete_this_schedule)) },
             text = { Text("“${s.name}” will stop running. Its chat and past results stay.") },
-            confirmButton = { TextButton(onClick = { vm.delete(s.id); confirmDelete = null }) { Text("Yes") } },
-            dismissButton = { Button(onClick = { confirmDelete = null }) { Text("No") } })
+            confirmButton = { TextButton(onClick = { vm.delete(s.id); confirmDelete = null }) { Text(stringResource(R.string.yes)) } },
+            dismissButton = { Button(onClick = { confirmDelete = null }) { Text(stringResource(R.string.no)) } })
     }
     if (adding) AddScheduleDialog(onDismiss = { adding = false }) { kind, text, spec, only, onError ->
         vm.create(kind, text, spec, only, onError) { adding = false }
@@ -108,18 +107,18 @@ private fun HealthBanner(h: ScheduleHealth, m: ScheduleManager, onOpenKeepAlive:
     Surface(color = MaterialTheme.colorScheme.errorContainer, contentColor = MaterialTheme.colorScheme.onErrorContainer,
         shape = MaterialTheme.shapes.large, modifier = Modifier.fillMaxWidth()) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Scheduled runs may be late or skipped", style = MaterialTheme.typography.titleSmall)
+            Text(stringResource(R.string.schedules_may_be_late), style = MaterialTheme.typography.titleSmall)
             h.warnings().forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (!h.batteryExempt) OutlinedButton(onClick = { runCatching { context.startActivity(m.batteryIntent()) } }) { Text("Allow background") }
-                if (!h.exactAlarms) OutlinedButton(onClick = { runCatching { context.startActivity(m.exactAlarmIntent()) } }) { Text("Allow exact alarms") }
+                if (!h.batteryExempt) OutlinedButton(onClick = { runCatching { context.startActivity(m.batteryIntent()) } }) { Text(stringResource(R.string.allow_background)) }
+                if (!h.exactAlarms) OutlinedButton(onClick = { runCatching { context.startActivity(m.exactAlarmIntent()) } }) { Text(stringResource(R.string.allow_exact_alarms)) }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (!h.notifications) OutlinedButton(onClick = {
                     runCatching { context.startActivity(Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
                         .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, context.packageName)) }
-                }) { Text("Notifications") }
-                TextButton(onClick = onOpenKeepAlive) { Text("Background & battery tips") }
+                }) { Text(stringResource(R.string.notifications)) }
+                TextButton(onClick = onOpenKeepAlive) { Text(stringResource(R.string.background_battery_tips)) }
             }
         }
     }
@@ -133,21 +132,21 @@ private fun ScheduleCard(s: ScheduleEntity, zone: ZoneId, onToggle: (Boolean) ->
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text((if (s.kind == ScheduleKind.REMINDER.name) "⏰ " else "🗓️ ") + s.name, style = MaterialTheme.typography.titleMedium)
-                    Text((if (s.kind == ScheduleKind.REMINDER.name) "Reminder" else "Agent task") + " · " +
-                        (spec?.let { ScheduleMath.describe(it, zone) } ?: "invalid") + if (s.onlyIfChanged) " · only if changed" else "",
+                    Text((if (s.kind == ScheduleKind.REMINDER.name) stringResource(R.string.reminder) else stringResource(R.string.agent_task)) + " · " +
+                        (spec?.let { ScheduleMath.describe(it, zone) } ?: stringResource(R.string.invalid_spec)) + if (s.onlyIfChanged) " · " + stringResource(R.string.only_if_changed) else "",
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Switch(checked = s.enabled, onCheckedChange = onToggle)
             }
             if (s.kind == ScheduleKind.TASK.name) Text(s.message, style = MaterialTheme.typography.bodyMedium, maxLines = 3)
-            Text("Next: " + (s.nextRunAt?.takeIf { s.enabled }?.let { ScheduleMath.formatLocal(it, zone) } ?: "—"), style = MaterialTheme.typography.bodySmall)
-            s.lastRunAt?.let { Text("Last: ${ScheduleMath.formatLocal(it, zone)} · ${s.lastStatus ?: ""}", style = MaterialTheme.typography.bodySmall,
+            Text(stringResource(R.string.next_colon) + " " + (s.nextRunAt?.takeIf { s.enabled }?.let { ScheduleMath.formatLocal(it, zone) } ?: "—"), style = MaterialTheme.typography.bodySmall)
+            s.lastRunAt?.let { Text(stringResource(R.string.last_colon, ScheduleMath.formatLocal(it, zone), s.lastStatus ?: ""), style = MaterialTheme.typography.bodySmall,
                 color = if (s.lastStatus?.startsWith("failed") == true) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant) }
             Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                TextButton(onClick = onRunNow) { Text("Run now") }
-                if (onOpenChat != null) TextButton(onClick = onOpenChat) { Text("Open chat") }
+                TextButton(onClick = onRunNow) { Text(stringResource(R.string.run_now)) }
+                if (onOpenChat != null) TextButton(onClick = onOpenChat) { Text(stringResource(R.string.open_chat)) }
                 Spacer(Modifier.weight(1f))
-                TextButton(onClick = onDelete) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+                TextButton(onClick = onDelete) { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) }
             }
         }
     }
@@ -161,27 +160,30 @@ private fun AddScheduleDialog(onDismiss: () -> Unit, onCreate: (ScheduleKind, St
     var value by remember { mutableStateOf("10") }
     var only by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    AlertDialog(onDismissRequest = onDismiss, title = { Text("New schedule") },
+    val errTimeLike = stringResource(R.string.enter_time_like)
+    val errAtLeast = stringResource(R.string.at_least_minutes, ScheduleSpec.MIN_INTERVAL_MINUTES)
+    val errEnterMinutes = stringResource(R.string.enter_minutes)
+    AlertDialog(onDismissRequest = onDismiss, title = { Text(stringResource(R.string.new_schedule)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 SingleChoiceSegmentedButtonRow {
                     ScheduleKind.entries.forEachIndexed { i, k ->
                         SegmentedButton(selected = kind == k, onClick = { kind = k }, shape = SegmentedButtonDefaults.itemShape(i, 2)) {
-                            Text(if (k == ScheduleKind.REMINDER) "Reminder" else "Agent task")
+                            Text(if (k == ScheduleKind.REMINDER) stringResource(R.string.reminder) else stringResource(R.string.agent_task))
                         }
                     }
                 }
-                OutlinedTextField(text, { text = it }, label = { Text(if (kind == ScheduleKind.REMINDER) "Reminder text" else "Prompt") },
+                OutlinedTextField(text, { text = it }, label = { Text(if (kind == ScheduleKind.REMINDER) stringResource(R.string.reminder_text) else stringResource(R.string.prompt)) },
                     modifier = Modifier.fillMaxWidth().heightIn(max = 160.dp))
-                listOf("In N minutes (once)", "Every day at HH:MM", "Every N minutes").forEachIndexed { i, l ->
+                listOf(stringResource(R.string.in_n_minutes_once), stringResource(R.string.every_day_at), stringResource(R.string.every_n_minutes)).forEachIndexed { i, l ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         RadioButton(selected = mode == i, onClick = { mode = i; value = listOf("10", "10:00", "60")[i] }); Text(l)
                     }
                 }
-                OutlinedTextField(value, { value = it }, singleLine = true, label = { Text(if (mode == 1) "Time (HH:MM)" else "Minutes") },
+                OutlinedTextField(value, { value = it }, singleLine = true, label = { Text(if (mode == 1) stringResource(R.string.time_hhmm) else stringResource(R.string.minutes)) },
                     keyboardOptions = KeyboardOptions(keyboardType = if (mode == 1) KeyboardType.Text else KeyboardType.Number))
                 if (kind == ScheduleKind.TASK) Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(only, { only = it }); Text("Only notify when something changed")
+                    Checkbox(only, { only = it }); Text(stringResource(R.string.only_notify_changed))
                 }
                 error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }
@@ -194,11 +196,11 @@ private fun AddScheduleDialog(onDismiss: () -> Unit, onCreate: (ScheduleKind, St
                     1 -> ScheduleMath.parseTimeOfDay(value)?.let { (h, m) -> ScheduleSpec.Daily(h, m) }
                     else -> value.trim().toIntOrNull()?.takeIf { it >= ScheduleSpec.MIN_INTERVAL_MINUTES }?.let { ScheduleSpec.Interval(it) }
                 }
-                if (spec == null) error = when (mode) { 1 -> "Enter a time like 10:00"; 2 -> "At least ${ScheduleSpec.MIN_INTERVAL_MINUTES} minutes"; else -> "Enter minutes" }
+                if (spec == null) error = when (mode) { 1 -> errTimeLike; 2 -> errAtLeast; else -> errEnterMinutes }
                 else onCreate(kind, text, spec, only) { error = it }
-            }) { Text("Create") }
+            }) { Text(stringResource(R.string.create)) }
         },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } })
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } })
 }
 
 @EntryPoint
@@ -216,19 +218,19 @@ fun ScheduleHealthDialog() {
     val h by m.prompt.collectAsState()
     val health = h ?: return
     AlertDialog(onDismissRequest = m::dismissPrompt,
-        title = { Text("Keep schedules on time?") },
+        title = { Text(stringResource(R.string.keep_schedules_on_time)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Your schedule was saved. Android may delay or skip it:", style = MaterialTheme.typography.bodyMedium)
+                Text(stringResource(R.string.schedule_saved_note), style = MaterialTheme.typography.bodyMedium)
                 health.warnings().forEach { Text("• $it", style = MaterialTheme.typography.bodySmall) }
-                if (!health.batteryExempt) OutlinedButton(onClick = { runCatching { context.startActivity(m.batteryIntent()) } }) { Text("Allow background activity") }
-                if (!health.exactAlarms) OutlinedButton(onClick = { runCatching { context.startActivity(m.exactAlarmIntent()) } }) { Text("Allow exact alarms") }
+                if (!health.batteryExempt) OutlinedButton(onClick = { runCatching { context.startActivity(m.batteryIntent()) } }) { Text(stringResource(R.string.allow_background_activity)) }
+                if (!health.exactAlarms) OutlinedButton(onClick = { runCatching { context.startActivity(m.exactAlarmIntent()) } }) { Text(stringResource(R.string.allow_exact_alarms)) }
                 TextButton(onClick = {
                     m.dismissPrompt()
                     runCatching { context.startActivity(com.verdroid.app.MainActivity.openRouteIntent(context, com.verdroid.app.ui.Routes.KEEP_ALIVE)) }
-                }) { Text("Tips for Xiaomi, Samsung and others") }
+                }) { Text(stringResource(R.string.tips_xiaomi_samsung)) }
             }
         },
-        confirmButton = { TextButton(onClick = m::dismissPrompt) { Text("Done") } },
-        dismissButton = { TextButton(onClick = m::dismissPrompt) { Text("Not now") } })
+        confirmButton = { TextButton(onClick = m::dismissPrompt) { Text(stringResource(R.string.done)) } },
+        dismissButton = { TextButton(onClick = m::dismissPrompt) { Text(stringResource(R.string.not_now)) } })
 }

@@ -13,6 +13,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import com.verdroid.app.R
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
@@ -33,6 +35,12 @@ import javax.inject.Inject
  */
 @AndroidEntryPoint
 class AssistActivity : ComponentActivity() {
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(
+            com.verdroid.app.data.prefs.LocaleHelper.attachBaseContext(
+                newBase, newBase.getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
+                    .getString("app_language", "system") ?: "system"))
+    }
     @Inject lateinit var startConversation: StartConversationUseCase
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -60,18 +68,18 @@ class AssistActivity : ComponentActivity() {
                     Surface(Modifier.fillMaxWidth().padding(8.dp).clickable(enabled = false) {},
                         shape = MaterialTheme.shapes.extraLarge, tonalElevation = 6.dp) {
                         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Text("Ask Verdroid", style = MaterialTheme.typography.titleLarge)
+                            Text(stringResource(R.string.ask_verdroid), style = MaterialTheme.typography.titleLarge)
                             OutlinedTextField(text, { text = it }, Modifier.fillMaxWidth().heightIn(min = 72.dp, max = 220.dp).focusRequester(focus),
-                                placeholder = { Text("Message") },
+                                placeholder = { Text(stringResource(R.string.message_field)) },
                                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Send),
                                 keyboardActions = KeyboardActions(onSend = { submit() }))
                             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
-                                TextButton(onClick = { startActivity(MainActivity.launchIntent(this@AssistActivity)); finishAndRemoveTask() }) { Text("Open app") }
+                                TextButton(onClick = { startActivity(MainActivity.launchIntent(this@AssistActivity)); finishAndRemoveTask() }) { Text(stringResource(R.string.open_app)) }
                                 Spacer(Modifier.weight(1f))
-                                TextButton(onClick = { finishAndRemoveTask() }) { Text("Cancel") }
+                                TextButton(onClick = { finishAndRemoveTask() }) { Text(stringResource(R.string.cancel)) }
                                 Button(enabled = !busy && AssistLogic.prompt(text) != null, onClick = { submit() }) {
-                                    Text(if (busy) "Sending…" else "Send")
+                                    Text(if (busy) stringResource(R.string.sending_) else stringResource(R.string.send))
                                 }
                             }
                         }

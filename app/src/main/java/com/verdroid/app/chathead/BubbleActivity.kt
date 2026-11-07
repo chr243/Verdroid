@@ -22,6 +22,12 @@ import dagger.hilt.android.AndroidEntryPoint
  */
 @AndroidEntryPoint
 class BubbleActivity : ComponentActivity() {
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(
+            com.verdroid.app.data.prefs.LocaleHelper.attachBaseContext(
+                newBase, newBase.getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
+                    .getString("app_language", "system") ?: "system"))
+    }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val taskId = intent.getLongExtra(EXTRA_TASK_ID, 0L)

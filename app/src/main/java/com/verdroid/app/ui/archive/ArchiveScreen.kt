@@ -9,6 +9,8 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import com.verdroid.app.R
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -47,19 +49,18 @@ fun ArchiveScreen(onBack: () -> Unit, onOpenChat: (Long) -> Unit, vm: ArchiveVie
     val chats by vm.chats.collectAsStateWithLifecycle()
     var confirm by remember { mutableStateOf<Confirm?>(null) }
     Scaffold(topBar = {
-        TopAppBar(title = { Text("Archive") },
-            navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } },
-            actions = { if (chats.isNotEmpty()) TextButton(onClick = { confirm = Confirm.Empty }) { Text("Empty archive") } })
+        TopAppBar(title = { Text(stringResource(R.string.archive)) },
+            navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back)) } },
+            actions = { if (chats.isNotEmpty()) TextButton(onClick = { confirm = Confirm.Empty }) { Text(stringResource(R.string.empty_archive)) } })
     }) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(bottom = 24.dp)) {
             item("info") {
-                Text("Chats deleted from the home list land here. Open one to read it, Restore to continue it, or delete it " +
-                    "permanently (messages, short-term memory and chart images).",
+                Text(stringResource(R.string.archive_intro),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
             }
             if (chats.isEmpty()) item("empty") {
-                Text("The archive is empty.", textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                Text(stringResource(R.string.archive_empty), textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.fillMaxWidth().padding(32.dp))
             }
             itemsIndexed(chats, key = { _, t -> t.id }) { i, t ->
@@ -67,13 +68,13 @@ fun ArchiveScreen(onBack: () -> Unit, onOpenChat: (Long) -> Unit, vm: ArchiveVie
                     leadingContent = { TaskAvatar(t) },
                     headlineContent = { Text(t.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                     supportingContent = {
-                        Text("Archived ${formatFull(t.archivedAt ?: t.updatedAt)} · last activity ${formatFull(t.updatedAt)}",
+                        Text(stringResource(R.string.archived_line, formatFull(t.archivedAt ?: t.updatedAt), formatFull(t.updatedAt)),
                             style = MaterialTheme.typography.bodySmall)
                     },
                     trailingContent = {
                         Row {
-                            TextButton(onClick = { vm.restore(t.id) }) { Text("Restore") }
-                            TextButton(onClick = { confirm = Confirm.Delete(t) }) { Text("Delete", color = MaterialTheme.colorScheme.error) }
+                            TextButton(onClick = { vm.restore(t.id) }) { Text(stringResource(R.string.restore)) }
+                            TextButton(onClick = { confirm = Confirm.Delete(t) }) { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) }
                         }
                     },
                     colors = ListItemDefaults.colors(containerColor = Zebra.color(i)),
@@ -84,15 +85,15 @@ fun ArchiveScreen(onBack: () -> Unit, onOpenChat: (Long) -> Unit, vm: ArchiveVie
     }
     when (val c = confirm) {
         is Confirm.Delete -> AlertDialog(onDismissRequest = { confirm = null },
-            title = { Text("Delete permanently?") },
+            title = { Text(stringResource(R.string.delete_permanently)) },
             text = { Text("\"${c.task.title}\" will be deleted with its messages, short-term memory and chart images. This can't be undone.") },
-            confirmButton = { TextButton(onClick = { vm.delete(c.task.id); confirm = null }) { Text("Delete", color = MaterialTheme.colorScheme.error) } },
-            dismissButton = { TextButton(onClick = { confirm = null }) { Text("Cancel") } })
+            confirmButton = { TextButton(onClick = { vm.delete(c.task.id); confirm = null }) { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) } },
+            dismissButton = { TextButton(onClick = { confirm = null }) { Text(stringResource(R.string.cancel)) } })
         Confirm.Empty -> AlertDialog(onDismissRequest = { confirm = null },
-            title = { Text("Empty archive?") },
-            text = { Text("All ${chats.size} archived chats will be deleted permanently with their messages, short-term memory and chart images. This can't be undone.") },
-            confirmButton = { TextButton(onClick = { vm.empty(); confirm = null }) { Text("Empty archive", color = MaterialTheme.colorScheme.error) } },
-            dismissButton = { TextButton(onClick = { confirm = null }) { Text("Cancel") } })
+            title = { Text(stringResource(R.string.empty_archive_q)) },
+            text = { Text(stringResource(R.string.empty_archive_desc, chats.size)) },
+            confirmButton = { TextButton(onClick = { vm.empty(); confirm = null }) { Text(stringResource(R.string.empty_archive), color = MaterialTheme.colorScheme.error) } },
+            dismissButton = { TextButton(onClick = { confirm = null }) { Text(stringResource(R.string.cancel)) } })
         null -> Unit
     }
 }

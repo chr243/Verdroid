@@ -36,6 +36,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -48,6 +49,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.verdroid.app.R
 import com.verdroid.app.chathead.ChatHeadResult
 import com.verdroid.app.domain.model.*
 import com.verdroid.app.ui.chathead.OverlayPermissionDialog
@@ -97,13 +99,13 @@ fun ChatDetailScreen(onBack: () -> Unit, onChatMemory: (Long) -> Unit = {}, vm: 
             when (vm.openChatHead()) {
                 ChatHeadResult.NEEDS_OVERLAY_PERMISSION -> showOverlayDialog = true
                 ChatHeadResult.BUBBLES_BLOCKED -> {
-                    Toast.makeText(context, "Bubbles are off for Verdroid. Enable them, or pick Overlay in Settings → Chat heads.", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, context.getString(R.string.chat_bubbles_off), Toast.LENGTH_LONG).show()
                     context.startActivity(vm.chatHeads.bubbleSettingsIntent())
                 }
                 ChatHeadResult.NOTIFICATIONS_BLOCKED ->
-                    Toast.makeText(context, "Notifications are blocked, and bubbles need them. Allow notifications or pick Overlay in Settings → Chat heads.", Toast.LENGTH_LONG).show()
+                    Toast.makeText(context, context.getString(R.string.chat_notifications_blocked), Toast.LENGTH_LONG).show()
                 ChatHeadResult.OVERLAY_STARTED ->
-                    Toast.makeText(context, "Chat head is floating. Switch apps to keep chatting.", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, context.getString(R.string.chat_head_floating), Toast.LENGTH_SHORT).show()
                 ChatHeadResult.BUBBLE_SHOWN, null -> Unit
             }
             Unit
@@ -156,13 +158,13 @@ fun ChatDetailScreen(onBack: () -> Unit, onChatMemory: (Long) -> Unit = {}, vm: 
         if (voice.needsIntentFallback()) {
             voice.stopSpeaking()
             runCatching { speechFallback.launch(voice.recognizeIntent()) }.onFailure {
-                Toast.makeText(context, "No speech recognition service on this phone. Install or enable Google voice typing (or another recognizer).", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, context.getString(R.string.chat_no_stt), Toast.LENGTH_LONG).show()
             }
         } else voice.startListening()
     }
     val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         if (granted) startMicNow()
-        else Toast.makeText(context, "Microphone access was denied, so voice input is off. You can allow it in Android Settings → Apps → Verdroid → Permissions.", Toast.LENGTH_LONG).show()
+        else Toast.makeText(context, context.getString(R.string.chat_mic_denied), Toast.LENGTH_LONG).show()
     }
     val startMic: () -> Unit = {
         val needsPermission = !voice.needsIntentFallback() &&
@@ -237,7 +239,7 @@ fun ChatDetailScreen(onBack: () -> Unit, onChatMemory: (Long) -> Unit = {}, vm: 
                         t?.let { TaskAvatar(it, size = 36.dp) } ?: TaskAvatar(TaskType.CHAT, null, size = 36.dp)
                         Spacer(Modifier.width(10.dp))
                         Column {
-                            Text(t?.title ?: "New conversation", maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
+                            Text(t?.title ?: stringResource(R.string.new_conversation), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
                             val pin by vm.modelPin.collectAsStateWithLifecycle()
                             val sub = listOfNotNull(pin?.let { "📌 " + com.verdroid.app.data.network.ModelIds.label(it.model) + if (it.allowFallback) " (+fallback)" else "" }, t?.subtitle)
                                 .joinToString(" · ")
@@ -267,7 +269,8 @@ fun ChatDetailScreen(onBack: () -> Unit, onChatMemory: (Long) -> Unit = {}, vm: 
                         if (showModel) {
                             val pin by vm.modelPin.collectAsStateWithLifecycle()
                             val global by vm.globalModels.collectAsStateWithLifecycle()
-                            ChatModelDialog(pin, global, onPick = { vm.setModelPin(it); showModel = false }, onUpdate = { vm.setModelPin(it) }, onDismiss = { showModel = false })
+                            ChatModelDialog(pin, global, onPick = { vm.setModelPin(it); showModel = false }, onUpdate = { vm.setModelPin(it) }, onDismiss = { showModel = false },
+                                title = stringResource(R.string.model_for_chat), defaultLabel = stringResource(R.string.use_global_default))
                         }
                         if (showPresets) {
                             val off by vm.presetOverrides.collectAsStateWithLifecycle()
@@ -289,19 +292,19 @@ fun ChatDetailScreen(onBack: () -> Unit, onChatMemory: (Long) -> Unit = {}, vm: 
                         }
                         Box {
                             IconButton(onClick = { overflow = true }) {
-                                Text("⋮", fontSize = 22.sp, modifier = Modifier.semantics { contentDescription = "More options" })
+                                Text("⋮", fontSize = 22.sp, modifier = Modifier.semantics { contentDescription = context.getString(R.string.cd_more_options) })
                             }
                             DropdownMenu(expanded = overflow, onDismissRequest = { overflow = false }) {
-                                DropdownMenuItem(text = { Text("Chat memory (short-term)") }, onClick = {
+                                DropdownMenuItem(text = { Text(stringResource(R.string.chat_memory)) }, onClick = {
                                     overflow = false
                                     val id = task?.id
                                     if (id != null) onChatMemory(id)
-                                    else Toast.makeText(context, "Chat memory is empty until the first message.", Toast.LENGTH_SHORT).show()
+                                    else Toast.makeText(context, context.getString(R.string.chat_memory_empty), Toast.LENGTH_SHORT).show()
                                 })
-                                DropdownMenuItem(text = { Text("Model") }, onClick = {
+                                DropdownMenuItem(text = { Text(stringResource(R.string.model)) }, onClick = {
                                     overflow = false; showModel = true
                                 })
-                                DropdownMenuItem(text = { Text("Tool presets") }, onClick = {
+                                DropdownMenuItem(text = { Text(stringResource(R.string.tool_presets)) }, onClick = {
                                     overflow = false; showPresets = true
                                 })
                             }
@@ -320,7 +323,7 @@ fun ChatDetailScreen(onBack: () -> Unit, onChatMemory: (Long) -> Unit = {}, vm: 
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (visible.isEmpty()) {
                     item {
-                        Text("Describe a task or ask anything.\nVerdroid can read, write and list files in its sandboxed workspace.",
+                        Text(stringResource(R.string.chat_empty_hint),
                             textAlign = TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.fillMaxWidth().padding(top = 48.dp))
                     }
@@ -329,7 +332,7 @@ fun ChatDetailScreen(onBack: () -> Unit, onChatMemory: (Long) -> Unit = {}, vm: 
                     // Reaching the top loads the previous page; keys keep the scroll position anchored.
                     LaunchedEffect(window, follow.value) { if (!follow.value) vm.loadEarlier() } // only after the user scrolled up
                     Box(Modifier.fillMaxWidth().padding(8.dp), contentAlignment = Alignment.Center) {
-                        TextButton(onClick = vm::loadEarlier) { Text("Load earlier messages") }
+                        TextButton(onClick = vm::loadEarlier) { Text(stringResource(R.string.load_earlier_messages)) }
                     }
                 }
                 items(blocks, key = { it.key }) { block ->
@@ -345,7 +348,7 @@ fun ChatDetailScreen(onBack: () -> Unit, onChatMemory: (Long) -> Unit = {}, vm: 
                     }
                 }
                 if (generating) item("typing") {
-                    Text("● ${task?.subtitle ?: "Thinking..."}", color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    Text(stringResource(R.string.status_with_subtitle, task?.subtitle ?: stringResource(R.string.thinking)), color = MaterialTheme.colorScheme.onSurfaceVariant,
                         style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(start = 8.dp, top = 4.dp))
                 }
             }
@@ -355,16 +358,16 @@ fun ChatDetailScreen(onBack: () -> Unit, onChatMemory: (Long) -> Unit = {}, vm: 
                 // v1.0.12: archived chats are read-only; restore to continue.
                 Surface(color = MaterialTheme.colorScheme.surfaceContainerHigh, modifier = Modifier.fillMaxWidth()) {
                     Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Text("Archived chat (read-only)", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium,
+                        Text(stringResource(R.string.archived_read_only), modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        FilledTonalButton(onClick = vm::restore) { Text("Restore") }
+                        FilledTonalButton(onClick = vm::restore) { Text(stringResource(R.string.restore)) }
                     }
                 }
             } else if (generating) {
                 Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                     OutlinedButton(onClick = vm::stop, modifier = Modifier.padding(4.dp)) {
                         Box(Modifier.size(12.dp).background(MaterialTheme.colorScheme.error, RoundedCornerShape(2.dp)))
-                        Spacer(Modifier.width(8.dp)); Text("Stop Generation")
+                        Spacer(Modifier.width(8.dp)); Text(stringResource(R.string.stop_generation))
                     }
                 }
             } else if (status in setOf(TaskStatus.PAUSED, TaskStatus.RATE_LIMITED, TaskStatus.QUEUED, TaskStatus.FAILED, TaskStatus.CANCELLED)) {
@@ -372,16 +375,16 @@ fun ChatDetailScreen(onBack: () -> Unit, onChatMemory: (Long) -> Unit = {}, vm: 
                 val resumeAt = task?.resumeAt
                 Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                     if (resumeAt != null && resumeAt > now && status != TaskStatus.CANCELLED && status != TaskStatus.FAILED) {
-                        Text("Auto-resume in ${formatDuration(resumeAt - now)}", style = MaterialTheme.typography.labelMedium,
+                        Text(stringResource(R.string.auto_resume_in, formatDuration(resumeAt - now)), style = MaterialTheme.typography.labelMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(4.dp)) {
                         FilledTonalButton(onClick = vm::forceRetry) {
                             Icon(Icons.Filled.PlayArrow, null); Spacer(Modifier.width(6.dp))
-                            Text(if (resumeAt != null && resumeAt > now && status != TaskStatus.FAILED && status != TaskStatus.CANCELLED) "Force retry now" else "Continue")
+                            Text(if (resumeAt != null && resumeAt > now && status != TaskStatus.FAILED && status != TaskStatus.CANCELLED) stringResource(R.string.force_retry_now) else stringResource(R.string.continue_))
                         }
                         if (status == TaskStatus.PAUSED || status == TaskStatus.RATE_LIMITED || status == TaskStatus.QUEUED) {
-                            OutlinedButton(onClick = vm::cancelTask) { Text("Cancel") }
+                            OutlinedButton(onClick = vm::cancelTask) { Text(stringResource(R.string.cancel)) }
                         }
                     }
                 }
@@ -409,7 +412,7 @@ fun ChatDetailScreen(onBack: () -> Unit, onChatMemory: (Long) -> Unit = {}, vm: 
                             } else null,
                             trailingIcon = {
                                 IconButton(onClick = vm::clearPendingAttach, modifier = Modifier.size(18.dp)) {
-                                    Icon(Icons.Filled.Close, "Remove attachment")
+                                    Icon(Icons.Filled.Close, context.getString(R.string.cd_remove_attachment))
                                 }
                             },
                         )
@@ -419,8 +422,8 @@ fun ChatDetailScreen(onBack: () -> Unit, onChatMemory: (Long) -> Unit = {}, vm: 
                         Row {
                             if (attachAccess != null) TextButton(onClick = {
                                 runCatching { accessLauncher.launch(com.verdroid.app.data.storage.SharedFolder.accessIntent(attachCtx)) }
-                            }) { Text("Grant access") }
-                            TextButton(onClick = vm::clearAttachError) { Text("Dismiss") }
+                            }) { Text(stringResource(R.string.grant_access)) }
+                            TextButton(onClick = vm::clearAttachError) { Text(stringResource(R.string.dismiss)) }
                         }
                     }
                     if (voice.mic != com.verdroid.app.ui.voice.VoiceController.Mic.IDLE || voice.speaking) {
@@ -432,23 +435,23 @@ fun ChatDetailScreen(onBack: () -> Unit, onChatMemory: (Long) -> Unit = {}, vm: 
                                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary,
                                 maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
                             )
-                            TextButton(onClick = { if (listening) voice.cancelListening() else voice.stopSpeaking() }) { Text(if (listening) "Cancel" else "Stop") }
+                            TextButton(onClick = { if (listening) voice.cancelListening() else voice.stopSpeaking() }) { Text(if (listening) stringResource(R.string.cancel) else stringResource(R.string.stop)) }
                         }
                     }
                     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                         IconButton(onClick = { attachPicker.launch(arrayOf("*/*")) }, enabled = !generating) {
-                            Icon(Icons.Filled.Add, "Attach file")
+                            Icon(Icons.Filled.Add, stringResource(R.string.attach_file))
                         }
                         OutlinedTextField(
                             value = input, onValueChange = { input = it }, modifier = Modifier.weight(1f),
-                            placeholder = { Text(if (task == null) "Describe a new task…" else "Message Verdroid…") },
+                            placeholder = { Text(if (task == null) stringResource(R.string.describe_new_task) else stringResource(R.string.message_verdroid)) },
                             shape = RoundedCornerShape(24.dp), maxLines = 5,
                         )
                         if (micOn) {
                             val listening = voice.mic != com.verdroid.app.ui.voice.VoiceController.Mic.IDLE
                             IconButton(onClick = { if (listening) voice.stopListening() else startMic() }) {
                                 Icon(androidx.compose.ui.res.painterResource(com.verdroid.app.R.drawable.ic_mic),
-                                    if (listening) "Stop listening" else "Voice input",
+                                    if (listening) stringResource(R.string.stop_listening) else stringResource(R.string.voice_input),
                                     tint = if (listening) MaterialTheme.colorScheme.error else LocalContentColor.current)
                             }
                         } else Spacer(Modifier.width(6.dp))
@@ -479,9 +482,9 @@ internal fun ToolPresetsDialog(
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Done") } },
-        dismissButton = { TextButton(onClick = onReset, enabled = off.isNotEmpty()) { Text(toolPresetsResetLabel(profilesOn)) } },
-        title = { Text("Tool presets") },
+        confirmButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.done)) } },
+        dismissButton = { TextButton(onClick = onReset, enabled = off.isNotEmpty()) { Text(toolPresetsResetLabelLocalized(profilesOn)) } },
+        title = { Text(stringResource(R.string.tool_presets)) },
         text = { ToolPresetsContent(off, global, onSet, onSetAll, if (profilesOn) profileLabel else "", profilesOn) },
     )
 }
@@ -497,16 +500,16 @@ internal fun ToolPresetsContent(
     profilesOn: Boolean = true,
 ) {
             Column(Modifier.verticalScroll(rememberScrollState())) {
-                if (profilesOn && profileLabel.isNotBlank()) Text("From profile: $profileLabel", style = MaterialTheme.typography.labelLarge,
+                if (profilesOn && profileLabel.isNotBlank()) Text(stringResource(R.string.from_profile, profileLabel), style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.primary)
-                Text(toolPresetsIntro(profilesOn), style = MaterialTheme.typography.bodySmall,
+                Text(toolPresetsIntroLocalized(profilesOn), style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Spacer(Modifier.height(8.dp))
-                PresetRow("All", "Every tool category", com.verdroid.app.data.tools.ToolPreset.allOn(off, global)) { onSetAll(it) }
+                PresetRow(stringResource(R.string.preset_all), stringResource(R.string.preset_all_desc), com.verdroid.app.data.tools.ToolPreset.allOn(off, global)) { onSetAll(it) }
                 HorizontalDivider(Modifier.padding(vertical = 4.dp))
                 com.verdroid.app.data.tools.ToolPreset.entries.forEach { p ->
                     // Effective state: the chat override if set, else Settings → Tools.
-                    PresetRow(p.label, p.description, com.verdroid.app.data.tools.ToolPreset.shownOn(p, off, global)) { onSet(p, it) }
+                    PresetRow(stringResource(com.verdroid.app.data.tools.ToolGroupsText.titleRes(p.groupId)), stringResource(com.verdroid.app.data.tools.ToolGroupsText.descRes(p.groupId)), com.verdroid.app.data.tools.ToolPreset.shownOn(p, off, global)) { onSet(p, it) }
                 }
             }
 }
@@ -643,7 +646,7 @@ internal fun ToolCallCard(call: ToolCallRecord) {
             }
             if (call.name == com.verdroid.app.agent.subagents.SubAgentPolicy.TOOL_NAME) {
                 val live by com.verdroid.app.agent.subagents.SubAgentLive.progress.collectAsState()
-                val line = if (call.status == ToolCallStatus.PENDING) live[call.taskId]?.label ?: "Sub-agents starting…"
+                val line = if (call.status == ToolCallStatus.PENDING) live[call.taskId]?.label ?: stringResource(R.string.subagents_starting)
                     else remember(call.resultJson) { com.verdroid.app.agent.subagents.SpawnSubagentsTool.summary(call.resultJson) }
                 line?.let { Text("🤖 $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(top = 4.dp)) }
@@ -779,7 +782,8 @@ internal fun AttachmentThumb(relativePath: String, size: androidx.compose.ui.uni
     Box(Modifier.size(size).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.surfaceVariant),
         contentAlignment = Alignment.Center) {
         val b = bmp
-        if (b != null) androidx.compose.foundation.Image(b, contentDescription = "Attached image",
+        val cdAttachedImage = stringResource(R.string.cd_attached_image)
+        if (b != null) androidx.compose.foundation.Image(b, contentDescription = cdAttachedImage,
             contentScale = androidx.compose.ui.layout.ContentScale.Crop, modifier = Modifier.fillMaxSize())
         else Text("🖼️", fontSize = (size.value * 0.45f).sp)
     }
@@ -796,13 +800,15 @@ internal fun ChatModelDialog(
     onPick: (com.verdroid.app.data.settings.ModelPin?) -> Unit,
     onUpdate: (com.verdroid.app.data.settings.ModelPin?) -> Unit,
     onDismiss: () -> Unit,
-    title: String = "Model for this chat",
-    defaultLabel: String = "Use global (default)",
+    title: String? = null,
+    defaultLabel: String? = null,
 ) {
+    val dlgTitle = title ?: stringResource(R.string.model_for_chat)
+    val dlgDefault = defaultLabel ?: stringResource(R.string.use_global_default)
     var fallback by remember { mutableStateOf(pin?.allowFallback ?: false) }
     var custom by remember { mutableStateOf("") }
     AlertDialog(onDismissRequest = onDismiss,
-        title = { Text(title) },
+        title = { Text(dlgTitle) },
         text = {
             Column(Modifier.heightIn(max = 480.dp).verticalScroll(androidx.compose.foundation.rememberScrollState())) {
                 @Composable fun row(label: String, selected: Boolean, onClick: () -> Unit) {
@@ -811,21 +817,21 @@ internal fun ChatModelDialog(
                         Text(label, style = MaterialTheme.typography.bodyMedium)
                     }
                 }
-                row(defaultLabel, pin == null) { onPick(null) }
-                Text("Pin one model (only it is used; a failure shows an error instead of switching):",
+                row(dlgDefault, pin == null) { onPick(null) }
+                Text(stringResource(R.string.model_pin_hint),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 6.dp))
                 (global + listOfNotNull(pin?.model)).distinct().forEach { m ->
                     row(com.verdroid.app.data.network.ModelIds.label(m), pin?.model == m) { onPick(com.verdroid.app.data.settings.ModelPin(m, fallback)) }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
-                    OutlinedTextField(custom, { custom = it }, singleLine = true, label = { Text("Other model id (vendor/model, kilo:…, prov:…)") },
+                    OutlinedTextField(custom, { custom = it }, singleLine = true, label = { Text(stringResource(R.string.model_pin_other)) },
                         modifier = Modifier.weight(1f))
                     TextButton(onClick = { onPick(com.verdroid.app.data.settings.ModelPin(custom.trim(), fallback)) }, enabled = custom.isNotBlank()) { Text("Pin") }
                 }
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
                     Column(Modifier.weight(1f)) {
-                        Text("Allow fallback", style = MaterialTheme.typography.bodyLarge)
-                        Text("If the pinned model fails, continue with the global list.", style = MaterialTheme.typography.bodySmall,
+                        Text(stringResource(R.string.allow_fallback), style = MaterialTheme.typography.bodyLarge)
+                        Text(stringResource(R.string.allow_fallback_desc), style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Switch(checked = fallback, onCheckedChange = { fallback = it; pin?.let { p -> onUpdate(p.copy(allowFallback = it)) } })
@@ -840,5 +846,16 @@ internal fun toolPresetsIntro(profilesOn: Boolean): String =
     (if (profilesOn) "Starts from this chat's profile and Settings → Tools" else "Starts from Settings → Tools") +
         "; changes here apply only to this chat. Memory & skills, charts & other (incl. self-test) and MCP follow Settings."
 
+/** Localized intro for the UI ([toolPresetsIntro] stays English for the unit test that pins the wording). */
+@Composable
+internal fun toolPresetsIntroLocalized(profilesOn: Boolean): String =
+    (if (profilesOn) stringResource(R.string.presets_intro_profile) else stringResource(R.string.presets_intro_settings)) +
+        stringResource(R.string.presets_intro_tail)
+
 /** Reset button of the Tool presets dialog: drops this chat's overrides (back to the profile, or Settings → Tools when Profiles are off). */
 internal fun toolPresetsResetLabel(profilesOn: Boolean): String = if (profilesOn) "Reset to profile" else "Reset to Settings"
+
+/** Localized reset label for the UI ([toolPresetsResetLabel] stays English for the unit test). */
+@Composable
+internal fun toolPresetsResetLabelLocalized(profilesOn: Boolean): String =
+    if (profilesOn) stringResource(R.string.reset_to_profile) else stringResource(R.string.reset_to_settings)

@@ -7,6 +7,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import com.verdroid.app.R
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -28,11 +30,10 @@ fun McpServersSection(mcp: McpManager, disabled: Set<String>, setToolEnabled: (S
 
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Text("Servers", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f).padding(top = 20.dp))
-            TextButton(onClick = { adding = true }, modifier = Modifier.padding(top = 20.dp)) { Text("Add server") }
+            Text(stringResource(R.string.servers), style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f).padding(top = 20.dp))
+            TextButton(onClick = { adding = true }, modifier = Modifier.padding(top = 20.dp)) { Text(stringResource(R.string.add_server)) }
         }
-        Text("Remote MCP servers (Streamable HTTP or legacy SSE URL). Their tools reach the model as mcp__<server>__<tool>. " +
-            "The examples are public and need no key; they are off until you turn them on.",
+        Text(stringResource(R.string.mcp_intro),
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         servers.forEachIndexed { idx, s ->
             val st = status[s.id]
@@ -49,23 +50,23 @@ fun McpServersSection(mcp: McpManager, disabled: Set<String>, setToolEnabled: (S
                     val tools = st?.tools.orEmpty()
                     val line = when (st?.state ?: McpState.OFF) {
                         McpState.OFF -> "Off" + if (tools.isNotEmpty()) " (${tools.size} tools last time)" else ""
-                        McpState.CONNECTING -> "Connecting…"
-                        McpState.CONNECTED -> "Connected: ${tools.size} tools" + (st?.transport?.let { " ($it)" } ?: "")
-                        McpState.ERROR -> "Error"
+                        McpState.CONNECTING -> stringResource(R.string.connecting_)
+                        McpState.CONNECTED -> stringResource(R.string.connected_n_tools, tools.size) + (st?.transport?.let { " ($it)" } ?: "")
+                        McpState.ERROR -> stringResource(R.string.error_word)
                     }
                     Text(line, style = MaterialTheme.typography.labelMedium,
                         color = when (st?.state) { McpState.CONNECTED -> MaterialTheme.colorScheme.primary; McpState.ERROR -> MaterialTheme.colorScheme.error
                             else -> MaterialTheme.colorScheme.onSurfaceVariant })
                     st?.error?.takeIf { st.state == McpState.ERROR }?.let { err ->
                         Text(err, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace, maxLines = 6)
-                        com.verdroid.app.ui.components.CopyButton(err, label = "Copy error")
+                        com.verdroid.app.ui.components.CopyButton(err, label = stringResource(R.string.copy_error))
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         if (tools.isNotEmpty()) TextButton(onClick = { expanded = if (s.id in expanded) expanded - s.id else expanded + s.id }) {
-                            Text(if (s.id in expanded) "Hide tools" else "Tools (${tools.size})")
+                            Text(if (s.id in expanded) stringResource(R.string.hide_tools) else stringResource(R.string.tools_n, tools.size))
                         }
-                        if (s.enabled) TextButton(onClick = { mcp.refresh(s.id) }) { Text("Reconnect") }
-                        TextButton(onClick = { editing = s }) { Text("Edit") }
+                        if (s.enabled) TextButton(onClick = { mcp.refresh(s.id) }) { Text(stringResource(R.string.reconnect)) }
+                        TextButton(onClick = { editing = s }) { Text(stringResource(R.string.edit)) }
                     }
                     if (s.id in expanded) tools.forEach { t ->
                         val exposed = McpNaming.toolName(s.name, t.name)
@@ -103,30 +104,30 @@ private fun McpServerDialog(initial: McpServerConfig?, hasSecret: Boolean, onDis
     var clearSecret by remember { mutableStateOf(false) }
     val urlOk = url.trim().let { it.startsWith("https://") || it.startsWith("http://") } && url.trim().length > 10
     AlertDialog(onDismissRequest = onDismiss,
-        title = { Text(if (initial == null) "Add MCP server" else "Edit ${initial.name}") },
+        title = { Text(if (initial == null) stringResource(R.string.add_mcp_server) else stringResource(R.string.edit_arg, initial.name)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(name, { name = it }, label = { Text("Name") }, singleLine = true)
-                OutlinedTextField(url, { url = it }, label = { Text("URL (…/mcp or legacy …/sse)") }, singleLine = true,
+                OutlinedTextField(name, { name = it }, label = { Text(stringResource(R.string.name)) }, singleLine = true)
+                OutlinedTextField(url, { url = it }, label = { Text(stringResource(R.string.mcp_url_label)) }, singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri), isError = !urlOk)
-                OutlinedTextField(header, { header = it }, label = { Text("Auth header (optional)") }, singleLine = true)
+                OutlinedTextField(header, { header = it }, label = { Text(stringResource(R.string.auth_header_optional)) }, singleLine = true)
                 OutlinedTextField(secret, { secret = it }, singleLine = true, visualTransformation = PasswordVisualTransformation(),
-                    label = { Text(if (hasSecret) "Token: saved (type to replace)" else "Token or header value (optional)") },
-                    supportingText = { Text("Stored encrypted. A bare token is sent as \"Bearer <token>\".") })
+                    label = { Text(if (hasSecret) stringResource(R.string.token_saved) else stringResource(R.string.token_optional)) },
+                    supportingText = { Text(stringResource(R.string.token_storage_note)) })
                 if (hasSecret) Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { clearSecret = !clearSecret }) {
-                    Checkbox(clearSecret, { clearSecret = it }); Text("Remove the saved token")
+                    Checkbox(clearSecret, { clearSecret = it }); Text(stringResource(R.string.remove_saved_token))
                 }
             }
         },
         confirmButton = {
             TextButton(enabled = name.isNotBlank() && urlOk, onClick = {
                 onSave(name, url, header, when { clearSecret -> ""; secret.isNotBlank() -> secret; else -> null })
-            }) { Text("Save") }
+            }) { Text(stringResource(R.string.save)) }
         },
         dismissButton = {
             Row {
-                onDelete?.let { TextButton(onClick = it) { Text("Delete", color = MaterialTheme.colorScheme.error) } }
-                TextButton(onClick = onDismiss) { Text("Cancel") }
+                onDelete?.let { TextButton(onClick = it) { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) } }
+                TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
             }
         })
 }

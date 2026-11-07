@@ -49,6 +49,11 @@ class AppPrefs @Inject constructor(@ApplicationContext context: Context) {
     val shareToLastChat: StateFlow<Boolean> = _shareLast.asStateFlow()
     fun setShareToLastChat(v: Boolean) { prefs.edit().putBoolean(KEY_SHARE_LAST, v).apply(); _shareLast.value = v }
 
+    private val _language = MutableStateFlow(prefs.getString(KEY_LANGUAGE, "system") ?: "system")
+    /** In-app language: "system" (default), "en", "zh". Applied via LocaleHelper.attachBaseContext. */
+    val language: StateFlow<String> = _language.asStateFlow()
+    fun setLanguage(v: String) { prefs.edit().putString(KEY_LANGUAGE, v).apply(); _language.value = v }
+
     private companion object {
         const val KEY_SHARE_LAST = "share_to_last_chat"
         /** Removed "Share opens in" setting; any stored value is dropped on start. */
@@ -57,5 +62,6 @@ class AppPrefs @Inject constructor(@ApplicationContext context: Context) {
         const val KEY_KILO_NOTICE = "kilo_notice_seen"
         const val KEY_NOTIFY_FINISH = "notify_on_finish"
         const val KEY_AUTO_HEAD = "auto_chat_head_on_home"
+        const val KEY_LANGUAGE = "app_language"
     }
 }

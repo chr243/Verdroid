@@ -48,6 +48,7 @@
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.Verdroid"
+        android:localeConfig="@xml/locales_config"
         tools:targetApi="35">
         <!-- LiteRT-LM GPU backend (OpenCL); optional, CPU is used when the vendor libraries aren't there. -->
         <uses-native-library android:name="libOpenCL.so" android:required="false" />

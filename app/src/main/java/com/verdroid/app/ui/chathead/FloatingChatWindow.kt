@@ -20,6 +20,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import com.verdroid.app.R
 
 private val Emphasized = CubicBezierEasing(0.2f, 0f, 0f, 1f)
 private val EmphasizedAccel = CubicBezierEasing(0.3f, 0f, 0.8f, 0.15f)
@@ -67,12 +69,14 @@ fun FloatingChatWindow(
             transformOrigin = origin
         },
     ) {
+        val moveCd = stringResource(R.string.cd_drag_move)
+        val resizeCd = stringResource(R.string.cd_drag_resize)
         Box(Modifier.fillMaxSize()) {
             Column(Modifier.fillMaxSize()) {
                 // Drag grip (header strip): moves the floating window.
                 Box(
                     Modifier.fillMaxWidth().height(18.dp)
-                        .semantics { contentDescription = "Drag to move window" }
+                        .semantics { contentDescription = moveCd }
                         .pointerInput(Unit) { detectDragGestures { change, d -> change.consume(); onDrag(d.x, d.y) } },
                     contentAlignment = Alignment.Center,
                 ) {
@@ -84,7 +88,7 @@ fun FloatingChatWindow(
             // Resize grip (bottom-right corner).
             Box(
                 Modifier.align(Alignment.BottomEnd).size(28.dp)
-                    .semantics { contentDescription = "Drag to resize window" }
+                    .semantics { contentDescription = resizeCd }
                     .pointerInput(Unit) { detectDragGestures { change, d -> change.consume(); onResize(d.x, d.y) } },
                 contentAlignment = Alignment.BottomEnd,
             ) {

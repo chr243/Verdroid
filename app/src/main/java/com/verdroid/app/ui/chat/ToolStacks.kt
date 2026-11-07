@@ -12,6 +12,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import com.verdroid.app.R
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -178,7 +180,7 @@ internal fun ThinkingCard(reasoning: String) {
         Column(Modifier.clickable { expanded = !expanded }.padding(10.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("💭", fontSize = 14.sp); Spacer(Modifier.width(6.dp))
-                Text("Thinking", fontWeight = FontWeight.SemiBold)
+                Text(stringResource(R.string.thinking), fontWeight = FontWeight.SemiBold)
                 if (!expanded && preview.isNotEmpty()) {
                     Spacer(Modifier.width(8.dp))
                     Text(preview, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,

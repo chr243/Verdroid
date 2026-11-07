@@ -5,6 +5,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import com.verdroid.app.R
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -36,21 +38,21 @@ fun LoggedInSitesSection(toolsOff: Boolean = false, vm: LoggedInSitesViewModel =
     var ask by remember { mutableStateOf(false) }
     LifecycleEventEffect(androidx.lifecycle.Lifecycle.Event.ON_RESUME) { vm.refresh() }
     Column(Modifier.padding(horizontal = 16.dp)) {
-        Text("Log in once in the in-app browser; cookie_open (including Reddit) and the X tools use that login. Use your username " +
+        Text(stringResource(R.string.web_login_intro) +
             "and password: Google sign-in doesn't work in in-app browsers. Cookies stay encrypted on this phone; importing a cookie " +
             "file with cookie_import is the fallback.",
             style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        if (toolsOff) Text("Web login tools (cookie_*) are off: turn them on under Tools → Web.",
+        if (toolsOff) Text(stringResource(R.string.cookie_tools_off_hint),
             style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp))
-        OutlinedButton(onClick = { ask = true }, modifier = Modifier.padding(vertical = 8.dp)) { Text("Log in to a site") }
-        if (sites.isEmpty()) Text("No saved sites", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        OutlinedButton(onClick = { ask = true }, modifier = Modifier.padding(vertical = 8.dp)) { Text(stringResource(R.string.log_in_to_site)) }
+        if (sites.isEmpty()) Text(stringResource(R.string.no_saved_sites), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         sites.forEach { (site, n) ->
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(site, style = MaterialTheme.typography.bodyLarge)
                     Text("$n cookies", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                TextButton(onClick = { vm.clear(site) }) { Text("Clear") }
+                TextButton(onClick = { vm.clear(site) }) { Text(stringResource(R.string.clear)) }
             }
         }
     }
@@ -58,10 +60,10 @@ fun LoggedInSitesSection(toolsOff: Boolean = false, vm: LoggedInSitesViewModel =
         var url by remember { mutableStateOf("") }
         val target = CookieLoginBridge.loginUrlFor(url)
         AlertDialog(onDismissRequest = { ask = false },
-            title = { Text("Log in to a site") },
+            title = { Text(stringResource(R.string.log_in_to_site)) },
             text = {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedTextField(url, { url = it }, singleLine = true, label = { Text("Site or login page URL") },
+                    OutlinedTextField(url, { url = it }, singleLine = true, label = { Text(stringResource(R.string.site_url_label)) },
                         placeholder = { Text("reddit.com") })
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         CookieLoginBridge.SUGGESTIONS.forEach { sug -> SuggestionChip(onClick = { url = sug }, label = { Text(sug) }) }
@@ -72,8 +74,8 @@ fun LoggedInSitesSection(toolsOff: Boolean = false, vm: LoggedInSitesViewModel =
                 TextButton(enabled = target != null, onClick = {
                     ask = false
                     target?.let { u -> runCatching { context.startActivity(CookieLoginBridge.intent(context, u)) } }
-                }) { Text("Open") }
+                }) { Text(stringResource(R.string.open)) }
             },
-            dismissButton = { TextButton(onClick = { ask = false }) { Text("Cancel") } })
+            dismissButton = { TextButton(onClick = { ask = false }) { Text(stringResource(R.string.cancel)) } })
     }
 }

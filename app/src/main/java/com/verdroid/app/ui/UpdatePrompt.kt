@@ -6,6 +6,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.ui.res.stringResource
+import com.verdroid.app.R
 import com.verdroid.app.data.update.AppUpdater
 import com.verdroid.app.data.update.UpdateLogic
 import com.verdroid.app.data.update.UpdateState
@@ -38,16 +40,16 @@ fun StartupUpdatePrompt(updater: AppUpdater) {
     fun dismiss() { updater.startupPromptDismissed = true; dismissed = true }
     AlertDialog(
         onDismissRequest = { dismiss() },
-        title = { Text("Update available: v${r.version}") },
+        title = { Text(stringResource(R.string.update_available_v, r.version)) },
         text = {
             val notes = UpdateLogic.notesSnippet(r.notes)
-            Text("Installed: v${updater.currentVersion}" + if (notes.isNotBlank()) "\n\n$notes" else "")
+            Text(stringResource(R.string.installed_v, updater.currentVersion) + if (notes.isNotBlank()) "\n\n$notes" else "")
         },
         confirmButton = {
             TextButton(enabled = r.asset != null, onClick = {
                 dismiss(); installWhenReady = true; updater.startDownload(r)
-            }) { Text("Update") }
+            }) { Text(stringResource(R.string.update)) }
         },
-        dismissButton = { TextButton(onClick = { dismiss() }) { Text("Later") } },
+        dismissButton = { TextButton(onClick = { dismiss() }) { Text(stringResource(R.string.later)) } },
     )
 }

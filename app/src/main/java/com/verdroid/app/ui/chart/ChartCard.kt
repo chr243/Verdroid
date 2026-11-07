@@ -12,6 +12,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import com.verdroid.app.R
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
@@ -56,8 +58,10 @@ fun ChartView(spec: ChartSpec, height: Dp, modifier: Modifier = Modifier) {
     }
     val colors = themeChartColors()
     val density = LocalDensity.current.density
+    val ctx = androidx.compose.ui.platform.LocalContext.current
+    val chartCd = ctx.getString(R.string.chart_cd, spec.title.ifBlank { spec.type })
     val painter = remember(spec, colors, density) { ChartPainter(spec, colors, density) }
-    Canvas(modifier.fillMaxWidth().height(height).semantics { contentDescription = "Chart: ${spec.title.ifBlank { spec.type }}" }) {
+    Canvas(modifier.fillMaxWidth().height(height).semantics { contentDescription = chartCd }) {
         drawIntoCanvas { painter.draw(it.nativeCanvas, size.width, size.height, drawBackground = false) }
     }
 }
@@ -82,17 +86,19 @@ private fun ChartFullscreen(spec: ChartSpec, imagePath: String?, onClose: () -> 
                 Box(Modifier.weight(1f).fillMaxWidth().verticalScroll(rememberScrollState()), contentAlignment = Alignment.Center) {
                     ChartView(spec, 420.dp)
                 }
+                val chartWord = stringResource(R.string.chart_word)
+                val shareTitle = stringResource(R.string.share_chart)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
                     val file = imagePath?.let(::File)?.takeIf { it.exists() }
                     if (file != null) TextButton(onClick = {
                         runCatching {
                             val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.updates", file)
                             val send = Intent(Intent.ACTION_SEND).setType("image/png").putExtra(Intent.EXTRA_STREAM, uri)
-                                .putExtra(Intent.EXTRA_SUBJECT, spec.title.ifBlank { "Chart" }).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                            ctx.startActivity(Intent.createChooser(send, "Share chart").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                                .putExtra(Intent.EXTRA_SUBJECT, spec.title.ifBlank { chartWord }).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                            ctx.startActivity(Intent.createChooser(send, shareTitle).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
                         }
-                    }) { Text("Share") }
-                    TextButton(onClick = onClose) { Text("Close") }
+                    }) { Text(stringResource(R.string.share)) }
+                    TextButton(onClick = onClose) { Text(stringResource(R.string.close)) }
                 }
             }
         }

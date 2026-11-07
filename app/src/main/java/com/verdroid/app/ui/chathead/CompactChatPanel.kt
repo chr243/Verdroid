@@ -36,6 +36,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import com.verdroid.app.R
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -119,7 +121,7 @@ fun CompactChatPanel(
                             color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
-                TextButton(onClick = onOpenFull) { Text("Open ↗") }
+                TextButton(onClick = onOpenFull) { Text(stringResource(R.string.open_arrow)) }
                 if (onCollapse != null) TextButton(onClick = onCollapse) { Text("—", fontSize = 18.sp) }
             }
             LazyColumn(
@@ -130,7 +132,7 @@ fun CompactChatPanel(
                 if (canLoadEarlier) item("load-earlier") {
                     LaunchedEffect(messages.size, follow.value) { if (!follow.value) onLoadEarlier() } // only after the user scrolled up
                     Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                        TextButton(onClick = onLoadEarlier) { Text("Load earlier messages") }
+                        TextButton(onClick = onLoadEarlier) { Text(stringResource(R.string.load_earlier_messages)) }
                     }
                 }
                 items(blocks, key = { it.key }) { block ->
@@ -152,7 +154,7 @@ fun CompactChatPanel(
                     OutlinedButton(onClick = onStop, modifier = Modifier.padding(2.dp)) {
                         Box(Modifier.size(10.dp).background(MaterialTheme.colorScheme.error, RoundedCornerShape(2.dp)))
                         Spacer(Modifier.width(6.dp))
-                        Text("Stop Generation")
+                        Text(stringResource(R.string.stop_generation))
                     }
                 }
             } else if (status == TaskStatus.PAUSED || status == TaskStatus.RATE_LIMITED || status == TaskStatus.FAILED || status == TaskStatus.CANCELLED) {
@@ -160,21 +162,21 @@ fun CompactChatPanel(
                     FilledTonalButton(onClick = onResume, modifier = Modifier.padding(2.dp)) {
                         Icon(Icons.Filled.PlayArrow, contentDescription = null)
                         Spacer(Modifier.width(6.dp))
-                        Text("Resume")
+                        Text(stringResource(R.string.resume))
                     }
                 }
             }
             Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(
                     value = input, onValueChange = { input = it }, modifier = Modifier.weight(1f),
-                    placeholder = { Text("Message Verdroid…") }, shape = RoundedCornerShape(24.dp), maxLines = 4,
+                    placeholder = { Text(stringResource(R.string.message_verdroid)) }, shape = RoundedCornerShape(24.dp), maxLines = 4,
                 )
                 Spacer(Modifier.width(6.dp))
                 FilledIconButton(
                     onClick = { onSend(input); input = "" },
                     enabled = input.isNotBlank() && !generating && task != null,
                     modifier = Modifier.size(44.dp),
-                ) { Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Send") }
+                ) { Icon(Icons.AutoMirrored.Filled.Send, contentDescription = stringResource(R.string.send)) }
             }
         }
     }

@@ -8,6 +8,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import com.verdroid.app.R
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
@@ -49,20 +51,19 @@ fun AppUpdateRow(updater: AppUpdater, index: Int) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("App update", style = MaterialTheme.typography.bodyLarge)
+                        Text(stringResource(R.string.app_update), style = MaterialTheme.typography.bodyLarge)
                         if (available) { Spacer(Modifier.width(6.dp)); UpdateDot() }
                     }
-                    Text("Installed: v${updater.currentVersion}", style = MaterialTheme.typography.bodyMedium,
+                    Text(stringResource(R.string.installed_v, updater.currentVersion), style = MaterialTheme.typography.bodyMedium,
                         color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 OutlinedButton(enabled = enabled && state !is UpdateState.Checking && state !is UpdateState.Downloading,
-                    onClick = { updater.startCheck() }) { Text("Check for updates") }
+                    onClick = { updater.startCheck() }) { Text(stringResource(R.string.check_for_updates)) }
             }
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 8.dp)) {
                 Column(Modifier.weight(1f)) {
-                    Text("Check for updates on GitHub", style = MaterialTheme.typography.bodyMedium)
-                    Text("Off by default. When on, Verdroid asks api.github.com for the latest release on start and downloads " +
-                        "APKs from github.com/chr243/Verdroid/releases (installed only after you confirm).",
+                    Text(stringResource(R.string.check_updates_github), style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.check_updates_github_desc),
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Switch(checked = enabled, onCheckedChange = { updater.setEnabled(it) })
@@ -70,27 +71,27 @@ fun AppUpdateRow(updater: AppUpdater, index: Int) {
             if (enabled) when (val st = state) {
                 UpdateState.Idle -> {}
                 UpdateState.Checking -> { Spacer(Modifier.height(8.dp)); LinearProgressIndicator(Modifier.fillMaxWidth()) }
-                is UpdateState.UpToDate -> Status("Up to date (latest: v${st.latest})")
+                is UpdateState.UpToDate -> Status(stringResource(R.string.up_to_date, st.latest))
                 is UpdateState.Available -> {
-                    Status("v${st.release.version} available")
+                    Status(stringResource(R.string.version_available, st.release.version))
                     Notes(st.release.notes)
-                    if (st.release.asset == null) Status("This release has no Verdroid APK to download.")
+                    if (st.release.asset == null) Status(stringResource(R.string.no_apk_in_release))
                     else Button(onClick = { autoInstall = true; updater.startDownload(st.release) },
-                        modifier = Modifier.padding(top = 8.dp)) { Text("Update") }
+                        modifier = Modifier.padding(top = 8.dp)) { Text(stringResource(R.string.update)) }
                 }
                 is UpdateState.Downloading -> {
-                    Status("Downloading v${st.release.version}… ${st.done / 1024} / ${st.total / 1024} KB")
+                    Status(stringResource(R.string.downloading_v, st.release.version, st.done / 1024, st.total / 1024))
                     Spacer(Modifier.height(6.dp))
                     LinearProgressIndicator(progress = { if (st.total > 0) (st.done.toFloat() / st.total).coerceIn(0f, 1f) else 0f },
                         modifier = Modifier.fillMaxWidth())
                 }
                 is UpdateState.ReadyToInstall -> {
-                    Status("v${st.release.version} downloaded" + if (needsPermission) " — allow \"Install unknown apps\" for Verdroid, then tap Install" else "")
-                    Button(onClick = { install(st) }, modifier = Modifier.padding(top = 8.dp)) { Text("Install") }
+                    Status(stringResource(R.string.v_downloaded, st.release.version) + if (needsPermission) " — " + stringResource(R.string.allow_install_unknown) else "")
+                    Button(onClick = { install(st) }, modifier = Modifier.padding(top = 8.dp)) { Text(stringResource(R.string.install)) }
                 }
                 is UpdateState.Error -> {
                     Status(st.message, error = true)
-                    st.release?.let { r -> if (r.asset != null) TextButton(onClick = { autoInstall = true; updater.startDownload(r) }) { Text("Retry download") } }
+                    st.release?.let { r -> if (r.asset != null) TextButton(onClick = { autoInstall = true; updater.startDownload(r) }) { Text(stringResource(R.string.retry_download)) } }
                 }
             }
         }
