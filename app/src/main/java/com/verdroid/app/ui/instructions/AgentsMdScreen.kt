@@ -5,6 +5,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import com.verdroid.app.R
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -26,11 +28,10 @@ fun AgentsMdScreen(onBack: () -> Unit, vm: AgentsMdViewModel = hiltViewModel()) 
     var confirmClear by remember { mutableStateOf(false) }
     val dirty = AgentsMdStore.clean(text) != saved
     BackScaffold("AGENTS.md", onBack, actions = {
-        TextButton(onClick = { text = vm.store.save(text) }, enabled = dirty) { Text("Save") }
+        TextButton(onClick = { text = vm.store.save(text) }, enabled = dirty) { Text(stringResource(R.string.save)) }
     }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).padding(horizontal = 16.dp).imePadding()) {
-            Text("Standing instructions for the agent, added to every chat (how you like answers, rules, context about you). " +
-                "Leave empty to send nothing. Max ${AgentsMdStore.MAX_CHARS} characters.",
+            Text(stringResource(R.string.agents_md_intro, AgentsMdStore.MAX_CHARS),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(8.dp))
             OutlinedTextField(
@@ -42,15 +43,15 @@ fun AgentsMdScreen(onBack: () -> Unit, vm: AgentsMdViewModel = hiltViewModel()) 
             Row(Modifier.fillMaxWidth().padding(vertical = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
                 Text("${text.length} / ${AgentsMdStore.MAX_CHARS}" + if (dirty) " · unsaved" else "",
                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                TextButton(onClick = { confirmClear = true }, enabled = text.isNotEmpty() || saved.isNotEmpty()) { Text("Clear") }
+                TextButton(onClick = { confirmClear = true }, enabled = text.isNotEmpty() || saved.isNotEmpty()) { Text(stringResource(R.string.clear)) }
             }
         }
     }
     if (confirmClear) AlertDialog(
         onDismissRequest = { confirmClear = false },
-        title = { Text("Clear AGENTS.md?") },
-        text = { Text("The agent will no longer get these instructions.") },
-        confirmButton = { TextButton(onClick = { text = vm.store.save(""); confirmClear = false }) { Text("Clear") } },
-        dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("Cancel") } },
+        title = { Text(stringResource(R.string.clear_agents_md)) },
+        text = { Text(stringResource(R.string.clear_agents_md_desc)) },
+        confirmButton = { TextButton(onClick = { text = vm.store.save(""); confirmClear = false }) { Text(stringResource(R.string.clear)) } },
+        dismissButton = { TextButton(onClick = { confirmClear = false }) { Text(stringResource(R.string.cancel)) } },
     )
 }

@@ -11,6 +11,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import com.verdroid.app.R
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.graphics.asImageBitmap
@@ -46,11 +48,11 @@ private sealed interface Load { data object Loading : Load; data class Ok(val bm
 /** Decodes off the main thread, downscaled to [maxSide] (URLs come from / go to the cache dir). */
 private suspend fun load(ctx: android.content.Context, ref: ShownImageRef, maxSide: Int): Load = withContext(Dispatchers.IO) {
     val file = when {
-        ref.path != null -> File(ref.path).takeIf { it.isFile } ?: return@withContext Load.Missing("Image not found: ${ref.path}")
-        else -> ShownImages.fetch(ref.url!!, ctx.cacheDir).getOrElse { return@withContext Load.Missing("Couldn't load the image (${it.message})") }
+        ref.path != null -> File(ref.path).takeIf { it.isFile } ?: return@withContext Load.Missing(ctx.getString(R.string.img_not_found, ref.path))
+        else -> ShownImages.fetch(ref.url!!, ctx.cacheDir).getOrElse { return@withContext Load.Missing(ctx.getString(R.string.img_load_failed, it.message ?: "")) }
     }
     val bmp = runCatching { com.verdroid.app.data.storage.AttachmentImages.thumbnail(file, maxSide) }.getOrNull()
-        ?: return@withContext Load.Missing("Couldn't decode the image")
+        ?: return@withContext Load.Missing(ctx.getString(R.string.img_decode_failed))
     Load.Ok(bmp.asImageBitmap(), file)
 }
 
@@ -67,7 +69,7 @@ fun ShownImageCard(ref: ShownImageRef) {
             contentAlignment = Alignment.Center) {
             when (val s = state) {
                 Load.Loading -> CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
-                is Load.Ok -> Image(s.bmp, contentDescription = ref.caption ?: "Image", contentScale = ContentScale.Fit, modifier = Modifier.fillMaxWidth())
+                is Load.Ok -> Image(s.bmp, contentDescription = ref.caption ?: stringResource(R.string.image_fallback), contentScale = ContentScale.Fit, modifier = Modifier.fillMaxWidth())
                 is Load.Missing -> Text("🖼️ ${s.why}", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(12.dp))
             }
         }
@@ -94,7 +96,7 @@ private fun ShownImageFullscreen(ref: ShownImageRef, file: File, onClose: () -> 
                     }
                 }, contentAlignment = Alignment.Center) {
                     bmp?.let { b ->
-                        Image(b, contentDescription = ref.caption ?: "Image", contentScale = ContentScale.Fit,
+                        Image(b, contentDescription = ref.caption ?: stringResource(R.string.image_fallback), contentScale = ContentScale.Fit,
                             modifier = Modifier.fillMaxSize().graphicsLayer { scaleX = scale; scaleY = scale; translationX = offset.x; translationY = offset.y })
                     } ?: CircularProgressIndicator()
                 }
@@ -117,6 +119,6 @@ private fun share(ctx: android.content.Context, ref: ShownImageRef, file: File) 
         val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.updates", out)
         val send = Intent(Intent.ACTION_SEND).setType(ShownImages.mime(kind)).putExtra(Intent.EXTRA_STREAM, uri)
             .apply { ref.caption?.let { putExtra(Intent.EXTRA_TEXT, it) } }.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        ctx.startActivity(Intent.createChooser(send, "Share image").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        ctx.startActivity(Intent.createChooser(send, ctx.getString(R.string.share_image)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
     }
 }

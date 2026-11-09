@@ -9,6 +9,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import com.verdroid.app.R
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -36,16 +38,15 @@ fun SkillsScreen(onBack: () -> Unit, vm: SkillsViewModel = hiltViewModel()) {
     var viewing by remember { mutableStateOf<Skill?>(null) }
     var confirmDelete by remember { mutableStateOf<Skill?>(null) }
 
-    BackScaffold("Skills", onBack) { padding ->
+    BackScaffold(stringResource(R.string.skills), onBack) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding)) {
             item {
-                Text("Reusable procedures the agent saved with you (it offers to save one when you work out a multi-step " +
-                    "task together). Enabled skills are added to the agent's instructions; turned-off skills are kept but not sent.",
+                Text(stringResource(R.string.skills_intro),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp))
             }
             if (skills.isEmpty()) item {
-                Text("No skills yet. Ask Verdroid to \"save this as a skill\" after a task.",
+                Text(stringResource(R.string.no_skills_hint),
                     style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(16.dp))
             }
             items(skills, key = { it.id }) { s ->
@@ -55,14 +56,14 @@ fun SkillsScreen(onBack: () -> Unit, vm: SkillsViewModel = hiltViewModel()) {
                     supportingContent = {
                         Column {
                             if (s.description.isNotBlank()) Text(s.description, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                            Text(s.id + " · " + (if (s.enabled) "Enabled" else "Off"), style = MaterialTheme.typography.labelMedium,
+                            Text(s.id + " · " + (if (s.enabled) stringResource(R.string.enabled_word) else stringResource(R.string.off_word)), style = MaterialTheme.typography.labelMedium,
                                 fontFamily = FontFamily.Monospace,
                                 color = if (s.enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant)
                         }
                     },
                     trailingContent = {
                         Row {
-                            TextButton(onClick = { confirmDelete = s }) { Text("Delete") }
+                            TextButton(onClick = { confirmDelete = s }) { Text(stringResource(R.string.delete)) }
                             Switch(checked = s.enabled, onCheckedChange = { vm.setEnabled(s.id, it) })
                         }
                     },
@@ -81,12 +82,12 @@ fun SkillsScreen(onBack: () -> Unit, vm: SkillsViewModel = hiltViewModel()) {
                     Text(s.body, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
                 }
             },
-            confirmButton = { TextButton(onClick = { viewing = null }) { Text("Close") } })
+            confirmButton = { TextButton(onClick = { viewing = null }) { Text(stringResource(R.string.close)) } })
     }
     confirmDelete?.let { s ->
-        AlertDialog(onDismissRequest = { confirmDelete = null }, title = { Text("Delete skill \"${s.name}\"?") },
-            text = { Text("The agent will no longer know this procedure.") },
-            confirmButton = { TextButton(onClick = { vm.delete(s.id); confirmDelete = null }) { Text("Delete") } },
-            dismissButton = { TextButton(onClick = { confirmDelete = null }) { Text("Cancel") } })
+        AlertDialog(onDismissRequest = { confirmDelete = null }, title = { Text(stringResource(R.string.delete_skill, s.name)) },
+            text = { Text(stringResource(R.string.delete_skill_desc)) },
+            confirmButton = { TextButton(onClick = { vm.delete(s.id); confirmDelete = null }) { Text(stringResource(R.string.delete)) } },
+            dismissButton = { TextButton(onClick = { confirmDelete = null }) { Text(stringResource(R.string.cancel)) } })
     }
 }

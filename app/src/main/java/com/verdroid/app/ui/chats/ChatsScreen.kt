@@ -28,6 +28,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
+import com.verdroid.app.R
 import com.verdroid.app.domain.model.Conversation
 import com.verdroid.app.ui.components.*
 import com.verdroid.app.ui.chatContainer
@@ -55,13 +58,14 @@ fun ChatsScreen(
     val hasKeys by vm.hasKeys.collectAsStateWithLifecycle()
     val updateAvailable by vm.updateAvailable.collectAsStateWithLifecycle()
     val now = rememberNow()
+    val context = LocalContext.current
     val snackbar = remember { SnackbarHostState() }
     StarPrompt(anyTaskActive = conversations.any { it.task.status.isActive })
     LaunchedEffect(Unit) {
         vm.archivedEvents.collect { e ->
             snackbar.currentSnackbarData?.dismiss()
-            val r = snackbar.showSnackbar(if (e.stopped) "Moved to archive (task stopped)" else "Moved to archive",
-                actionLabel = "Undo", duration = SnackbarDuration.Short)
+            val r = snackbar.showSnackbar(if (e.stopped) context.getString(R.string.moved_to_archive_stopped) else context.getString(R.string.moved_to_archive),
+                actionLabel = context.getString(R.string.undo), duration = SnackbarDuration.Short)
             if (r == SnackbarResult.ActionPerformed) vm.undoArchive(e.taskId)
         }
     }
@@ -77,7 +81,7 @@ fun ChatsScreen(
         },
         floatingActionButton = {
             LargeFloatingActionButton(onClick = onNewChat, shape = CircleShape) {
-                Icon(Icons.Filled.Add, contentDescription = "New conversation", modifier = Modifier.size(36.dp))
+                Icon(Icons.Filled.Add, contentDescription = stringResource(R.string.cd_new_conversation), modifier = Modifier.size(36.dp))
             }
         },
     ) { padding ->
@@ -86,7 +90,7 @@ fun ChatsScreen(
                 item("nokey") {
                     Surface(color = MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
                         modifier = Modifier.fillMaxWidth().clickable(onClick = onOpenKeys)) {
-                        Text("🔑 Add your OpenRouter API key to start (Settings → LLM providers → OpenRouter).",
+                        Text(stringResource(R.string.need_api_key),
                             modifier = Modifier.padding(horizontal = 16.dp, vertical = 10.dp))
                     }
                 }
@@ -132,13 +136,15 @@ internal fun updateHintLatest(vm: ChatsViewModel, updateAvailable: Boolean): Str
 }
 
 @Composable
-internal fun UpdatePill(latest: String, label: String = "New version on GitHub", modifier: Modifier = Modifier) {
+internal fun UpdatePill(latest: String, label: String? = null, modifier: Modifier = Modifier) {
+    val pillLabel = label ?: stringResource(R.string.new_version_github)
     val uri = androidx.compose.ui.platform.LocalUriHandler.current
+    val cdNewVersion = stringResource(R.string.cd_new_version, latest)
     Surface(shape = RoundedCornerShape(50), color = MaterialTheme.colorScheme.primaryContainer,
         contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
         modifier = modifier.clip(RoundedCornerShape(50)).clickable { runCatching { uri.openUri(com.verdroid.app.data.update.UpdateLogic.RELEASES_PAGE) } }
-            .semantics { contentDescription = "New version v$latest on GitHub. Opens the release page." }) {
-        Text(label, style = MaterialTheme.typography.labelMedium, maxLines = 1, softWrap = false,
+            .semantics { contentDescription = cdNewVersion }) {
+        Text(pillLabel, style = MaterialTheme.typography.labelMedium, maxLines = 1, softWrap = false,
             modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp))
     }
 }
@@ -160,7 +166,7 @@ internal fun HomeTopBar(
                 Text("Verdroid", fontWeight = FontWeight.Bold, fontSize = 26.sp, maxLines = 1, softWrap = false)
                 if (updateLatest != null) {
                     Spacer(Modifier.width(8.dp))
-                    UpdatePill(updateLatest, if (level == HomeBarLayout.FULL) "New version on GitHub" else if (level == HomeBarLayout.SHORT) "Update" else "⬆")
+                    UpdatePill(updateLatest, if (level == HomeBarLayout.FULL) stringResource(R.string.new_version_github) else if (level == HomeBarLayout.SHORT) stringResource(R.string.update) else "⬆")
                 }
             }
         },
@@ -169,7 +175,7 @@ internal fun HomeTopBar(
             if (profilesOn) ProfileMenu(profiles, active, showAll, onSelect, onShowAll, onNew, onManage, onTurnOff)
             IconButton(onClick = onOpenSettings) {
                 Box {
-                    Icon(Icons.Filled.Settings, contentDescription = if (updateAvailable) "Settings (update available)" else "Settings")
+                    Icon(Icons.Filled.Settings, contentDescription = if (updateAvailable) stringResource(R.string.cd_settings_update) else stringResource(R.string.settings))
                     if (updateAvailable) com.verdroid.app.ui.menu.UpdateDot(Modifier.align(Alignment.TopEnd))
                 }
             }
@@ -218,9 +224,9 @@ private fun QuotaDotButton(dot: QuotaDot, onDetails: () -> Unit) {
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp).widthIn(max = 300.dp)) {
                 Text(dot.line, style = MaterialTheme.typography.bodyMedium)
-                Text("Active model: ${dot.activeModel}", style = MaterialTheme.typography.bodySmall,
+                Text(stringResource(R.string.active_model, dot.activeModel), style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
-                TextButton(onClick = { open = false; onDetails() }, contentPadding = PaddingValues(0.dp)) { Text("Details") }
+                TextButton(onClick = { open = false; onDetails() }, contentPadding = PaddingValues(0.dp)) { Text(stringResource(R.string.details)) }
             }
         }
     }
@@ -236,7 +242,7 @@ private fun SearchBar(query: String, onChange: (String) -> Unit) {
         Icon(Icons.Filled.Search, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         Spacer(Modifier.width(8.dp))
         Box(Modifier.weight(1f)) {
-            if (query.isEmpty()) Text("Search conversations or tasks", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (query.isEmpty()) Text(stringResource(R.string.search_hint), color = MaterialTheme.colorScheme.onSurfaceVariant)
             BasicTextField(
                 value = query, onValueChange = onChange, singleLine = true,
                 textStyle = MaterialTheme.typography.bodyLarge.copy(color = MaterialTheme.colorScheme.onSurface),
@@ -244,7 +250,7 @@ private fun SearchBar(query: String, onChange: (String) -> Unit) {
             )
         }
         if (query.isNotEmpty()) {
-            Icon(Icons.Filled.Clear, "Clear", Modifier.clickable { onChange("") }, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            Icon(Icons.Filled.Clear, stringResource(R.string.clear), Modifier.clickable { onChange("") }, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }
@@ -278,14 +284,14 @@ private fun ArchivableRow(c: Conversation, badge: String?, onOpen: () -> Unit, o
             horizontalArrangement = if (start) Arrangement.Start else Arrangement.End) {
             Icon(Icons.Filled.Delete, null, tint = MaterialTheme.colorScheme.onErrorContainer)
             Spacer(Modifier.width(8.dp))
-            Text("Archive", color = MaterialTheme.colorScheme.onErrorContainer)
+            Text(stringResource(R.string.archive), color = MaterialTheme.colorScheme.onErrorContainer)
         }
     }) {
         Box(Modifier.chatContainer(c.task.id).background(MaterialTheme.colorScheme.surface)) {
             ConversationRow(c, badge = badge, onClick = onOpen, onLongClick = { menu = true })
             DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                DropdownMenuItem(text = { Text("Open") }, onClick = { menu = false; onOpen() })
-                DropdownMenuItem(text = { Text("Delete") }, onClick = { menu = false; onArchive() })
+                DropdownMenuItem(text = { Text(stringResource(R.string.open)) }, onClick = { menu = false; onOpen() })
+                DropdownMenuItem(text = { Text(stringResource(R.string.delete)) }, onClick = { menu = false; onArchive() })
             }
         }
     }
@@ -331,9 +337,10 @@ private fun ProfileMenu(
 ) {
     var open by remember { mutableStateOf(false) }
     val multi = com.verdroid.app.data.profiles.Profiles.visible(profiles)
+    val cdProfile = stringResource(R.string.cd_profile, active.name)
     Box {
         TextButton(onClick = { open = true }, contentPadding = PaddingValues(horizontal = 8.dp),
-            modifier = Modifier.semantics { contentDescription = "Profile: ${active.name}" }) {
+            modifier = Modifier.semantics { contentDescription = cdProfile }) {
             // Always icon-only (emoji + arrow); the menu lists the full names.
             Text(active.emoji.ifBlank { "🤖" }, maxLines = 1, softWrap = false)
             Icon(Icons.Filled.ArrowDropDown, null, Modifier.size(18.dp))
@@ -341,17 +348,17 @@ private fun ProfileMenu(
         DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
             profiles.forEach { p ->
                 DropdownMenuItem(text = { Text(p.label) }, onClick = { open = false; onSelect(p.id) },
-                    trailingIcon = { if (p.id == active.id && !showAll) Icon(Icons.Filled.Check, "Active") })
+                    trailingIcon = { if (p.id == active.id && !showAll) Icon(Icons.Filled.Check, stringResource(R.string.active_word)) })
             }
             HorizontalDivider()
-            DropdownMenuItem(text = { Text("+ Add new") }, onClick = { open = false; onNew() })
+            DropdownMenuItem(text = { Text(stringResource(R.string.add_new)) }, onClick = { open = false; onNew() })
             if (multi) {
-                DropdownMenuItem(text = { Text("Show all profiles") }, onClick = { open = false; onShowAll() },
+                DropdownMenuItem(text = { Text(stringResource(R.string.show_all_profiles)) }, onClick = { open = false; onShowAll() },
                     trailingIcon = { if (showAll) Icon(Icons.Filled.Check, null) })
-                DropdownMenuItem(text = { Text("Manage profiles") }, onClick = { open = false; onManage() })
+                DropdownMenuItem(text = { Text(stringResource(R.string.manage_profiles)) }, onClick = { open = false; onManage() })
             }
             HorizontalDivider()
-            DropdownMenuItem(text = { Text("Turn off profiles") }, onClick = { open = false; onTurnOff() })
+            DropdownMenuItem(text = { Text(stringResource(R.string.turn_off_profiles)) }, onClick = { open = false; onTurnOff() })
         }
     }
 }

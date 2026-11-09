@@ -10,6 +10,8 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import com.verdroid.app.R
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -129,13 +131,14 @@ fun storyBadge(task: Task, now: Long): String? = when (task.status) {
 
 /** Small "Copy" button: puts [text] on the clipboard and shows a toast. Used next to errors, logs and diagnostics. */
 @Composable
-fun CopyButton(text: String, label: String = "Copy", modifier: Modifier = Modifier) {
+fun CopyButton(text: String, label: String? = null, modifier: Modifier = Modifier) {
+    val label = label ?: stringResource(R.string.copy_)
     val context = androidx.compose.ui.platform.LocalContext.current
     androidx.compose.material3.TextButton(
         onClick = {
             val cm = context.getSystemService(android.content.ClipboardManager::class.java)
             cm?.setPrimaryClip(android.content.ClipData.newPlainText("Verdroid", text))
-            android.widget.Toast.makeText(context, "Copied", android.widget.Toast.LENGTH_SHORT).show()
+            android.widget.Toast.makeText(context, context.getString(R.string.copied), android.widget.Toast.LENGTH_SHORT).show()
         },
         enabled = text.isNotBlank(),
         modifier = modifier,

@@ -7,6 +7,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import com.verdroid.app.R
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -89,35 +91,35 @@ private fun MemoryScreenContent(onBack: () -> Unit, vm: MemoryViewModel) {
     val selected by vm.selectedChat.collectAsStateWithLifecycle()
     val chatId = selected ?: chats.firstOrNull()?.id
 
-    BackScaffold("Memory", onBack, actions = {
-        TextButton(onClick = { adding = true }, enabled = tab == 1 || chatId != null) { Text("Add") }
+    BackScaffold(stringResource(R.string.memory), onBack, actions = {
+        TextButton(onClick = { adding = true }, enabled = tab == 1 || chatId != null) { Text(stringResource(R.string.add)) }
     }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             TabRow(selectedTabIndex = tab) {
-                Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text("This chat") })
-                Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text("Long-term") })
+                Tab(selected = tab == 0, onClick = { tab = 0 }, text = { Text(stringResource(R.string.this_chat)) })
+                Tab(selected = tab == 1, onClick = { tab = 1 }, text = { Text(stringResource(R.string.long_term)) })
             }
             if (tab == 0) ChatSection(vm, chats, chatId, onEdit = { editing = it }, onDelete = { confirmDelete = it }, onClear = { confirmClear = true })
             else GlobalSection(vm, onEdit = { editing = it }, onDelete = { confirmDelete = it }, onClear = { confirmClear = true })
         }
     }
 
-    if (adding) MemoryEditDialog(null, if (tab == 0) "Add short-term note" else "Add long-term memory", onDismiss = { adding = false }) { t, tags ->
+    if (adding) MemoryEditDialog(null, if (tab == 0) stringResource(R.string.add_short_term_note) else stringResource(R.string.add_long_term_memory), onDismiss = { adding = false }) { t, tags ->
         vm.add(t, tags, if (tab == 0) chatId else null); adding = false
     }
-    editing?.let { m -> MemoryEditDialog(m, "Edit memory #${m.id}", onDismiss = { editing = null }) { t, tags -> vm.edit(m.id, t, tags); editing = null } }
+    editing?.let { m -> MemoryEditDialog(m, stringResource(R.string.edit_memory, m.id), onDismiss = { editing = null }) { t, tags -> vm.edit(m.id, t, tags); editing = null } }
     confirmDelete?.let { m ->
-        AlertDialog(onDismissRequest = { confirmDelete = null }, title = { Text("Delete memory #${m.id}?") }, text = { Text(m.text) },
-            confirmButton = { TextButton(onClick = { vm.delete(m.id); confirmDelete = null }) { Text("Delete") } },
-            dismissButton = { TextButton(onClick = { confirmDelete = null }) { Text("Cancel") } })
+        AlertDialog(onDismissRequest = { confirmDelete = null }, title = { Text(stringResource(R.string.delete_memory, m.id)) }, text = { Text(m.text) },
+            confirmButton = { TextButton(onClick = { vm.delete(m.id); confirmDelete = null }) { Text(stringResource(R.string.delete)) } },
+            dismissButton = { TextButton(onClick = { confirmDelete = null }) { Text(stringResource(R.string.cancel)) } })
     }
     if (confirmClear) {
         val chatTab = tab == 0
         AlertDialog(onDismissRequest = { confirmClear = false },
-            title = { Text(if (chatTab) "Clear this chat's short-term memory?" else "Clear all long-term memories?") },
-            text = { Text(if (chatTab) "The agent loses its notes about this chat's task." else "The agent will forget everything it learned about you.") },
-            confirmButton = { TextButton(onClick = { vm.clear(if (chatTab) chatId else null); confirmClear = false }) { Text("Clear") } },
-            dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("Cancel") } })
+            title = { Text(if (chatTab) stringResource(R.string.clear_chat_memory) else stringResource(R.string.clear_all_memories)) },
+            text = { Text(if (chatTab) stringResource(R.string.clear_chat_memory_desc) else stringResource(R.string.clear_all_memories_desc)) },
+            confirmButton = { TextButton(onClick = { vm.clear(if (chatTab) chatId else null); confirmClear = false }) { Text(stringResource(R.string.clear)) } },
+            dismissButton = { TextButton(onClick = { confirmClear = false }) { Text(stringResource(R.string.cancel)) } })
     }
 }
 
@@ -127,14 +129,13 @@ private fun ChatSection(vm: MemoryViewModel, chats: List<ChatChoice>, chatId: Lo
     var picker by remember { mutableStateOf(false) }
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item {
-            Text("Short-term memory: the agent's scratchpad for one chat (task progress, decisions, findings). Always in that chat's " +
-                "prompt (~1k tokens, oldest trimmed) and deleted with the chat.",
+            Text(stringResource(R.string.short_term_memory_intro),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         item {
             Box {
                 OutlinedButton(onClick = { picker = true }, Modifier.fillMaxWidth(), enabled = chats.isNotEmpty()) {
-                    Text(chats.firstOrNull { it.id == chatId }?.let { "Chat: ${it.title}" } ?: "No chats yet", maxLines = 1, overflow = TextOverflow.Ellipsis)
+                    Text(chats.firstOrNull { it.id == chatId }?.let { stringResource(R.string.chat_colon, it.title) } ?: stringResource(R.string.no_chats_yet), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 }
                 DropdownMenu(expanded = picker, onDismissRequest = { picker = false }) {
                     chats.forEach { c ->
@@ -144,11 +145,11 @@ private fun ChatSection(vm: MemoryViewModel, chats: List<ChatChoice>, chatId: Lo
                 }
             }
         }
-        if (notes.isEmpty()) item { Text("No short-term notes for this chat.", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        if (notes.isEmpty()) item { Text(stringResource(R.string.no_short_term_notes), color = MaterialTheme.colorScheme.onSurfaceVariant) }
         items(notes, key = { it.id }) { m ->
-            MemoryCard(m, onEdit, onDelete, extra = { TextButton(onClick = { vm.toLongTerm(m.id) }) { Text("Move to long-term") } })
+            MemoryCard(m, onEdit, onDelete, extra = { TextButton(onClick = { vm.toLongTerm(m.id) }) { Text(stringResource(R.string.move_to_long_term)) } })
         }
-        if (notes.isNotEmpty()) item { OutlinedButton(onClick = onClear, Modifier.fillMaxWidth()) { Text("Clear this chat") } }
+        if (notes.isNotEmpty()) item { OutlinedButton(onClick = onClear, Modifier.fillMaxWidth()) { Text(stringResource(R.string.clear_this_chat)) } }
     }
 }
 
@@ -160,28 +161,27 @@ private fun GlobalSection(vm: MemoryViewModel, onEdit: (Memory) -> Unit, onDelet
     val autoSave by vm.autoSave.collectAsStateWithLifecycle()
     LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item {
-            Text("Long-term memory: lasting facts about you and your preferences, shared by all chats. The ~20 most important/recent " +
-                "go into the system prompt; the agent can search the rest. Exported to ${vm.exportPath}.",
+            Text(stringResource(R.string.long_term_memory_intro, vm.exportPath),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("Automatic saving", style = MaterialTheme.typography.titleSmall)
-                    Text(if (autoSave) "The agent saves lasting facts on its own." else "The agent saves long-term memories only when you ask.",
+                    Text(stringResource(R.string.automatic_saving), style = MaterialTheme.typography.titleSmall)
+                    Text(if (autoSave) stringResource(R.string.autosave_on) else stringResource(R.string.autosave_off),
                         style = MaterialTheme.typography.bodySmall)
                 }
                 Switch(checked = autoSave, onCheckedChange = vm::setAutoSave)
             }
         }
         item {
-            OutlinedTextField(query, { vm.query.value = it }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("Search (${all.size} memories)") })
+            OutlinedTextField(query, { vm.query.value = it }, Modifier.fillMaxWidth(), singleLine = true, label = { Text(stringResource(R.string.search_memories, all.size)) })
         }
         if (shown.isEmpty()) item {
-            Text(if (all.isEmpty()) "Nothing remembered yet." else "No memory matches \"$query\".", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(if (all.isEmpty()) stringResource(R.string.nothing_remembered) else stringResource(R.string.no_memory_matches, query), color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         items(shown, key = { it.id }) { m -> MemoryCard(m, onEdit, onDelete) }
-        if (all.isNotEmpty()) item { OutlinedButton(onClick = onClear, Modifier.fillMaxWidth()) { Text("Clear all") } }
+        if (all.isNotEmpty()) item { OutlinedButton(onClick = onClear, Modifier.fillMaxWidth()) { Text(stringResource(R.string.clear_all)) } }
     }
 }
 
@@ -191,14 +191,14 @@ private fun MemoryCard(m: Memory, onEdit: (Memory) -> Unit, onDelete: (Memory) -
         Column(Modifier.padding(12.dp)) {
             Text(m.text, style = MaterialTheme.typography.bodyMedium)
             val names = LocalProfileNames.current
-            val profileName = if (names == null) null else m.profileId?.let { names[it] ?: "deleted profile" }
-            if (profileName != null) Text("Only in profile $profileName", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-            Text("#${m.id}" + (if (m.tags.isNotEmpty()) " · " + m.tags.joinToString(", ") else "") + " · updated " +
+            val profileName = if (names == null) null else m.profileId?.let { names[it] ?: stringResource(R.string.deleted_profile) }
+            if (profileName != null) Text(stringResource(R.string.only_in_profile, profileName), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+            Text("#${m.id}" + (if (m.tags.isNotEmpty()) " · " + m.tags.joinToString(", ") else "") + " · " + stringResource(R.string.updated_at_word) + " " +
                 java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.SHORT, java.text.DateFormat.SHORT).format(java.util.Date(m.updatedAt)),
                 style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row {
-                TextButton(onClick = { onEdit(m) }) { Text("Edit") }
-                TextButton(onClick = { onDelete(m) }) { Text("Delete") }
+                TextButton(onClick = { onEdit(m) }) { Text(stringResource(R.string.edit)) }
+                TextButton(onClick = { onDelete(m) }) { Text(stringResource(R.string.delete)) }
                 extra()
             }
         }
@@ -212,10 +212,10 @@ private fun MemoryEditDialog(m: Memory?, title: String, onDismiss: () -> Unit, o
     AlertDialog(onDismissRequest = onDismiss, title = { Text(title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(text, { text = it.take(MemoryText.MAX_TEXT) }, Modifier.fillMaxWidth(), label = { Text("Text") }, minLines = 2)
-                OutlinedTextField(tags, { tags = it }, Modifier.fillMaxWidth(), singleLine = true, label = { Text("Tags (comma-separated; \"important\" keeps it in the prompt)") })
+                OutlinedTextField(text, { text = it.take(MemoryText.MAX_TEXT) }, Modifier.fillMaxWidth(), label = { Text(stringResource(R.string.text)) }, minLines = 2)
+                OutlinedTextField(tags, { tags = it }, Modifier.fillMaxWidth(), singleLine = true, label = { Text(stringResource(R.string.tags_hint)) })
             }
         },
-        confirmButton = { TextButton(onClick = { onSave(text, tags) }, enabled = text.isNotBlank()) { Text("Save") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } })
+        confirmButton = { TextButton(onClick = { onSave(text, tags) }, enabled = text.isNotBlank()) { Text(stringResource(R.string.save)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } })
 }

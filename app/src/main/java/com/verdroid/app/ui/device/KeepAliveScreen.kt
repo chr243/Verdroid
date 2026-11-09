@@ -7,6 +7,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import com.verdroid.app.R
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -30,47 +32,45 @@ fun KeepAliveScreen(onBack: () -> Unit, vm: KeepAliveViewModel = hiltViewModel()
     var batteryOk by remember { mutableStateOf(c.isIgnoringBatteryOptimizations()) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { batteryOk = c.isIgnoringBatteryOptimizations(); enabled = c.enabled }
 
-    BackScaffold("Background & battery", onBack) { padding ->
+    BackScaffold(stringResource(R.string.background_battery), onBack) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)) {
             ElevatedCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
-                            Text("Keep tasks alive while working", style = MaterialTheme.typography.titleSmall)
-                            Text("While a task runs, a foreground service shows “Working on: <chat>” with the current step and a Stop button. " +
-                                "When nothing is running there is no service and no notification.",
+                            Text(stringResource(R.string.keep_tasks_alive), style = MaterialTheme.typography.titleSmall)
+                            Text(stringResource(R.string.keepalive_desc),
                                 style = MaterialTheme.typography.bodySmall)
                         }
                         Switch(checked = enabled, onCheckedChange = { c.enabled = it; enabled = it })
                     }
-                    Text("Chat heads keep working while idle without this service, but Android may close an idle app; " +
-                        "the bubble then comes back the next time you open Verdroid.",
+                    Text(stringResource(R.string.keepalive_chathead_note),
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             ElevatedCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("Battery optimisation", style = MaterialTheme.typography.titleSmall)
-                    Text(if (batteryOk) "✅ Unrestricted — Android won't defer Verdroid's resume jobs." else
-                        "Optimised — Doze can delay auto-resume and kill the agent. Allow Verdroid to ignore battery optimisations.")
-                    if (!batteryOk) Button(onClick = { runCatching { context.startActivity(c.batteryOptimizationIntent()) } }) { Text("Allow") }
+                    Text(stringResource(R.string.battery_optimisation), style = MaterialTheme.typography.titleSmall)
+                    Text(if (batteryOk) stringResource(R.string.battery_unrestricted) else
+                        stringResource(R.string.battery_optimised_note))
+                    if (!batteryOk) Button(onClick = { runCatching { context.startActivity(c.batteryOptimizationIntent()) } }) { Text(stringResource(R.string.allow)) }
                 }
             }
             ElevatedCard(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("HyperOS / MIUI autostart", style = MaterialTheme.typography.titleSmall)
-                    Text("On Xiaomi/Redmi/POCO phones, also:\n" +
+                    Text(stringResource(R.string.hyperos_autostart), style = MaterialTheme.typography.titleSmall)
+                    Text(stringResource(R.string.xiaomi_note) + "\n" +
                         "1. Security app → Permissions → Autostart → enable Verdroid (needed for resume after reboot).\n" +
                         "2. Settings → Apps → Verdroid → Battery saver → No restrictions.\n" +
                         "3. Recents: long-press Verdroid → lock (padlock) so it isn't swiped away.",
                         style = MaterialTheme.typography.bodySmall)
                     OutlinedButton(onClick = { c.openAutostartSettings { context.startActivity(it) } }) {
-                        Text(if (c.isXiaomi) "Open Autostart settings" else "Open app settings")
+                        Text(if (c.isXiaomi) stringResource(R.string.open_autostart) else stringResource(R.string.open_app_settings))
                     }
                 }
             }
-            Text("After a reboot, Verdroid restarts only tasks that were mid-run; paused tasks keep their scheduled resume.",
+            Text(stringResource(R.string.reboot_note),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }

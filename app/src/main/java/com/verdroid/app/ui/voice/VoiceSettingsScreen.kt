@@ -20,6 +20,8 @@ import com.verdroid.app.ui.components.SettingsGroup
 import dagger.hilt.android.lifecycle.HiltViewModel
 import java.util.Locale
 import javax.inject.Inject
+import androidx.compose.ui.res.stringResource
+import com.verdroid.app.R
 
 @HiltViewModel
 class VoiceSettingsViewModel @Inject constructor(val prefs: VoicePrefs) : ViewModel()
@@ -36,8 +38,8 @@ fun VoiceSettingsScreen(onBack: () -> Unit, vm: VoiceSettingsViewModel = hiltVie
     val ctx = LocalContext.current
     val recognizer = remember { runCatching { android.speech.SpeechRecognizer.isRecognitionAvailable(ctx) }.getOrDefault(false) }
     Scaffold(topBar = {
-        TopAppBar(title = { Text("Voice") },
-            navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } })
+        TopAppBar(title = { Text(stringResource(R.string.voice)) },
+            navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back)) } })
     }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(bottom = 16.dp)) {
             @Composable fun row(title: String, sub: String, checked: Boolean, enabled: Boolean = true, set: (Boolean) -> Unit) {
@@ -45,13 +47,13 @@ fun VoiceSettingsScreen(onBack: () -> Unit, vm: VoiceSettingsViewModel = hiltVie
                     colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
                     trailingContent = { Switch(checked = checked, onCheckedChange = set, enabled = enabled) })
             }
-            SettingsGroup("Speech to text", listOf(
-                { _ -> row("Mic button in chat", "Tap the mic next to the message box and speak. Needs microphone access.", mic, set = p::setMicButton) },
-                { _ -> row("Send right away", "Send what you said as soon as you stop talking. Off: the text goes into the message box to edit first.", autoSend, set = p::setAutoSend) },
+            SettingsGroup(stringResource(R.string.group_stt), listOf(
+                { _ -> row(stringResource(R.string.voice_mic), stringResource(R.string.voice_mic_desc), mic, set = p::setMicButton) },
+                { _ -> row(stringResource(R.string.voice_auto_send), stringResource(R.string.voice_auto_send_desc), autoSend, set = p::setAutoSend) },
             ))
-            SettingsGroup("Text to speech", listOf(
-                { _ -> row("Read replies aloud", "Speak Verdroid's replies (code blocks and formatting are skipped). Stops when you tap the mic or send.", speak, set = p::setSpeakReplies) },
-                { _ -> row("Hands-free mode", "After a reply is read aloud, start listening again automatically. Needs Read replies aloud.", handsFree, enabled = speak, set = p::setHandsFree) },
+            SettingsGroup(stringResource(R.string.group_tts), listOf(
+                { _ -> row(stringResource(R.string.voice_speak), stringResource(R.string.voice_speak_desc), speak, set = p::setSpeakReplies) },
+                { _ -> row(stringResource(R.string.voice_hands_free), stringResource(R.string.voice_hands_free_desc), handsFree, enabled = speak, set = p::setHandsFree) },
             ))
             Text(
                 "Language: ${Locale.getDefault().displayName} (phone default). " +

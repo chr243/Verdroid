@@ -9,6 +9,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import com.verdroid.app.R
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -42,80 +44,77 @@ fun DeviceControlScreen(onBack: () -> Unit, vm: DeviceControlViewModel = hiltVie
         androidx.activity.result.contract.ActivityResultContracts.OpenMultipleDocuments()) { vm.installRish(it) }
     LaunchedEffect(ui.message) { ui.message?.let { snackbar.showSnackbar(it); vm.consumeMessage() } }
 
-    BackScaffold("Shizuku & Git", onBack) { padding ->
+    BackScaffold(stringResource(R.string.shizuku_git), onBack) { padding ->
         Box(Modifier.fillMaxSize().padding(padding)) {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                Section("run_shell (Shizuku)") {
+                Section(stringResource(R.string.section_run_shell)) {
                     Text(when (shizuku) {
-                        ShizukuState.NOT_INSTALLED -> "Shizuku is not installed."
-                        ShizukuState.NOT_RUNNING -> "Shizuku is installed but not running. Open it and start it via Wireless debugging (or root)."
-                        ShizukuState.PRE_V11 -> "Shizuku is too old — update to v11+."
-                        ShizukuState.NO_PERMISSION -> "Shizuku is running. Verdroid needs permission."
+                        ShizukuState.NOT_INSTALLED -> stringResource(R.string.shizuku_not_installed)
+                        ShizukuState.NOT_RUNNING -> stringResource(R.string.shizuku_not_running)
+                        ShizukuState.PRE_V11 -> stringResource(R.string.shizuku_too_old)
+                        ShizukuState.NO_PERMISSION -> stringResource(R.string.shizuku_needs_permission)
                         ShizukuState.READY -> "✅ Ready (permission granted)."
                     })
                     if (shizuku == ShizukuState.READY) ui.shizukuInfo?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
-                    Text("Active backend: " + when (backend.active) {
-                        ShizukuManager.BACKEND_NEW_PROCESS -> "Shizuku newProcess"
-                        ShizukuManager.BACKEND_SERVICE -> "Shizuku UserService (fallback)"
-                        else -> if (backend.errors.isEmpty()) "not tested yet" else "none available"
+                    Text(stringResource(R.string.active_backend) + " " + when (backend.active) {
+                        ShizukuManager.BACKEND_NEW_PROCESS -> stringResource(R.string.backend_new_process)
+                        ShizukuManager.BACKEND_SERVICE -> stringResource(R.string.backend_user_service)
+                        else -> if (backend.errors.isEmpty()) stringResource(R.string.not_tested_yet) else stringResource(R.string.none_available)
                     }, style = MaterialTheme.typography.bodyMedium)
-                    Text("Order: Shizuku newProcess (primary) → Shizuku UserService (fallback). Commands run as the shell user.",
+                    Text(stringResource(R.string.shizuku_order_note),
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     backend.errors.forEach { (k, v) -> Text("• $k: $v", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error) }
-                    if (backend.errors.isNotEmpty()) CopyButton(backend.errors.entries.joinToString("\n") { "${it.key}: ${it.value}" }, label = "Copy errors")
-                    ui.shizukuBindError?.let { CopyableText("Last bind error: $it", color = MaterialTheme.colorScheme.error) }
+                    if (backend.errors.isNotEmpty()) CopyButton(backend.errors.entries.joinToString("\n") { "${it.key}: ${it.value}" }, label = stringResource(R.string.copy_errors))
+                    ui.shizukuBindError?.let { CopyableText(stringResource(R.string.last_bind_error, it), color = MaterialTheme.colorScheme.error) }
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         when (shizuku) {
                             ShizukuState.NOT_INSTALLED -> Button(onClick = {
                                 context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://shizuku.rikka.app/download/")))
-                            }) { Text("Get Shizuku") }
+                            }) { Text(stringResource(R.string.get_shizuku)) }
                             ShizukuState.NOT_RUNNING, ShizukuState.PRE_V11 -> Button(onClick = {
                                 context.packageManager.getLaunchIntentForPackage(ShizukuManager.SHIZUKU_PACKAGE)?.let { context.startActivity(it) }
-                            }) { Text("Open Shizuku") }
-                            ShizukuState.NO_PERMISSION -> Button(onClick = vm::requestShizukuPermission) { Text("Grant permission") }
-                            ShizukuState.READY -> Button(onClick = vm::testShell, enabled = !ui.testing) { Text(if (ui.testing) "Testing…" else "Test (id)") }
+                            }) { Text(stringResource(R.string.open_shizuku)) }
+                            ShizukuState.NO_PERMISSION -> Button(onClick = vm::requestShizukuPermission) { Text(stringResource(R.string.grant_permission)) }
+                            ShizukuState.READY -> Button(onClick = vm::testShell, enabled = !ui.testing) { Text(if (ui.testing) stringResource(R.string.testing_) else stringResource(R.string.test_id)) }
                         }
-                        OutlinedButton(onClick = vm::diagnoseShizuku, enabled = !ui.testing && shizuku == ShizukuState.READY) { Text("Diagnose") }
-                        OutlinedButton(onClick = vm::refresh) { Text("Re-check") }
+                        OutlinedButton(onClick = vm::diagnoseShizuku, enabled = !ui.testing && shizuku == ShizukuState.READY) { Text(stringResource(R.string.diagnose)) }
+                        OutlinedButton(onClick = vm::refresh) { Text(stringResource(R.string.re_check)) }
                         if (ui.testing) CircularProgressIndicator(Modifier.size(20.dp).align(Alignment.CenterVertically), strokeWidth = 2.dp)
                     }
                     ui.testOutput?.let { CopyableText(it) }
                 }
 
-                Section("rish (rish_run)") {
-                    Text("Shizuku's rish lets Verdroid run privileged shell commands (rish_run). In Shizuku, open “Use Shizuku in " +
-                        "terminal apps” → Export files into Download, Documents or Documents/Verdroid/Input and tap Find rish (needs " +
-                        "All files access), or pick the exported rish file (select rish_shizuku.dex too if asked). " +
-                        "Verdroid copies both to /data/local/tmp/verdroid_rish and chmod +x (needs Shizuku).", style = MaterialTheme.typography.bodySmall)
-                    Text(if (ui.rishInstalled) "✅ Installed: ${ui.rishInfo}" else "Not set up", style = MaterialTheme.typography.bodyMedium)
+                Section(stringResource(R.string.section_rish)) {
+                    Text(stringResource(R.string.rish_intro), style = MaterialTheme.typography.bodySmall)
+                    Text(if (ui.rishInstalled) stringResource(R.string.rish_installed, ui.rishInfo ?: "") else stringResource(R.string.not_set_up), style = MaterialTheme.typography.bodyMedium)
                     FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Button(onClick = vm::findRish) { Text("Find rish") }
-                        OutlinedButton(onClick = { rishPicker.launch(arrayOf("*/*")) }) { Text(if (ui.rishInstalled) "Pick again" else "Pick rish file") }
+                        Button(onClick = vm::findRish) { Text(stringResource(R.string.find_rish)) }
+                        OutlinedButton(onClick = { rishPicker.launch(arrayOf("*/*")) }) { Text(if (ui.rishInstalled) stringResource(R.string.pick_again) else stringResource(R.string.pick_rish_file)) }
                     }
                     if (ui.rishInstalled) FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        OutlinedButton(onClick = vm::testRish, enabled = !ui.testing) { Text("Test (id)") }
-                        OutlinedButton(onClick = vm::fixRishPermissions) { Text("Fix rish permissions") }
-                        OutlinedButton(onClick = vm::removeRish) { Text("Remove") }
+                        OutlinedButton(onClick = vm::testRish, enabled = !ui.testing) { Text(stringResource(R.string.test_id)) }
+                        OutlinedButton(onClick = vm::fixRishPermissions) { Text(stringResource(R.string.fix_rish_permissions)) }
+                        OutlinedButton(onClick = vm::removeRish) { Text(stringResource(R.string.remove)) }
                     }
                     if (ui.rishNeedsAccess) TextButton(onClick = { runCatching { context.startActivity(vm.allFilesAccessIntent()) } }) {
-                        Text("Grant All files access")
+                        Text(stringResource(R.string.grant_all_files))
                     }
                     TextButton(onClick = {
                         context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/RikkaApps/Shizuku-API/tree/master/rish")))
-                    }) { Text("About rish (GitHub)") }
+                    }) { Text(stringResource(R.string.about_rish)) }
                 }
 
-                Section("Git (git_clone / git_repos / git_status / git_commit / git_push …)") {
-                    Text("Repos are cloned into Documents/Verdroid/Repos/<name>.", style = MaterialTheme.typography.bodySmall)
-                    Text("Token: ${ui.gitTokenMasked ?: "not set"} · stored with EncryptedSharedPreferences", style = MaterialTheme.typography.bodySmall)
-                    OutlinedTextField(token, { token = it }, label = { Text("Personal access token (repo scope)") }, singleLine = true,
+                Section(stringResource(R.string.section_git)) {
+                    Text(stringResource(R.string.git_repos_note), style = MaterialTheme.typography.bodySmall)
+                    Text(stringResource(R.string.git_token_line, ui.gitTokenMasked ?: stringResource(R.string.not_set)), style = MaterialTheme.typography.bodySmall)
+                    OutlinedTextField(token, { token = it }, label = { Text(stringResource(R.string.git_pat_hint)) }, singleLine = true,
                         visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(user, { user = it }, label = { Text("HTTPS username") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(name, { name = it }, label = { Text("Author name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(email, { email = it }, label = { Text("Author email") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(user, { user = it }, label = { Text(stringResource(R.string.https_username)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(name, { name = it }, label = { Text(stringResource(R.string.author_name)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(email, { email = it }, label = { Text(stringResource(R.string.author_email)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Button(onClick = { vm.saveGit(token, user, name, email); token = "" }) { Text("Save") }
-                        if (ui.gitTokenMasked != null) OutlinedButton(onClick = vm::clearGitToken) { Text("Remove token") }
+                        Button(onClick = { vm.saveGit(token, user, name, email); token = "" }) { Text(stringResource(R.string.save)) }
+                        if (ui.gitTokenMasked != null) OutlinedButton(onClick = vm::clearGitToken) { Text(stringResource(R.string.remove_token)) }
                     }
                 }
 

@@ -54,6 +54,37 @@ enum class Palette(val label: String, val description: String, val seed: Long) {
     MIKU("Miku", "Miku teal with pink accents", 0xFF39C5BB),
 }
 
+/** Resource ids for the theme mode labels (UI reads them with stringResource). */
+fun ThemeMode.labelRes(): Int = when (this) {
+    ThemeMode.SYSTEM -> com.verdroid.app.R.string.tm_system
+    ThemeMode.LIGHT -> com.verdroid.app.R.string.tm_light
+    ThemeMode.DARK -> com.verdroid.app.R.string.tm_dark
+}
+
+fun Palette.labelRes(): Int = when (this) {
+    Palette.MESSENGER -> com.verdroid.app.R.string.pal_messenger
+    Palette.DYNAMIC -> com.verdroid.app.R.string.pal_dynamic
+    Palette.MIDNIGHT -> com.verdroid.app.R.string.pal_midnight
+    Palette.FOREST -> com.verdroid.app.R.string.pal_forest
+    Palette.SUNSET -> com.verdroid.app.R.string.pal_sunset
+    Palette.PURPLE -> com.verdroid.app.R.string.pal_purple
+    Palette.ROSE -> com.verdroid.app.R.string.pal_rose
+    Palette.OCEAN -> com.verdroid.app.R.string.pal_ocean
+    Palette.MIKU -> com.verdroid.app.R.string.pal_miku
+}
+
+fun Palette.descRes(): Int = when (this) {
+    Palette.MESSENGER -> com.verdroid.app.R.string.pal_messenger_d
+    Palette.DYNAMIC -> com.verdroid.app.R.string.pal_dynamic_d
+    Palette.MIDNIGHT -> com.verdroid.app.R.string.pal_midnight_d
+    Palette.FOREST -> com.verdroid.app.R.string.pal_forest_d
+    Palette.SUNSET -> com.verdroid.app.R.string.pal_sunset_d
+    Palette.PURPLE -> com.verdroid.app.R.string.pal_purple_d
+    Palette.ROSE -> com.verdroid.app.R.string.pal_rose_d
+    Palette.OCEAN -> com.verdroid.app.R.string.pal_ocean_d
+    Palette.MIKU -> com.verdroid.app.R.string.pal_miku_d
+}
+
 /** Chat bubble colors that follow the theme. */
 @Immutable
 data class BubbleColors(val user: Color, val onUser: Color, val agent: Color, val onAgent: Color)

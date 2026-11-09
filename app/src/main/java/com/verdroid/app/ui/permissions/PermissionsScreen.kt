@@ -17,6 +17,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import com.verdroid.app.R
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
@@ -34,6 +35,7 @@ import com.verdroid.app.ui.components.BackScaffold
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
+import androidx.compose.ui.res.stringResource
 
 /** One permission row: whether it is granted and what granting does. */
 data class PermissionRow(val id: String, val title: String, val why: String, val granted: Boolean, val action: String?)
@@ -45,21 +47,21 @@ object PermissionCatalog {
         val shizuku: ShizukuState, val accessibility: Boolean, val overlay: Boolean, val battery: Boolean, val installApps: Boolean,
     )
 
-    fun rows(s: Status): List<PermissionRow> = listOf(
-        PermissionRow("all_files", "All files access", "Documents/Verdroid (Input/, Output/, Internal/) and the workspace_* tools", s.allFiles, "Grant"),
-        PermissionRow("notifications", "Notifications", "Task finished / rate-limit alerts, chat heads (Bubbles), keep-alive", s.notifications, "Grant"),
-        PermissionRow("termux", "Run commands in Termux", "termux_run, Termux add-ons, selenium_* and termux_python",
-            s.termuxRunCommand, if (!s.termuxInstalled) "Get Termux" else "Grant"),
-        PermissionRow("shizuku", "Shizuku", "run_shell and rish_run (privileged shell)", s.shizuku == ShizukuState.READY, when (s.shizuku) {
-            ShizukuState.NOT_INSTALLED -> "Get Shizuku"
-            ShizukuState.NOT_RUNNING, ShizukuState.PRE_V11 -> "Open Shizuku"
-            ShizukuState.NO_PERMISSION -> "Grant"
+    fun rows(ctx: Context, s: Status): List<PermissionRow> = listOf(
+        PermissionRow("all_files", ctx.getString(R.string.perm_all_files), ctx.getString(R.string.perm_all_files_desc), s.allFiles, ctx.getString(R.string.grant)),
+        PermissionRow("notifications", ctx.getString(R.string.notifications), ctx.getString(R.string.perm_notifications_desc), s.notifications, ctx.getString(R.string.grant)),
+        PermissionRow("termux", ctx.getString(R.string.perm_termux), ctx.getString(R.string.perm_termux_desc),
+            s.termuxRunCommand, if (!s.termuxInstalled) ctx.getString(R.string.perm_get_termux) else ctx.getString(R.string.grant)),
+        PermissionRow("shizuku", ctx.getString(R.string.perm_shizuku), ctx.getString(R.string.perm_shizuku_desc), s.shizuku == ShizukuState.READY, when (s.shizuku) {
+            ShizukuState.NOT_INSTALLED -> ctx.getString(R.string.get_shizuku)
+            ShizukuState.NOT_RUNNING, ShizukuState.PRE_V11 -> ctx.getString(R.string.open_shizuku)
+            ShizukuState.NO_PERMISSION -> ctx.getString(R.string.grant)
             ShizukuState.READY -> null
         }),
-        PermissionRow("accessibility", "Accessibility service", "screen_read / tap / swipe / type on other apps", s.accessibility, "Open settings"),
-        PermissionRow("overlay", "Display over other apps", "Overlay chat heads", s.overlay, "Grant"),
-        PermissionRow("battery", "Ignore battery optimisation", "Keeps long tasks running in the background", s.battery, "Grant"),
-        PermissionRow("install", "Install unknown apps", "In-app updates (installing a new Verdroid APK)", s.installApps, "Grant"),
+        PermissionRow("accessibility", ctx.getString(R.string.perm_accessibility), ctx.getString(R.string.perm_accessibility_desc), s.accessibility, ctx.getString(R.string.open_settings)),
+        PermissionRow("overlay", ctx.getString(R.string.perm_overlay), ctx.getString(R.string.perm_overlay_desc), s.overlay, ctx.getString(R.string.grant)),
+        PermissionRow("battery", ctx.getString(R.string.perm_battery), ctx.getString(R.string.perm_battery_desc), s.battery, ctx.getString(R.string.grant)),
+        PermissionRow("install", ctx.getString(R.string.perm_install), ctx.getString(R.string.perm_install_desc), s.installApps, ctx.getString(R.string.grant)),
     )
 }
 
@@ -92,7 +94,7 @@ class PermissionsViewModel @Inject constructor(
             installApps = runCatching { updater.canInstall() }.getOrDefault(false),
         )
         if (status.allFiles) runCatching { sharedFolder.ensure() }
-        _rows.value = PermissionCatalog.rows(status)
+        _rows.value = PermissionCatalog.rows(context, status)
     }
 
     /** Settings screen (or app store page) for a row; null = handled by a runtime permission dialog in the UI. */
@@ -131,10 +133,10 @@ fun PermissionsScreen(onBack: () -> Unit, onTermuxSetup: () -> Unit, vm: Permiss
         }
     }
 
-    BackScaffold("Permissions", onBack) { padding ->
+    BackScaffold(stringResource(R.string.permissions), onBack) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text("Everything Verdroid can ask for, in one place. Each is optional and only needed for the tools listed.",
+            Text(stringResource(R.string.permissions_intro),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             rows.forEach { r ->
                 ElevatedCard(Modifier.fillMaxWidth()) {
@@ -144,7 +146,7 @@ fun PermissionsScreen(onBack: () -> Unit, onTermuxSetup: () -> Unit, vm: Permiss
                             Text(r.why, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                             if (r.id == "notifications" && !r.granted) TextButton(onClick = {
                                 vm.intentFor("notifications_settings")?.let { runCatching { context.startActivity(it) } }
-                            }) { Text("Open notification settings") }
+                            }) { Text(stringResource(R.string.open_notification_settings)) }
                         }
                         if (!r.granted && r.action != null) OutlinedButton(onClick = { grant(r.id) }) { Text(r.action) }
                     }
@@ -154,24 +156,23 @@ fun PermissionsScreen(onBack: () -> Unit, onTermuxSetup: () -> Unit, vm: Permiss
             val assistant = remember(assistantRefresh) {
                 runCatching { context.getSystemService(android.app.role.RoleManager::class.java).isRoleHeld(android.app.role.RoleManager.ROLE_ASSISTANT) }.getOrDefault(false)
             }
-            Text("Digital assistant", style = MaterialTheme.typography.titleSmall)
-            Text("Set Verdroid as the default assistant (Settings → Apps → Default apps → Digital assistant app) to open a quick " +
-                "prompt from long-press Home/power or the assistant gesture. Replies show as a chat head (needs \"Display over other apps\"), otherwise in the app.",
+            Text(stringResource(R.string.digital_assistant), style = MaterialTheme.typography.titleSmall)
+            Text(stringResource(R.string.digital_assistant_desc),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             ElevatedCard(Modifier.fillMaxWidth()) {
                 Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text((if (assistant) "✅ " else "❌ ") + if (assistant) "Default assistant: Verdroid" else "Default assistant: not Verdroid",
+                    Text((if (assistant) "✅ " else "❌ ") + if (assistant) stringResource(R.string.assistant_yes) else stringResource(R.string.assistant_no),
                         style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                     OutlinedButton(onClick = {
                         val opened = listOf(android.provider.Settings.ACTION_VOICE_INPUT_SETTINGS, android.provider.Settings.ACTION_MANAGE_DEFAULT_APPS_SETTINGS)
                             .any { a -> runCatching { context.startActivity(android.content.Intent(a)) }.isSuccess }
                         if (!opened) context.startActivity(android.content.Intent(android.provider.Settings.ACTION_SETTINGS))
-                    }) { Text(if (assistant) "Settings" else "Set") }
+                    }) { Text(if (assistant) stringResource(R.string.settings) else stringResource(R.string.set)) }
                 }
             }
             Spacer(Modifier.height(8.dp))
-            Text("Termux needs a few more steps inside Termux (allow-external-apps, storage).", style = MaterialTheme.typography.bodySmall)
-            Button(onClick = onTermuxSetup) { Text("Set up Termux…") }
+            Text(stringResource(R.string.termux_more_steps), style = MaterialTheme.typography.bodySmall)
+            Button(onClick = onTermuxSetup) { Text(stringResource(R.string.set_up_termux_dots)) }
         }
     }
 }

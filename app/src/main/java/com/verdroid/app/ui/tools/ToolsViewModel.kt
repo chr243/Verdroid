@@ -9,9 +9,11 @@ import com.verdroid.app.data.termux.TermuxManager
 import com.verdroid.app.data.tools.TermuxPackage
 import com.verdroid.app.data.tools.TermuxPackageJobs
 import com.verdroid.app.data.tools.TermuxPackages
+import com.verdroid.app.R
 import com.verdroid.app.data.tools.ToolEnv
 import com.verdroid.app.data.tools.ToolPrefs
 import com.verdroid.app.data.tools.ToolStatus
+import com.verdroid.app.data.tools.ToolStatusText
 import com.verdroid.app.shizuku.ShizukuManager
 import com.verdroid.app.shizuku.ShizukuState
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -46,7 +48,7 @@ data class ToolsState(
     val storage: StorageSetup = StorageSetup(),
     val termux: TermuxSetup = TermuxSetup(),
     val packages: List<PkgRow> = TermuxPackages.ALL.map { PkgRow(it, PkgState.UNKNOWN) },
-    val packagesNote: String? = "Checking Termux…",
+    val packagesNote: String? = null,
     val checking: Boolean = false,
     /** "Set up Termux" flow: running, current step and the message for the user. */
     val setupActive: Boolean = false,
@@ -65,6 +67,7 @@ sealed interface SetupEvent {
 
 @HiltViewModel
 class ToolsViewModel @Inject constructor(
+    @dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context,
     private val registry: ToolRegistry,
     val prefs: ToolPrefs,
     private val shizuku: ShizukuManager,
@@ -90,7 +93,7 @@ class ToolsViewModel @Inject constructor(
         viewModelScope.launch { pkgJobs.jobs.collect(::applyJobs) }
     }
 
-    private fun rows(env: ToolEnv) = registry.tools.map { ToolRow(it.name, ToolStatus.short(it.description), ToolStatus.of(it.name, env)) }
+    private fun rows(env: ToolEnv) = registry.tools.map { ToolRow(it.name, ToolStatus.short(it.description), ToolStatus.of(it.name, env) { t -> ToolStatusText.localize(context, t) }) }
 
     fun setEnabled(name: String, on: Boolean) = prefs.setEnabled(name, on)
 
@@ -102,7 +105,7 @@ class ToolsViewModel @Inject constructor(
     /** "Set up Termux": re-check, then do the next step (always acts, even if it is the same step again). */
     fun setupTermux() {
         lastActed = null
-        _state.update { it.copy(setupActive = true, setupMessage = "Checking Termux…") }
+        _state.update { it.copy(setupActive = true, setupMessage = context.getString(R.string.checking_termux)) }
         viewModelScope.launch { check(); advance() }
     }
 
@@ -168,13 +171,13 @@ class ToolsViewModel @Inject constructor(
 
     private suspend fun detectPackages() {
         val t = _state.value.termux
-        if (!t.installed) return setNote("Install Termux (F-Droid build) to add these.")
-        if (!t.permission) return setNote("Grant the Run commands in Termux permission (Termux card above) first.")
+        if (!t.installed) return setNote(context.getString(R.string.need_termux_install))
+        if (!t.permission) return setNote(context.getString(R.string.need_termux_permission))
         val r = termux.runAndWait(TermuxPackages.detectQuery(), "pkgs-${System.nanoTime()}", 10_000, label = "Verdroid status")
         val found = r?.let { TermuxPackages.parseDetect(it.stdout) }
         val storage = r?.let { TermuxPackages.parseKeys(it.stdout)["STORAGE"] == "1" }
         _state.update { it.copy(termux = it.termux.copy(answering = found != null, storage = storage)) }
-        if (found == null) return setNote("Termux did not answer — paste the allow-external-apps command (Termux card above) into Termux once.")
+        if (found == null) return setNote(context.getString(R.string.termux_no_answer))
         _state.update { s ->
             s.copy(packagesNote = null, packages = s.packages.map { row ->
                 if (row.state == PkgState.INSTALLING) row

@@ -1,6 +1,7 @@
 package com.verdroid.app.ui.menu
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -16,6 +17,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -24,6 +26,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.ui.res.stringResource
+import com.verdroid.app.R
 import com.verdroid.app.domain.model.ApiKey
 import com.verdroid.app.domain.model.LimitSettings
 import com.verdroid.app.ui.Routes
@@ -38,7 +42,7 @@ import com.verdroid.app.ui.components.groupedRow
 private fun SubScreen(title: String, onBack: () -> Unit, actions: @Composable RowScope.() -> Unit = {}, content: @Composable (PaddingValues) -> Unit) {
     Scaffold(topBar = {
         TopAppBar(title = { Text(title) }, actions = actions,
-            navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } })
+            navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back)) } })
     }, content = content)
 }
 
@@ -48,45 +52,46 @@ private fun SubScreen(title: String, onBack: () -> Unit, actions: @Composable Ro
 fun SettingsScreen(onNavigate: (String) -> Unit, onBack: () -> Unit, unreadNotifications: Int = 0, vm: SettingsViewModel = hiltViewModel()) {
     val kiloNoticeSeen by vm.appPrefs.kiloNoticeSeen.collectAsStateWithLifecycle()
     Scaffold(topBar = {
-        TopAppBar(title = { Text("Settings") },
-            navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } })
+        TopAppBar(title = { Text(stringResource(R.string.settings)) },
+            navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back)) } })
     }) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(bottom = 16.dp)) {
             fun item(title: String, subtitle: String, route: String): @Composable (Int) -> Unit = { i -> MenuItem(title, subtitle, i) { onNavigate(route) } }
             if (!kiloNoticeSeen) KiloNotice(onDismiss = vm.appPrefs::dismissKiloNotice)
-            SettingsGroup("Activity", listOf(
-                item("Notifications",
-                    if (unreadNotifications > 0) "$unreadNotifications unread · rate limits, quota warnings, completions"
-                    else "Rate-limit alerts, quota warnings and completions", Routes.NOTIFICATIONS),
-                item("Schedules", "Reminders and scheduled agent runs: next run, last result, on/off, run now", Routes.SCHEDULES),
-                item("Memory", "Short-term (per chat) and long-term memory: list, search, edit, automatic saving", Routes.memory()),
-                item("Archive", "Chats deleted from the home list: open, restore or delete permanently", Routes.ARCHIVE),
+            SettingsGroup(stringResource(R.string.group_activity), listOf(
+                item(stringResource(R.string.notifications),
+                    if (unreadNotifications > 0) stringResource(R.string.unread_notifications, unreadNotifications)
+                    else stringResource(R.string.rate_limit_alerts), Routes.NOTIFICATIONS),
+                item(stringResource(R.string.schedules), stringResource(R.string.schedules_sub), Routes.SCHEDULES),
+                item(stringResource(R.string.memory), stringResource(R.string.memory_sub), Routes.memory()),
+                item(stringResource(R.string.archive), stringResource(R.string.archive_sub), Routes.ARCHIVE),
             ))
-            SettingsGroup("Models", listOf(
-                item("LLM providers", "OpenRouter keys, Kilo, OpenAI, Groq, DeepSeek, Together, Ollama/LM Studio or any OpenAI-compatible API", Routes.PROVIDER),
-                item("Model priority", "Ordered list of free models used for fallback", Routes.MODELS),
-                item("Rate limits & quota", "RPM, daily limit, cooldown, low-quota warning, context budget", Routes.LIMITS),
+            SettingsGroup(stringResource(R.string.group_models), listOf(
+                item(stringResource(R.string.llm_providers), stringResource(R.string.llm_providers_sub), Routes.PROVIDER),
+                item(stringResource(R.string.model_priority), stringResource(R.string.model_priority_sub), Routes.MODELS),
+                item(stringResource(R.string.rate_limits_quota), stringResource(R.string.rate_limits_quota_sub), Routes.LIMITS),
             ))
-            SettingsGroup("Agent tools", listOf(
-                item("Tools", "Built-in agent tools (status, on/off), Documents/Verdroid folder access, Termux setup and add-ons", Routes.TOOLS),
-                item("Sub-agents", "Parallel read-only research (spawn_subagents) and Deep research (deep_research tool): on/off, models, concurrency, limits, tools", Routes.SUBAGENTS),
-                item("Profiles", "On/off (on by default). Switchable bundles of tools, skills, model, instructions and memory; filter chats by profile", Routes.PROFILES),
-                item("AGENTS.md", "Your standing instructions for the agent, added to every chat", Routes.AGENTS_MD),
-                item("Skills", "Procedures the agent saved: enable/disable (only enabled ones go into the prompt), view, delete", Routes.SKILLS),
-                item("MCP servers", "Remote MCP servers, their status and per-tool switches", Routes.MCP),
+            SettingsGroup(stringResource(R.string.group_agent_tools), listOf(
+                item(stringResource(R.string.tools), stringResource(R.string.tools_sub), Routes.TOOLS),
+                item(stringResource(R.string.subagents_full), stringResource(R.string.subagents_sub), Routes.SUBAGENTS),
+                item(stringResource(R.string.profiles), stringResource(R.string.profiles_sub), Routes.PROFILES),
+                item("AGENTS.md", stringResource(R.string.agents_md_sub), Routes.AGENTS_MD),
+                item(stringResource(R.string.skills), stringResource(R.string.skills_sub), Routes.SKILLS),
+                item(stringResource(R.string.mcp_servers), stringResource(R.string.mcp_servers_sub), Routes.MCP),
             ))
-            SettingsGroup("Phone", listOf(
-                item("Permissions", "All files, notifications, Termux, Shizuku, accessibility, overlay, battery, app installs", Routes.PERMISSIONS),
-                item("Chat heads", "Auto / Bubbles / Overlay, permissions", Routes.CHAT_HEADS),
-                item("Background & battery", "Keep-alive service, battery optimisation, HyperOS autostart", Routes.KEEP_ALIVE),
-                item("Shizuku & Git", "run_shell via Shizuku, rish, Git token", Routes.SHIZUKU),
+            SettingsGroup(stringResource(R.string.group_phone), listOf(
+                item(stringResource(R.string.permissions), stringResource(R.string.permissions_sub), Routes.PERMISSIONS),
+                item(stringResource(R.string.chat_heads), stringResource(R.string.chat_heads_sub), Routes.CHAT_HEADS),
+                item(stringResource(R.string.background_battery), stringResource(R.string.background_battery_sub), Routes.KEEP_ALIVE),
+                item(stringResource(R.string.shizuku_git), stringResource(R.string.shizuku_git_sub), Routes.SHIZUKU),
             ))
-            SettingsGroup("Appearance", listOf(item("Theme", "Light / dark mode and color palette", Routes.THEME),
-                item("Voice", "Mic button (speech to text), read replies aloud, hands-free mode", Routes.VOICE)))
-            SettingsGroup("App", listOf({ i -> AppUpdateRow(vm.updater, i) },
+            SettingsGroup(stringResource(R.string.group_appearance), listOf(item(stringResource(R.string.theme), stringResource(R.string.theme_desc), Routes.THEME),
+                item(stringResource(R.string.voice), stringResource(R.string.voice_desc), Routes.VOICE),
+                { i -> LanguageRow(vm, i) }))
+            SettingsGroup(stringResource(R.string.group_app), listOf({ i -> AppUpdateRow(vm.updater, i) },
                 { i -> CrashLogRow(i) },
-                { i -> LinkItem("Feedback / Feature request", "Report a bug or suggest an idea on GitHub", i) { com.verdroid.app.data.feedback.FeedbackLinks.CHOOSER } }))
-            Text("Verdroid v${com.verdroid.app.BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.labelSmall,
+                { i -> LinkItem(stringResource(R.string.feedback_title), stringResource(R.string.feedback_sub), i) { com.verdroid.app.data.feedback.FeedbackLinks.CHOOSER } }))
+            Text(stringResource(R.string.version_line, com.verdroid.app.BuildConfig.VERSION_NAME), style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(start = 28.dp, top = 16.dp))
         }
     }
@@ -99,13 +104,10 @@ private fun KiloNotice(onDismiss: () -> Unit) {
         shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp),
         modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 12.dp)) {
         Column(Modifier.padding(16.dp)) {
-            Text("New: Kilo Auto Free (no API key)", style = MaterialTheme.typography.titleSmall)
+            Text(stringResource(R.string.new_kilo_auto), style = MaterialTheme.typography.titleSmall)
             Spacer(Modifier.height(4.dp))
-            Text("kilo:kilo-auto/free is in Model priority and is used when OpenRouter has no key or is unavailable. " +
-                "It works without an OpenRouter key (about 200 requests/hour). Kilo's free models may log prompts and " +
-                "replies, which can include your memories. Turn off \"Send memories to Kilo models\" below or remove the model " +
-                "from Model priority if you prefer.", style = MaterialTheme.typography.bodySmall)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { TextButton(onClick = onDismiss) { Text("Got it") } }
+            Text(stringResource(R.string.kilo_notice_body), style = MaterialTheme.typography.bodySmall)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) { TextButton(onClick = onDismiss) { Text(stringResource(R.string.got_it)) } }
         }
     }
 }
@@ -121,6 +123,56 @@ private fun MenuItem(title: String, subtitle: String, index: Int, onClick: () ->
     )
 }
 
+/** Settings → Appearance → Language: System default / English / 中文. Applies immediately (activity recreate). */
+@Composable
+private fun LanguageRow(vm: SettingsViewModel, index: Int) {
+    val language by vm.appPrefs.language.collectAsStateWithLifecycle()
+    var open by remember { mutableStateOf(false) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val sysLabel = stringResource(R.string.lang_system)
+    val enLabel = stringResource(R.string.lang_english)
+    val zhLabel = stringResource(R.string.lang_chinese)
+    fun label(tag: String) = when (tag) {
+        "en" -> enLabel
+        "zh" -> zhLabel
+        else -> sysLabel
+    }
+    val current = label(language)
+    ListItem(
+        headlineContent = { Text(stringResource(R.string.language)) },
+        supportingContent = { Text(current) },
+        colors = ListItemDefaults.colors(containerColor = Zebra.color(index)),
+        modifier = Modifier.clickable { open = true },
+    )
+    if (open) {
+        AlertDialog(onDismissRequest = { open = false },
+            title = { Text(stringResource(R.string.language)) },
+            text = {
+                Column(Modifier.fillMaxWidth()) {
+                    listOf("system", "en", "zh").forEach { tag ->
+                        Row(
+                            Modifier.fillMaxWidth()
+                                .selectable(selected = tag == language, role = Role.RadioButton,
+                                    onClick = {
+                                        vm.appPrefs.setLanguage(tag)
+                                        com.verdroid.app.data.prefs.LocaleHelper.apply(tag)
+                                        open = false
+                                        (context as? android.app.Activity)?.recreate()
+                                    })
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            RadioButton(selected = tag == language, onClick = null)
+                            Spacer(Modifier.width(12.dp))
+                            Text(label(tag), style = MaterialTheme.typography.bodyLarge)
+                        }
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { open = false }) { Text(stringResource(R.string.close)) } })
+    }
+}
+
 /** OpenRouter keys (multi-key fallback, primary first). Lives in Settings → LLM providers → OpenRouter (v1.0.45). */
 @Composable
 fun OpenRouterKeysSection(vm: SettingsViewModel = hiltViewModel()) {
@@ -131,8 +183,7 @@ fun OpenRouterKeysSection(vm: SettingsViewModel = hiltViewModel()) {
     run {
         Column(Modifier.fillMaxWidth()) {
             run {
-                Text(modifier = Modifier.padding(bottom = 10.dp), text = "Keys are stored encrypted (Android Keystore + EncryptedSharedPreferences). The primary key is used first; " +
-                    "others are used in order when a key is rate-limited.", style = MaterialTheme.typography.bodySmall,
+                Text(modifier = Modifier.padding(bottom = 10.dp), text = stringResource(R.string.keys_note), style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             keys.forEachIndexed { i, k ->
@@ -141,25 +192,25 @@ fun OpenRouterKeysSection(vm: SettingsViewModel = hiltViewModel()) {
                         RadioButton(selected = k.isPrimary, onClick = { vm.setPrimary(k.id) })
                         Column(Modifier.weight(1f)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(k.label.ifBlank { "Key ${i + 1}" }, fontWeight = FontWeight.SemiBold)
-                                if (k.isPrimary) { Spacer(Modifier.width(6.dp)); SmallBadge("primary") }
+                                Text(k.label.ifBlank { stringResource(R.string.key_n, i + 1) }, fontWeight = FontWeight.SemiBold)
+                                if (k.isPrimary) { Spacer(Modifier.width(6.dp)); SmallBadge(stringResource(R.string.primary)) }
                             }
                             Text(k.masked, fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
                         }
-                        IconButton(onClick = { vm.moveKey(k.id, -1) }, enabled = i > 0) { Icon(Icons.Filled.KeyboardArrowUp, "Move up") }
-                        IconButton(onClick = { vm.moveKey(k.id, 1) }, enabled = i < keys.lastIndex) { Icon(Icons.Filled.KeyboardArrowDown, "Move down") }
-                        IconButton(onClick = { editing = k }) { Icon(Icons.Filled.Edit, "Edit label") }
-                        IconButton(onClick = { vm.removeKey(k.id) }) { Icon(Icons.Filled.Delete, "Remove") }
+                        IconButton(onClick = { vm.moveKey(k.id, -1) }, enabled = i > 0) { Icon(Icons.Filled.KeyboardArrowUp, stringResource(R.string.move_up)) }
+                        IconButton(onClick = { vm.moveKey(k.id, 1) }, enabled = i < keys.lastIndex) { Icon(Icons.Filled.KeyboardArrowDown, stringResource(R.string.move_down)) }
+                        IconButton(onClick = { editing = k }) { Icon(Icons.Filled.Edit, stringResource(R.string.edit_label)) }
+                        IconButton(onClick = { vm.removeKey(k.id) }) { Icon(Icons.Filled.Delete, stringResource(R.string.remove)) }
                     }
                 }
             }
             run {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(top = 16.dp)) {
-                    Text("Add key", style = MaterialTheme.typography.titleSmall)
-                    OutlinedTextField(label, { label = it }, label = { Text("Label (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    OutlinedTextField(key, { key = it }, label = { Text("OpenRouter API key (sk-or-…)") }, singleLine = true,
+                    Text(stringResource(R.string.add_key), style = MaterialTheme.typography.titleSmall)
+                    OutlinedTextField(label, { label = it }, label = { Text(stringResource(R.string.label_optional)) }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                    OutlinedTextField(key, { key = it }, label = { Text(stringResource(R.string.or_key_hint)) }, singleLine = true,
                         visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
-                    Button(onClick = { vm.addKey(label, key); label = ""; key = "" }, enabled = key.isNotBlank()) { Text("Add key") }
+                    Button(onClick = { vm.addKey(label, key); label = ""; key = "" }, enabled = key.isNotBlank()) { Text(stringResource(R.string.add_key)) }
                 }
             }
         }
@@ -168,10 +219,10 @@ fun OpenRouterKeysSection(vm: SettingsViewModel = hiltViewModel()) {
         var newLabel by remember(k.id) { mutableStateOf(k.label) }
         AlertDialog(
             onDismissRequest = { editing = null },
-            title = { Text("Edit label") },
+            title = { Text(stringResource(R.string.edit_label)) },
             text = { OutlinedTextField(newLabel, { newLabel = it }, singleLine = true) },
-            confirmButton = { TextButton(onClick = { vm.renameKey(k.id, newLabel); editing = null }) { Text("Save") } },
-            dismissButton = { TextButton(onClick = { editing = null }) { Text("Cancel") } },
+            confirmButton = { TextButton(onClick = { vm.renameKey(k.id, newLabel); editing = null }) { Text(stringResource(R.string.save)) } },
+            dismissButton = { TextButton(onClick = { editing = null }) { Text(stringResource(R.string.cancel)) } },
         )
     }
 }
@@ -181,15 +232,15 @@ fun ModelPriorityScreen(onBack: () -> Unit, vm: SettingsViewModel = hiltViewMode
     val models by vm.models.collectAsStateWithLifecycle()
     val kiloUsed by vm.kiloUsedThisHour.collectAsStateWithLifecycle()
     var newModel by remember { mutableStateOf("") }
-    SubScreen("Model priority", onBack, actions = {
-        TextButton(onClick = { vm.resetModels() }) { Text("Reset") }
+    SubScreen(stringResource(R.string.model_priority), onBack, actions = {
+        TextButton(onClick = { vm.resetModels() }) { Text(stringResource(R.string.reset)) }
     }) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding), contentPadding = PaddingValues(16.dp)) {
             item {
-                Text(modifier = Modifier.padding(bottom = 10.dp), text = "Tried top to bottom. On 429 / 5xx / upstream errors the next model is used and the failed one cools down.",
+                Text(modifier = Modifier.padding(bottom = 10.dp), text = stringResource(R.string.model_priority_hint),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 Text(modifier = Modifier.padding(bottom = 10.dp),
-                    text = "kilo:… models use the Kilo Gateway with no API key. Kilo requests this hour: $kiloUsed/${com.verdroid.app.data.network.KiloApi.HOURLY_LIMIT}.",
+                    text = stringResource(R.string.kilo_hourly, kiloUsed, com.verdroid.app.data.network.KiloApi.HOURLY_LIMIT),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             itemsIndexed(models, key = { i, m -> "$i-$m" }) { i, m ->
@@ -198,16 +249,16 @@ fun ModelPriorityScreen(onBack: () -> Unit, vm: SettingsViewModel = hiltViewMode
                         Text("${i + 1}.", modifier = Modifier.width(28.dp), fontWeight = FontWeight.Bold)
                         Text(com.verdroid.app.data.network.ModelIds.label(m), fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                         IconButton(onClick = { vm.moveModel(i, -1) }, enabled = i > 0) { Icon(Icons.Filled.KeyboardArrowUp, "Up") }
-                        IconButton(onClick = { vm.moveModel(i, 1) }, enabled = i < models.lastIndex) { Icon(Icons.Filled.KeyboardArrowDown, "Down") }
-                        IconButton(onClick = { vm.removeModel(i) }) { Icon(Icons.Filled.Delete, "Remove") }
+                        IconButton(onClick = { vm.moveModel(i, 1) }, enabled = i < models.lastIndex) { Icon(Icons.Filled.KeyboardArrowDown, stringResource(R.string.down)) }
+                        IconButton(onClick = { vm.removeModel(i) }) { Icon(Icons.Filled.Delete, stringResource(R.string.remove)) }
                     }
                 }
             }
             item {
                 Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 16.dp)) {
-                    OutlinedTextField(newModel, { newModel = it }, label = { Text("Model id, e.g. vendor/model:free or kilo:id") }, singleLine = true, modifier = Modifier.weight(1f))
+                    OutlinedTextField(newModel, { newModel = it }, label = { Text(stringResource(R.string.model_id_hint)) }, singleLine = true, modifier = Modifier.weight(1f))
                     Spacer(Modifier.width(8.dp))
-                    Button(onClick = { vm.addModel(newModel); newModel = "" }, enabled = newModel.isNotBlank()) { Text("Add") }
+                    Button(onClick = { vm.addModel(newModel); newModel = "" }, enabled = newModel.isNotBlank()) { Text(stringResource(R.string.add)) }
                 }
             }
         }
@@ -226,43 +277,43 @@ fun RateLimitSettingsScreen(onBack: () -> Unit, vm: SettingsViewModel = hiltView
     var threshold by remember(limits) { mutableStateOf(limits.lowQuotaThreshold.toString()) }
     var budget by remember(limits) { mutableStateOf(limits.contextBudgetTokens.toString()) }
     var steps by remember(limits) { mutableStateOf(limits.maxSteps.toString()) }
-    SubScreen("Rate limits & quota", onBack) { padding ->
+    SubScreen(stringResource(R.string.rate_limits_quota), onBack) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            NumberField("Requests per minute (per key)", rpm) { rpm = it }
-            NumberField("Requests per day", rpd) { rpd = it }
-            NumberField("Model cooldown (seconds)", cooldown) { cooldown = it }
-            NumberField("Low-quota warning threshold", threshold) { threshold = it }
-            NumberField("Context budget (tokens)", budget) { budget = it }
-            NumberField("Max agent steps per run", steps) { steps = it }
+            NumberField(stringResource(R.string.rpm_label), rpm) { rpm = it }
+            NumberField(stringResource(R.string.rpd_label), rpd) { rpd = it }
+            NumberField(stringResource(R.string.cooldown_label), cooldown) { cooldown = it }
+            NumberField(stringResource(R.string.threshold_label), threshold) { threshold = it }
+            NumberField(stringResource(R.string.budget_label), budget) { budget = it }
+            NumberField(stringResource(R.string.steps_label), steps) { steps = it }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Button(onClick = {
                     val d = LimitSettings()
                     vm.saveLimits(LimitSettings(rpm.toIntOrNull() ?: d.requestsPerMinute, rpd.toIntOrNull() ?: d.requestsPerDay,
                         cooldown.toIntOrNull() ?: d.modelCooldownSeconds, threshold.toIntOrNull() ?: d.lowQuotaThreshold,
                         budget.toIntOrNull() ?: d.contextBudgetTokens, steps.toIntOrNull() ?: d.maxSteps))
-                }) { Text("Save") }
-                OutlinedButton(onClick = { vm.saveLimits(LimitSettings()) }) { Text("Defaults") }
+                }) { Text(stringResource(R.string.save)) }
+                OutlinedButton(onClick = { vm.saveLimits(LimitSettings()) }) { Text(stringResource(R.string.defaults)) }
             }
             HorizontalDivider()
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Free-tier quota (GET /key)", style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
+                Text(stringResource(R.string.free_tier_quota), style = MaterialTheme.typography.titleSmall, modifier = Modifier.weight(1f))
                 if (refreshing) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
-                else IconButton(onClick = { vm.refreshQuota() }) { Icon(Icons.Filled.Refresh, "Refresh") }
+                else IconButton(onClick = { vm.refreshQuota() }) { Icon(Icons.Filled.Refresh, stringResource(R.string.refresh)) }
             }
             val q = quota
-            if (q == null) Text("No data yet (add a key and refresh).", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (q == null) Text(stringResource(R.string.no_quota_data), color = MaterialTheme.colorScheme.onSurfaceVariant)
             else Text(buildString {
-                appendLine("Key: ${q.keyLabel}")
-                appendLine("Free model requests today: used ${q.used ?: "?"} / limit ${q.limit ?: "?"} → remaining ${q.remaining ?: "?"}" +
-                    if (q.estimated) " (estimated locally)" else "")
-                q.usage?.let { appendLine("Credit usage: $it") }
-                q.creditLimit?.let { appendLine("Credit limit: $it") }
-                if (q.rateLimitRequests != null) appendLine("Rate limit: ${q.rateLimitRequests} / ${q.rateLimitInterval ?: "?"}")
-                q.isFreeTier?.let { appendLine("Free tier: $it") }
-                append("Fetched: ${formatFull(q.fetchedAt)}")
+                appendLine(stringResource(R.string.quota_key, q.keyLabel))
+                appendLine(stringResource(R.string.quota_requests, q.used?.toString() ?: "?", q.limit?.toString() ?: "?", q.remaining?.toString() ?: "?") +
+                    if (q.estimated) " " + stringResource(R.string.quota_estimated) else "")
+                q.usage?.let { appendLine(stringResource(R.string.quota_credit_usage, it)) }
+                q.creditLimit?.let { appendLine(stringResource(R.string.quota_credit_limit, it)) }
+                if (q.rateLimitRequests != null) appendLine(stringResource(R.string.quota_rate_limit, q.rateLimitRequests.toString(), q.rateLimitInterval?.toString() ?: "?"))
+                q.isFreeTier?.let { appendLine(stringResource(R.string.quota_free_tier, it.toString())) }
+                append(stringResource(R.string.quota_fetched, formatFull(q.fetchedAt)))
             }, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
             if (headers.isNotEmpty()) {
-                Text("Last X-RateLimit headers", style = MaterialTheme.typography.titleSmall)
+                Text(stringResource(R.string.last_rate_headers), style = MaterialTheme.typography.titleSmall)
                 headers.values.forEach { s ->
                     Text("${s.keyLabel} · ${s.model ?: "-"} · HTTP ${s.statusCode}\nlimit=${s.headers.rawLimit} remaining=${s.headers.rawRemaining} " +
                         "reset=${s.headers.resetAtMs?.let { formatFull(it) } ?: s.headers.rawReset}",
@@ -302,13 +353,13 @@ private fun CrashLogRow(index: Int) {
         val dirs = com.verdroid.app.data.crash.CrashLog.dirs(shared.internal.takeIf { runCatching { shared.hasAccess() }.getOrDefault(false) }, app.filesDir)
         return com.verdroid.app.data.crash.CrashLog.latest(dirs)?.let { f -> f.path to runCatching { f.readText() }.getOrDefault("(unreadable)") }
     }
-    MenuItem("Crash log", "Latest crash report (Documents/Verdroid/Internal/crash)", index) { text = load(); open = true }
+    MenuItem(stringResource(R.string.crash_log), stringResource(R.string.crash_log_sub), index) { text = load(); open = true }
     if (open) AlertDialog(onDismissRequest = { open = false },
-        title = { Text("Latest crash") },
+        title = { Text(stringResource(R.string.latest_crash)) },
         text = {
             Column(Modifier.heightIn(max = 460.dp).verticalScroll(rememberScrollState())) {
                 val t = text
-                if (t == null) Text("No crashes recorded since crash logging was added.")
+                if (t == null) Text(stringResource(R.string.no_crashes))
                 else {
                     Text(t.first, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     androidx.compose.foundation.text.selection.SelectionContainer {
@@ -319,14 +370,15 @@ private fun CrashLogRow(index: Int) {
         },
         confirmButton = {
             text?.let { t ->
+                val chooserTitle = stringResource(R.string.share_crash_log)
                 TextButton(onClick = {
                     val send = android.content.Intent(android.content.Intent.ACTION_SEND).setType("text/plain")
                         .putExtra(android.content.Intent.EXTRA_SUBJECT, "Verdroid crash log").putExtra(android.content.Intent.EXTRA_TEXT, t.second)
-                    runCatching { context.startActivity(android.content.Intent.createChooser(send, "Share crash log")) }
-                }) { Text("Share") }
+                    runCatching { context.startActivity(android.content.Intent.createChooser(send, chooserTitle)) }
+                }) { Text(stringResource(R.string.share)) }
             }
         },
-        dismissButton = { TextButton(onClick = { open = false }) { Text("Close") } })
+        dismissButton = { TextButton(onClick = { open = false }) { Text(stringResource(R.string.close)) } })
 }
 
 /** Settings → Sub-agents: everything about spawn_subagents in one place. */
@@ -346,9 +398,9 @@ fun SubAgentSettingsScreen(onBack: () -> Unit, vm: SettingsViewModel = hiltViewM
     val rlFallback by sa.fallbackOnRateLimit.collectAsStateWithLifecycle()
     val freeRpm by vm.appPrefs.rpmOverride.collectAsStateWithLifecycle()
     var pick by remember { mutableStateOf(false) }
-    val R = com.verdroid.app.agent.research.ResearchPolicy
+    val RP = com.verdroid.app.agent.research.ResearchPolicy
     val rp = vm.research
-    val researchOn = R.TOOL_NAME !in disabled
+    val researchOn = RP.TOOL_NAME !in disabled
     val rPin by rp.model.collectAsStateWithLifecycle()
     val rStd by rp.standardSources.collectAsStateWithLifecycle()
     val rDeep by rp.deepSources.collectAsStateWithLifecycle()
@@ -367,73 +419,67 @@ fun SubAgentSettingsScreen(onBack: () -> Unit, vm: SettingsViewModel = hiltViewM
         Slider(value = value.toFloat(), onValueChange = { set(Math.round(it)) }, enabled = enabled,
             valueRange = range.first.toFloat()..range.last.toFloat(), steps = (range.last - range.first - 1).coerceAtLeast(0))
     }
-    SubScreen("Sub-agents", onBack) { padding ->
+    SubScreen(stringResource(R.string.subagents_full), onBack) { padding ->
         Column(Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Text("The agent can split broad research into tasks run in parallel by sub-agents (spawn_subagents). Sub-agents only get the " +
-                "read-only tools selected below, cannot start other sub-agents, and stop when the main task is cancelled.",
+            Text(stringResource(R.string.subagents_intro),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Enable sub-agents", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                Text(stringResource(R.string.enable_subagents), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
                 Switch(checked = enabled, onCheckedChange = { vm.toolPrefs.setEnabled(P.TOOL_NAME, it) })
             }
             Row(Modifier.fillMaxWidth().clickable(enabled = enabled) { pick = true }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("Model", style = MaterialTheme.typography.bodyLarge)
-                    Text(pin?.let { com.verdroid.app.data.network.ModelIds.label(it.model) + if (it.allowFallback) " (+fallback)" else "" }
-                        ?: "Same as main model", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(stringResource(R.string.model), style = MaterialTheme.typography.bodyLarge)
+                    Text(pin?.let { com.verdroid.app.data.network.ModelIds.label(it.model) + if (it.allowFallback) " " + stringResource(R.string.plus_fallback) else "" }
+                        ?: stringResource(R.string.same_as_main_model), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Text("Change", color = MaterialTheme.colorScheme.primary)
+                Text(stringResource(R.string.change), color = MaterialTheme.colorScheme.primary)
             }
-            slider("Max concurrent: $conc (extra tasks wait in a queue)", conc, P.MIN_CONCURRENCY..P.MAX_CONCURRENCY, sa::setConcurrency)
-            slider("Max sub-agents per call: $perCall", perCall, 1..P.MAX_TASKS, sa::setPerCall)
-            slider("Max steps per sub-agent: $steps", steps, P.STEPS_RANGE, sa::setMaxSteps)
-            slider("Timeout per sub-agent: ${timeout}s", timeout, P.TIMEOUT_SEC_RANGE) { sa.setTimeoutSec((it / 30) * 30) }
-            Text("Rate limits", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 12.dp))
-            Text("All OpenRouter free-model calls (main chat, sub-agents, research workers) share one paced queue, because OpenRouter " +
-                "limits free models per account (20 requests/min). On a 429 a worker waits for Retry-After and retries instead of failing. " +
-                "Free models default to ${P.FREE_DEFAULT_CONCURRENCY} parallel workers until you move a slider.",
+            slider(stringResource(R.string.sa_max_concurrent, conc), conc, P.MIN_CONCURRENCY..P.MAX_CONCURRENCY, sa::setConcurrency)
+            slider(stringResource(R.string.sa_max_per_call, perCall), perCall, 1..P.MAX_TASKS, sa::setPerCall)
+            slider(stringResource(R.string.sa_max_steps, steps), steps, P.STEPS_RANGE, sa::setMaxSteps)
+            slider(stringResource(R.string.sa_timeout, timeout), timeout, P.TIMEOUT_SEC_RANGE) { sa.setTimeoutSec((it / 30) * 30) }
+            Text(stringResource(R.string.rate_limits), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 12.dp))
+            Text(stringResource(R.string.rate_limits_intro, P.FREE_DEFAULT_CONCURRENCY),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("Requests per minute: " + if (freeRpm == 0) "Auto (learned per model)" else "$freeRpm (manual override)", style = MaterialTheme.typography.bodyLarge)
-            Text("Auto reads the provider's rate-limit headers, speeds up slowly after successes and halves on a 429. " +
-                "Learned rates are remembered per model.", style = MaterialTheme.typography.bodySmall)
+            Text(stringResource(R.string.rpm_line, if (freeRpm == 0) stringResource(R.string.rpm_auto) else stringResource(R.string.rpm_manual, freeRpm)), style = MaterialTheme.typography.bodyLarge)
+            Text(stringResource(R.string.rpm_auto_desc), style = MaterialTheme.typography.bodySmall)
             Slider(value = freeRpm.toFloat(), onValueChange = { vm.appPrefs.setRpmOverride(Math.round(it)) }, valueRange = 0f..60f, steps = 59)
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("Fall back to main model when rate-limited", style = MaterialTheme.typography.bodyLarge)
-                    Text("If a sub-agent or worker is still rate-limited after its retries, it finishes on the Model priority list.",
+                    Text(stringResource(R.string.fall_back_main_model), style = MaterialTheme.typography.bodyLarge)
+                    Text(stringResource(R.string.fall_back_main_model_desc),
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 Switch(checked = rlFallback, onCheckedChange = sa::setFallbackOnRateLimit)
             }
-            Text("Deep research", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 12.dp))
-            Text("deep_research plans sub-questions with the main model, runs parallel workers (web_search + web_fetch) on the worker " +
-                "model, dedupes and filters URLs, then writes a long cited report to Documents/Verdroid/Output/Research. The agent calls it " +
-                "when you ask for research or a report (say \"deep\" or \"thorough\" for deep mode). Stop cancels every worker.",
+            Text(stringResource(R.string.deep_research), style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 12.dp))
+            Text(stringResource(R.string.deep_research_intro),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Enable deep research", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-                Switch(checked = researchOn, onCheckedChange = { vm.toolPrefs.setEnabled(R.TOOL_NAME, it) })
+                Text(stringResource(R.string.enable_deep_research), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
+                Switch(checked = researchOn, onCheckedChange = { vm.toolPrefs.setEnabled(RP.TOOL_NAME, it) })
             }
             Row(Modifier.fillMaxWidth().clickable(enabled = researchOn) { pickResearch = true }.padding(vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("Worker model", style = MaterialTheme.typography.bodyLarge)
-                    Text(rPin?.let { com.verdroid.app.data.network.ModelIds.label(it.model) + if (it.allowFallback) " (+fallback)" else "" }
-                        ?: "Same as sub-agent model (tip: a free model, e.g. openrouter/free)", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(stringResource(R.string.worker_model), style = MaterialTheme.typography.bodyLarge)
+                    Text(rPin?.let { com.verdroid.app.data.network.ModelIds.label(it.model) + if (it.allowFallback) " " + stringResource(R.string.plus_fallback) else "" }
+                        ?: stringResource(R.string.same_as_subagent_model), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Text("Change", color = MaterialTheme.colorScheme.primary)
+                Text(stringResource(R.string.change), color = MaterialTheme.colorScheme.primary)
             }
-            rSlider("Standard: max sources $rStd (1 round, ${R.STANDARD_QUESTIONS} sub-questions)", rStd, R.SOURCES_RANGE) { rp.setStandardSources((it / 5) * 5) }
-            rSlider("Deep: max sources $rDeep (${R.DEEP_QUESTIONS} sub-questions)", rDeep, R.SOURCES_RANGE) { rp.setDeepSources((it / 5) * 5) }
-            rSlider("Deep: rounds $rRounds (follow-up questions fill gaps)", rRounds, R.ROUNDS_RANGE, rp::setDeepRounds)
+            rSlider(stringResource(R.string.rs_standard_sources, rStd, RP.STANDARD_QUESTIONS), rStd, RP.SOURCES_RANGE) { rp.setStandardSources((it / 5) * 5) }
+            rSlider(stringResource(R.string.rs_deep_sources, rDeep, RP.DEEP_QUESTIONS), rDeep, RP.SOURCES_RANGE) { rp.setDeepSources((it / 5) * 5) }
+            rSlider(stringResource(R.string.rs_deep_rounds, rRounds), rRounds, RP.ROUNDS_RANGE, rp::setDeepRounds)
             val B = com.verdroid.app.agent.research.RunBudget
-            rSlider("Standard: time budget $rStdBudget min (then the report is written with what exists)", rStdBudget, B.STANDARD_MIN_RANGE, rp::setStandardBudgetMin)
-            rSlider("Deep: time budget $rDeepBudget min", rDeepBudget, B.DEEP_MIN_RANGE, rp::setDeepBudgetMin)
-            rSlider("Parallel workers: $rConc (lower if you hit rate limits)", rConc, P.MIN_CONCURRENCY..P.MAX_CONCURRENCY, rp::setConcurrency)
+            rSlider(stringResource(R.string.rs_standard_budget, rStdBudget), rStdBudget, B.STANDARD_MIN_RANGE, rp::setStandardBudgetMin)
+            rSlider(stringResource(R.string.rs_deep_budget, rDeepBudget), rDeepBudget, B.DEEP_MIN_RANGE, rp::setDeepBudgetMin)
+            rSlider(stringResource(R.string.rs_parallel, rConc), rConc, P.MIN_CONCURRENCY..P.MAX_CONCURRENCY, rp::setConcurrency)
             Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(top = 12.dp)) {
-                Text("Tools sub-agents may use", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                TextButton(onClick = sa::resetTools) { Text("Default") }
+                Text(stringResource(R.string.tools_subagents_may_use), style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                TextButton(onClick = sa::resetTools) { Text(stringResource(R.string.default_word)) }
             }
-            Text("Read-only tools only; a tool also has to be on for the chat (Settings → Tools, Tool presets, profile).",
+            Text(stringResource(R.string.tools_subagents_hint),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             com.verdroid.app.data.tools.ToolGroups.group(P.READ_ONLY_TOOLS.sorted()) { it }.forEach { (g, names) ->
                 Text(g.title, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(top = 8.dp))
@@ -448,8 +494,8 @@ fun SubAgentSettingsScreen(onBack: () -> Unit, vm: SettingsViewModel = hiltViewM
     }
     if (pick) com.verdroid.app.ui.chat.ChatModelDialog(pin, models,
         onPick = { sa.setModel(it); pick = false }, onUpdate = { sa.setModel(it) }, onDismiss = { pick = false },
-        title = "Sub-agent model", defaultLabel = "Same as main model (default)")
+        title = stringResource(R.string.subagent_model), defaultLabel = stringResource(R.string.same_as_main_model_default))
     if (pickResearch) com.verdroid.app.ui.chat.ChatModelDialog(rPin, models,
         onPick = { rp.setModel(it); pickResearch = false }, onUpdate = { rp.setModel(it) }, onDismiss = { pickResearch = false },
-        title = "Deep research worker model", defaultLabel = "Same as sub-agent model (default)")
+        title = stringResource(R.string.research_worker_model), defaultLabel = stringResource(R.string.same_as_subagent_default))
 }

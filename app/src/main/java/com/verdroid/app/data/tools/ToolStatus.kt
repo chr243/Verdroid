@@ -17,7 +17,14 @@ data class ToolStatus(val ready: Boolean, val text: String) {
     companion object {
         private val READY = ToolStatus(true, "Ready")
 
-        fun of(name: String, env: ToolEnv): ToolStatus = when {
+        /**
+         * [tr] maps the English status text to a localized one (the UI passes context.getString via a lookup);
+         * the default identity keeps the pure function English for the self-test and unit tests.
+         */
+        fun of(name: String, env: ToolEnv, tr: (String) -> String = { it }): ToolStatus =
+            ofRaw(name, env).let { ToolStatus(it.ready, tr(it.text)) }
+
+        private fun ofRaw(name: String, env: ToolEnv): ToolStatus = when {
             name in setOf("read_file", "write_file", "list_dir") -> READY
             name == "show_image" -> READY
             name.startsWith("workspace_") -> if (env.storageReady) READY

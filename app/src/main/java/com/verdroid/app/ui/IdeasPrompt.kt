@@ -4,6 +4,8 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import androidx.compose.material3.*
+import androidx.compose.ui.res.stringResource
+import com.verdroid.app.R
 import androidx.compose.runtime.*
 import androidx.compose.ui.platform.LocalContext
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -43,14 +45,14 @@ fun IdeasPrompt(onMainScreen: Boolean, updater: AppUpdater) {
     fun done() { Campaigns.markSeen(ctx, Campaigns.IDEAS); seen = Campaigns.IDEAS }
     AlertDialog(
         onDismissRequest = { done() },
-        title = { Text("Got an idea for Verdroid?") },
-        text = { Text("Tell us what Verdroid should do next — share or upvote feature ideas on GitHub Discussions.") },
+        title = { Text(stringResource(R.string.got_an_idea)) },
+        text = { Text(stringResource(R.string.ideas_body)) },
         confirmButton = {
             TextButton(onClick = {
                 done()
                 runCatching { ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(Campaigns.IDEAS_URL)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)) }
-            }) { Text("Share an idea") }
+            }) { Text(stringResource(R.string.share_an_idea)) }
         },
-        dismissButton = { TextButton(onClick = { done() }) { Text("Maybe later") } },
+        dismissButton = { TextButton(onClick = { done() }) { Text(stringResource(R.string.maybe_later)) } },
     )
 }

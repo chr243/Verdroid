@@ -7,6 +7,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import com.verdroid.app.R
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -30,33 +32,33 @@ fun FileChangeDialog() {
     val p = pending.firstOrNull() ?: return
     AlertDialog(
         onDismissRequest = {},
-        title = { Text(if (p.req.kind == com.verdroid.app.agent.tools.FileChangeRequest.Kind.SHELL) "Allow this command?" else "Allow this file change?") },
+        title = { Text(if (p.req.kind == com.verdroid.app.agent.tools.FileChangeRequest.Kind.SHELL) stringResource(R.string.allow_this_command) else stringResource(R.string.allow_this_file_change)) },
         text = {
             Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Text(p.req.summary, style = MaterialTheme.typography.titleSmall)
-                Text("Chat: ${p.chatTitle ?: "#${p.req.taskId}"} · tool ${p.req.tool}", style = MaterialTheme.typography.bodySmall,
+                Text(stringResource(R.string.chat_tool_line, p.chatTitle ?: stringResource(R.string.chat_id_arg, p.req.taskId), p.req.tool), style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant)
                 p.req.details.forEach { Text("• $it", style = MaterialTheme.typography.bodyMedium) }
                 p.req.command?.let { c ->
                     SelectionContainer { Text(c, fontFamily = FontFamily.Monospace, fontSize = 12.sp) }
                 }
                 if (p.req.overwriteOnly) Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = { consent.allowOverwrites(p.req.id, thisChatOnly = true) }) { Text("This chat") }
-                    OutlinedButton(onClick = { consent.allowOverwrites(p.req.id, thisChatOnly = false) }) { Text("Always allow") }
+                    OutlinedButton(onClick = { consent.allowOverwrites(p.req.id, thisChatOnly = true) }) { Text(stringResource(R.string.this_chat)) }
+                    OutlinedButton(onClick = { consent.allowOverwrites(p.req.id, thisChatOnly = false) }) { Text(stringResource(R.string.always_allow)) }
                 }
                 if (p.req.sharedDeletesOnly) {
-                    Text("Everything affected is inside Documents/Verdroid. Skip this question for deletes/moves/renames there:",
+                    Text(stringResource(R.string.shared_deletes_intro),
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = { consent.allowSharedDeletes(p.req.id, thisChatOnly = true) }) { Text("This chat") }
-                        OutlinedButton(onClick = { consent.allowSharedDeletes(p.req.id, thisChatOnly = false) }) { Text("Always allow") }
+                        OutlinedButton(onClick = { consent.allowSharedDeletes(p.req.id, thisChatOnly = true) }) { Text(stringResource(R.string.this_chat)) }
+                        OutlinedButton(onClick = { consent.allowSharedDeletes(p.req.id, thisChatOnly = false) }) { Text(stringResource(R.string.always_allow)) }
                     }
                 }
-                if (pending.size > 1) Text("${pending.size - 1} more waiting", style = MaterialTheme.typography.labelSmall)
+                if (pending.size > 1) Text(stringResource(R.string.n_more_waiting, pending.size - 1), style = MaterialTheme.typography.labelSmall)
             }
         },
-        confirmButton = { TextButton(onClick = { consent.answer(p.req.id, true) }) { Text(if (p.req.overwriteOnly) "Yes" else "Allow") } },
-        dismissButton = { Button(onClick = { consent.answer(p.req.id, false) }) { Text(if (p.req.overwriteOnly) "No" else "Deny") } },
+        confirmButton = { TextButton(onClick = { consent.answer(p.req.id, true) }) { Text(if (p.req.overwriteOnly) stringResource(R.string.yes) else stringResource(R.string.allow)) } },
+        dismissButton = { Button(onClick = { consent.answer(p.req.id, false) }) { Text(if (p.req.overwriteOnly) stringResource(R.string.no) else stringResource(R.string.deny)) } },
     )
 }
 
@@ -69,18 +71,18 @@ fun InstallDialog() {
     val p = pending.firstOrNull() ?: return
     AlertDialog(
         onDismissRequest = {},
-        title = { Text("Install packages?") },
+        title = { Text(stringResource(R.string.install_packages)) },
         text = {
             Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text("${p.tool} needs to install:", style = MaterialTheme.typography.titleSmall)
+                Text(stringResource(R.string.needs_to_install, p.tool), style = MaterialTheme.typography.titleSmall)
                 SelectionContainer { Text(com.verdroid.app.agent.tools.InstallConsent.describe(p.packages), fontFamily = FontFamily.Monospace, fontSize = 12.sp) }
-                Text("Why: ${p.reason}", style = MaterialTheme.typography.bodyMedium)
+                Text(stringResource(R.string.why_colon, p.reason), style = MaterialTheme.typography.bodyMedium)
                 Text(p.estimate, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (pending.size > 1) Text("${pending.size - 1} more waiting", style = MaterialTheme.typography.labelSmall)
+                if (pending.size > 1) Text(stringResource(R.string.n_more_waiting, pending.size - 1), style = MaterialTheme.typography.labelSmall)
             }
         },
-        confirmButton = { TextButton(onClick = { prompt.answer(p.id, true) }) { Text("Install") } },
-        dismissButton = { Button(onClick = { prompt.answer(p.id, false) }) { Text("Don't install") } },
+        confirmButton = { TextButton(onClick = { prompt.answer(p.id, true) }) { Text(stringResource(R.string.install)) } },
+        dismissButton = { Button(onClick = { prompt.answer(p.id, false) }) { Text(stringResource(R.string.dont_install)) } },
     )
 }
 
@@ -92,8 +94,8 @@ fun OverwriteSetting(modifier: Modifier = Modifier) {
     val on by prefs.always.collectAsState()
     Row(modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            Text("Overwrite without asking", style = MaterialTheme.typography.bodyLarge)
-            Text("Replace existing files outside Internal/ without a Yes/No.",
+            Text(stringResource(R.string.overwrite_without_asking), style = MaterialTheme.typography.bodyLarge)
+            Text(stringResource(R.string.overwrite_without_asking_desc),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Switch(checked = on, onCheckedChange = { prefs.setAlways(it) })
@@ -108,8 +110,8 @@ fun ShellAskSetting(modifier: Modifier = Modifier) {
     val on by prefs.askAlways.collectAsState()
     Row(modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            Text("Ask before shell commands", style = MaterialTheme.typography.bodyLarge)
-            Text("Yes/No before every run_shell, rish_run, termux_run and termux_python. Even when off, risky commands (uploads, pm, settings put, …) ask after the chat read web or other untrusted content.",
+            Text(stringResource(R.string.ask_before_shell), style = MaterialTheme.typography.bodyLarge)
+            Text(stringResource(R.string.ask_before_shell_desc),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Switch(checked = on, onCheckedChange = { prefs.setAskAlways(it) })
@@ -124,8 +126,8 @@ fun SharedDeleteSetting(modifier: Modifier = Modifier) {
     val on by prefs.always.collectAsState()
     Row(modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            Text("Delete/move in Documents/Verdroid without asking", style = MaterialTheme.typography.bodyLarge)
-            Text("Only when every file is provably inside. Outside, or not provable, still asks. Never in scheduled runs.",
+            Text(stringResource(R.string.shared_delete_title), style = MaterialTheme.typography.bodyLarge)
+            Text(stringResource(R.string.shared_delete_desc),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Switch(checked = on, onCheckedChange = { prefs.setAlways(it) })
@@ -141,18 +143,18 @@ fun XPostDialog() {
     val p = pending.firstOrNull() ?: return
     AlertDialog(
         onDismissRequest = {},
-        title = { Text(if (p.replyTo != null) "Post this reply on X?" else "Post this on X?") },
+        title = { Text(if (p.replyTo != null) stringResource(R.string.post_reply_x) else stringResource(R.string.post_x)) },
         text = {
             Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                p.replyTo?.let { Text("Replying to $it", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                p.replyTo?.let { Text(stringResource(R.string.replying_to, it), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 SelectionContainer { Text(p.text, style = MaterialTheme.typography.bodyLarge) }
-                Text("${com.verdroid.app.agent.tools.XText.weightedLength(p.text)}/280 · posts publicly as you",
+                Text(stringResource(R.string.x_post_counter, com.verdroid.app.agent.tools.XText.weightedLength(p.text)),
                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                OutlinedButton(onClick = { consent.answer(p.id, post = true, always = true) }) { Text("Always allow") }
+                OutlinedButton(onClick = { consent.answer(p.id, post = true, always = true) }) { Text(stringResource(R.string.always_allow)) }
             }
         },
-        confirmButton = { Button(onClick = { consent.answer(p.id, post = true) }) { Text("Post") } },
-        dismissButton = { TextButton(onClick = { consent.answer(p.id, post = false) }) { Text("Cancel") } },
+        confirmButton = { Button(onClick = { consent.answer(p.id, post = true) }) { Text(stringResource(R.string.post)) } },
+        dismissButton = { TextButton(onClick = { consent.answer(p.id, post = false) }) { Text(stringResource(R.string.cancel)) } },
     )
 }
 
@@ -164,8 +166,8 @@ fun XPostSetting(modifier: Modifier = Modifier) {
     val on by consent.always.collectAsState()
     Row(modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
-            Text("Post without asking", style = MaterialTheme.typography.bodyLarge)
-            Text("x_post publishes immediately, without showing you the text first. Posts are public and can't be unsent.",
+            Text(stringResource(R.string.post_without_asking), style = MaterialTheme.typography.bodyLarge)
+            Text(stringResource(R.string.post_without_asking_desc),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Switch(checked = on, onCheckedChange = { consent.setAlways(it) })
@@ -185,41 +187,40 @@ fun XPostLimitsSetting(modifier: Modifier = Modifier) {
     Column(modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text("Limit posts", style = MaterialTheme.typography.bodyLarge)
-                Text((if (limitOn) "On: x_post stops at the limits below, in chats and scheduled runs, even with \"Always allow\". 0 = no limit for that window."
-                    else "Off: no limit on x_post (chats and scheduled runs). Every post is still logged.") +
-                    " Used: $h in the last hour, $d in the last 24 h.",
+                Text(stringResource(R.string.limit_posts), style = MaterialTheme.typography.bodyLarge)
+                Text((if (limitOn) stringResource(R.string.limit_posts_on) else stringResource(R.string.limit_posts_off)) +
+                    " " + stringResource(R.string.limit_posts_used, h, d),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             Switch(checked = limitOn, onCheckedChange = guard::setLimitOn)
         }
         if (limitOn) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                Text("Per hour", Modifier.width(72.dp))
+                Text(stringResource(R.string.per_hour), Modifier.width(72.dp))
                 OutlinedButton(onClick = { guard.setPerHour(perHour - 1) }, enabled = perHour > 0) { Text("−") }
                 Text("$perHour", Modifier.width(32.dp))
                 OutlinedButton(onClick = { guard.setPerHour(perHour + 1) }) { Text("+") }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                Text("Per day", Modifier.width(72.dp))
+                Text(stringResource(R.string.per_day), Modifier.width(72.dp))
                 OutlinedButton(onClick = { guard.setPerDay(perDay - 1) }, enabled = perDay > 0) { Text("−") }
                 Text("$perDay", Modifier.width(32.dp))
                 OutlinedButton(onClick = { guard.setPerDay(perDay + 1) }) { Text("+") }
             }
         }
-        TextButton(onClick = { showLog = true }) { Text("View post log") }
+        TextButton(onClick = { showLog = true }) { Text(stringResource(R.string.view_post_log)) }
     }
     if (showLog) {
-        val text = remember { guard.tail().ifBlank { "No x_post attempts logged yet." } }
+        val text = remember { guard.tail().ifBlank { context.getString(R.string.no_xpost_log) } }
         AlertDialog(onDismissRequest = { showLog = false },
-            title = { Text("x_post log") },
+            title = { Text(stringResource(R.string.x_post_log)) },
             text = {
                 Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState())) {
                     Text("Internal/${com.verdroid.app.agent.tools.XPostAudit.FILE}", style = MaterialTheme.typography.labelSmall)
                     SelectionContainer { Text(text, fontFamily = FontFamily.Monospace, fontSize = 11.sp) }
                 }
             },
-            confirmButton = { TextButton(onClick = { showLog = false }) { Text("Close") } })
+            confirmButton = { TextButton(onClick = { showLog = false }) { Text(stringResource(R.string.close)) } })
     }
 }
 
@@ -227,8 +228,8 @@ fun XPostLimitsSetting(modifier: Modifier = Modifier) {
 @Composable
 fun TwitterTosDialog(onConfirm: () -> Unit, onCancel: () -> Unit) {
     AlertDialog(onDismissRequest = onCancel,
-        title = { Text("Turn on Twitter tools?") },
+        title = { Text(stringResource(R.string.turn_on_twitter)) },
         text = { Text(com.verdroid.app.data.tools.ToolGroups.TWITTER_TOS_WARNING) },
-        confirmButton = { Button(onClick = onConfirm) { Text("I understand, turn on") } },
-        dismissButton = { TextButton(onClick = onCancel) { Text("Cancel") } })
+        confirmButton = { Button(onClick = onConfirm) { Text(stringResource(R.string.i_understand_turn_on)) } },
+        dismissButton = { TextButton(onClick = onCancel) { Text(stringResource(R.string.cancel)) } })
 }

@@ -12,6 +12,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import com.verdroid.app.R
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -45,24 +47,24 @@ fun NotificationsScreen(onOpenChat: (Long) -> Unit, onBack: () -> Unit, vm: Noti
     val items by vm.items.collectAsStateWithLifecycle()
     LaunchedEffect(items.count { !it.read }) { delay(1500); vm.markAllRead() }
     Scaffold(topBar = {
-        TopAppBar(title = { Text("Notifications") }, navigationIcon = {
-            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
+        TopAppBar(title = { Text(stringResource(R.string.notifications)) }, navigationIcon = {
+            IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back)) }
         }, actions = {
-            IconButton(onClick = { vm.clear() }) { Icon(Icons.Filled.Delete, "Clear all") }
+            IconButton(onClick = { vm.clear() }) { Icon(Icons.Filled.Delete, stringResource(R.string.clear_all)) }
         })
     }) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(padding)) {
             item {
                 val notifyFinish by vm.prefs.notifyOnFinish.collectAsStateWithLifecycle()
                 ListItem(
-                    headlineContent = { Text("Notify when a task finishes") },
-                    supportingContent = { Text("Off: only rate limits, quota warnings, and failures notify.") },
+                    headlineContent = { Text(stringResource(R.string.notify_when_finished)) },
+                    supportingContent = { Text(stringResource(R.string.notify_when_finished_desc)) },
                     trailingContent = { Switch(checked = notifyFinish, onCheckedChange = vm.prefs::setNotifyOnFinish) },
                 )
                 HorizontalDivider()
             }
             if (items.isEmpty()) item {
-                Text("Rate-limit alerts, quota warnings and failures will appear here.", textAlign = TextAlign.Center,
+                Text(stringResource(R.string.notifications_empty), textAlign = TextAlign.Center,
                     color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.fillMaxWidth().padding(32.dp))
             }
             items(items, key = { it.id }) { n ->

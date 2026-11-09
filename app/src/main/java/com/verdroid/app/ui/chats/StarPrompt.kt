@@ -2,6 +2,8 @@ package com.verdroid.app.ui.chats
 
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.ui.res.stringResource
+import com.verdroid.app.R
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -20,14 +22,14 @@ fun StarPrompt(anyTaskActive: Boolean) {
     if (!StarPromptLogic.shouldShow(pending, store.done, anyTaskActive)) return
     AlertDialog(
         onDismissRequest = { store.finish() },
-        title = { Text("Enjoying Verdroid?") },
-        text = { Text("If it's been useful, a star on GitHub helps other people find it. Totally optional!") },
+        title = { Text(stringResource(R.string.enjoying_verdroid)) },
+        text = { Text(stringResource(R.string.star_body)) },
         confirmButton = {
             TextButton(onClick = {
                 store.finish()
                 runCatching { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(FeedbackLinks.REPO))) }
-            }) { Text("Star on GitHub") }
+            }) { Text(stringResource(R.string.star_on_github)) }
         },
-        dismissButton = { TextButton(onClick = { store.finish() }) { Text("Maybe not") } },
+        dismissButton = { TextButton(onClick = { store.finish() }) { Text(stringResource(R.string.maybe_not)) } },
     )
 }

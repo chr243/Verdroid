@@ -27,12 +27,15 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import com.verdroid.app.R
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.verdroid.app.domain.model.ChatHeadMode
+import com.verdroid.app.ui.theme.labelRes
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -42,26 +45,26 @@ fun ChatHeadSettingsScreen(onBack: () -> Unit, vm: SettingsViewModel = hiltViewM
     val xiaomi = remember { vm.chatHeads.isXiaomiFamily() }
 
     Scaffold(topBar = {
-        TopAppBar(title = { Text("Chat heads") },
-            navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") } })
+        TopAppBar(title = { Text(stringResource(R.string.chat_heads)) },
+            navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back)) } })
     }) { padding ->
         Column(
             Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            Text("Open any conversation as a floating chat head with the 🫧 button in the chat's top bar.",
+            Text(stringResource(R.string.chat_heads_intro),
                 style = MaterialTheme.typography.bodyMedium)
-            ModeRow(ChatHeadMode.AUTO, mode, "Auto",
-                "Bubbles when supported and allowed; overlay on HyperOS/MIUI or when bubbles are off" +
+            ModeRow(ChatHeadMode.AUTO, mode, stringResource(R.string.mode_auto),
+                stringResource(R.string.mode_auto_desc) +
                     if (xiaomi) " (this device: overlay)" else "") { vm.setChatHeadMode(it) }
-            ModeRow(ChatHeadMode.BUBBLES, mode, "Bubbles", "Android Bubbles API (conversation notification)") { vm.setChatHeadMode(it) }
-            ModeRow(ChatHeadMode.OVERLAY, mode, "Overlay", "Draggable chat head drawn over other apps (needs permission)") { vm.setChatHeadMode(it) }
+            ModeRow(ChatHeadMode.BUBBLES, mode, stringResource(R.string.mode_bubbles), stringResource(R.string.mode_bubbles_desc)) { vm.setChatHeadMode(it) }
+            ModeRow(ChatHeadMode.OVERLAY, mode, stringResource(R.string.mode_overlay), stringResource(R.string.mode_overlay_desc)) { vm.setChatHeadMode(it) }
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
             val autoHead by vm.appPrefs.autoChatHeadOnHome.collectAsStateWithLifecycle()
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
-                    Text("Auto chat head on Home", style = MaterialTheme.typography.bodyLarge)
-                    Text("Leaving the app (Home/Recents) from a chat opens that chat as an overlay head; it is removed when you come back. Needs \"Display over other apps\".",
+                    Text(stringResource(R.string.auto_chat_head_home), style = MaterialTheme.typography.bodyLarge)
+                    Text(stringResource(R.string.auto_chat_head_desc),
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
                 androidx.compose.material3.Switch(checked = autoHead, onCheckedChange = vm.appPrefs::setAutoChatHeadOnHome)
@@ -70,11 +73,11 @@ fun ChatHeadSettingsScreen(onBack: () -> Unit, vm: SettingsViewModel = hiltViewM
             HorizontalDivider(Modifier.padding(vertical = 8.dp))
             val gifCtx = androidx.compose.ui.platform.LocalContext.current
             val theme by remember { com.verdroid.app.ui.theme.ThemeStore.get(gifCtx).palette }.collectAsStateWithLifecycle()
-            Text("Chat head GIFs for the ${theme.label} theme", style = MaterialTheme.typography.titleSmall)
-            Text("Picks apply only to the current theme; switch themes to set different ones.",
+            Text(stringResource(R.string.chat_head_gifs, stringResource(theme.labelRes())), style = MaterialTheme.typography.titleSmall)
+            Text(stringResource(R.string.chat_head_gifs_note),
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            CustomGifRow("On-task GIF", theme, com.verdroid.app.chathead.ChatHeadCustomGif.Slot.RUNNING)
-            CustomGifRow("Idle GIF", theme, com.verdroid.app.chathead.ChatHeadCustomGif.Slot.IDLE)
+            CustomGifRow(stringResource(R.string.on_task_gif), theme, com.verdroid.app.chathead.ChatHeadCustomGif.Slot.RUNNING)
+            CustomGifRow(stringResource(R.string.idle_gif), theme, com.verdroid.app.chathead.ChatHeadCustomGif.Slot.IDLE)
         }
     }
 }
@@ -106,9 +109,9 @@ private fun CustomGifRow(label: String, theme: com.verdroid.app.ui.theme.Palette
     Row(verticalAlignment = Alignment.CenterVertically) {
         Column(Modifier.weight(1f)) {
             Text(label, style = MaterialTheme.typography.bodyLarge)
-            Text((if (hasCustom) "Custom file" else "Default") + " for the ${theme.label} theme", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text((if (hasCustom) stringResource(R.string.custom_file) else stringResource(R.string.default_word)) + " " + stringResource(R.string.for_theme, stringResource(theme.labelRes())), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
-        androidx.compose.material3.TextButton(onClick = { picker.launch(arrayOf("image/gif", "image/webp")) }) { Text("Pick") }
-        androidx.compose.material3.TextButton(onClick = { com.verdroid.app.chathead.ChatHeadCustomGif.reset(ctx, theme, slot) }, enabled = hasCustom) { Text("Reset") }
+        androidx.compose.material3.TextButton(onClick = { picker.launch(arrayOf("image/gif", "image/webp")) }) { Text(stringResource(R.string.pick)) }
+        androidx.compose.material3.TextButton(onClick = { com.verdroid.app.chathead.ChatHeadCustomGif.reset(ctx, theme, slot) }, enabled = hasCustom) { Text(stringResource(R.string.reset)) }
     }
 }

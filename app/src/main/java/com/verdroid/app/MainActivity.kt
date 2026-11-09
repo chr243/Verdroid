@@ -25,6 +25,14 @@ import kotlinx.coroutines.flow.first
 class MainActivity : ComponentActivity() {
     @Inject lateinit var quota: QuotaRepository
     @Inject lateinit var appPrefs: com.verdroid.app.data.prefs.AppPrefs
+
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(
+            com.verdroid.app.data.prefs.LocaleHelper.attachBaseContext(
+                newBase, newBase.getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
+                    .getString("app_language", "system") ?: "system"))
+    }
+
     @Inject lateinit var chatHeads: com.verdroid.app.chathead.ChatHeadController
     @Inject lateinit var updater: com.verdroid.app.data.update.AppUpdater
     @Inject lateinit var taskRepo: com.verdroid.app.domain.repository.TaskRepository

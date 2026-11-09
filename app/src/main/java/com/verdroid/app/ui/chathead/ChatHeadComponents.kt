@@ -1,5 +1,7 @@
 package com.verdroid.app.ui.chathead
 
+import androidx.compose.ui.res.stringResource
+import com.verdroid.app.R
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.LinearEasing
@@ -25,7 +27,6 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.Image
 import androidx.compose.ui.res.painterResource
-import com.verdroid.app.R
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
@@ -156,15 +157,14 @@ fun DismissTarget(near: Boolean) {
 fun OverlayPermissionDialog(onOpenSettings: () -> Unit, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Allow chat heads over other apps") },
+        title = { Text(stringResource(R.string.allow_chat_heads)) },
         text = {
             Text(
-                "To float the conversation over other apps, Verdroid needs the \"Display over other apps\" permission.\n\n" +
-                    "On HyperOS/MIUI also open Other permissions and allow \"Display pop-up windows while running in the background\".",
+                stringResource(R.string.overlay_permission_body) + stringResource(R.string.overlay_permission_body2)
             )
         },
-        confirmButton = { TextButton(onClick = onOpenSettings) { Text("Open settings") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Not now") } },
+        confirmButton = { TextButton(onClick = onOpenSettings) { Text(stringResource(R.string.open_settings)) } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.not_now)) } },
     )
 }
 

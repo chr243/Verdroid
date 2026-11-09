@@ -13,6 +13,8 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
+import com.verdroid.app.R
 import androidx.compose.ui.unit.dp
 import androidx.core.content.IntentCompat
 import androidx.lifecycle.lifecycleScope
@@ -36,6 +38,12 @@ import javax.inject.Inject
  */
 @AndroidEntryPoint
 class ShareActivity : ComponentActivity() {
+    override fun attachBaseContext(newBase: android.content.Context) {
+        super.attachBaseContext(
+            com.verdroid.app.data.prefs.LocaleHelper.attachBaseContext(
+                newBase, newBase.getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
+                    .getString("app_language", "system") ?: "system"))
+    }
     @Inject lateinit var sharedFolder: SharedFolder
     @Inject lateinit var startConversation: StartConversationUseCase
     @Inject lateinit var sendMessage: com.verdroid.app.domain.usecase.SendMessageUseCase
@@ -72,13 +80,13 @@ class ShareActivity : ComponentActivity() {
                 Surface(if (compact) Modifier.fillMaxWidth().padding(8.dp).clickable(enabled = false) {} else Modifier.fillMaxSize(),
                     shape = if (compact) MaterialTheme.shapes.extraLarge else androidx.compose.ui.graphics.RectangleShape, tonalElevation = if (compact) 6.dp else 0.dp) {
                     Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Share to Verdroid", style = MaterialTheme.typography.titleLarge)
+                        Text(stringResource(R.string.share_to_verdroid), style = MaterialTheme.typography.titleLarge)
                         draft.link?.let { l ->
                             Text("🔗 $l", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                                 maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                         }
                         if (files.isNotEmpty()) Text("📎 " + files.joinToString { it.name }, style = MaterialTheme.typography.bodyMedium)
-                        if (files.isEmpty() && text.isBlank()) Text("Nothing Verdroid can use was shared (images are not supported).",
+                        if (files.isEmpty() && text.isBlank()) Text(stringResource(R.string.nothing_usable_shared),
                             color = MaterialTheme.colorScheme.error)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             ShareLogic.QuickAction.entries.forEach { a ->
@@ -90,18 +98,18 @@ class ShareActivity : ComponentActivity() {
                             }
                         }
                         OutlinedTextField(msg, { draft = draft.edit(it) }, Modifier.fillMaxWidth().heightIn(min = 96.dp, max = 220.dp),
-                            label = { Text("Message") })
+                            label = { Text(stringResource(R.string.message_field)) })
                         if (!compact) Spacer(Modifier.weight(1f))
                         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                         if (needsAccess) {
-                            Text("Shared files go to Documents/Verdroid/Input, which needs All files access.",
+                            Text(stringResource(R.string.shared_files_note),
                                 style = MaterialTheme.typography.bodySmall)
-                            OutlinedButton(onClick = { startActivity(SharedFolder.accessIntent(this@ShareActivity)) }) { Text("Grant All files access") }
+                            OutlinedButton(onClick = { startActivity(SharedFolder.accessIntent(this@ShareActivity)) }) { Text(stringResource(R.string.grant_all_files)) }
                         }
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End, verticalAlignment = Alignment.CenterVertically) {
                             // New chat (default) / Last chat; the choice is remembered.
                             SingleChoiceSegmentedButtonRow {
-                                listOf(false to "New chat", true to "Last chat").forEachIndexed { i, (v, label) ->
+                                listOf(false to stringResource(R.string.new_chat), true to stringResource(R.string.last_chat)).forEachIndexed { i, (v, label) ->
                                     SegmentedButton(selected = toLast == v, onClick = { appPrefs.setShareToLastChat(v) },
                                         shape = SegmentedButtonDefaults.itemShape(i, 2), icon = {}) {
                                         Text(label, style = MaterialTheme.typography.labelSmall, maxLines = 1)
@@ -109,7 +117,7 @@ class ShareActivity : ComponentActivity() {
                                 }
                             }
                             Spacer(Modifier.weight(1f))
-                            TextButton(onClick = { finish() }) { Text("Cancel") }
+                            TextButton(onClick = { finish() }) { Text(stringResource(R.string.cancel)) }
                             Button(enabled = !busy && !needsAccess && ShareLogic.canSend(files.size, draft.outgoing), onClick = {
                                 busy = true; error = null
                                 lifecycleScope.launch {
@@ -119,7 +127,7 @@ class ShareActivity : ComponentActivity() {
                                         .onSuccess { id -> openChat(compact, id); finish() }
                                         .onFailure { error = it.message ?: "Could not share"; busy = false }
                                 }
-                            }) { Text(if (busy) "Sending…" else "Send") }
+                            }) { Text(if (busy) stringResource(R.string.sending_) else stringResource(R.string.send)) }
                         }
                     }
                 }
