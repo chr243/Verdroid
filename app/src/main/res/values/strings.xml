@@ -727,7 +727,7 @@
     <string name="need_termux_permission">Grant the Run commands in Termux permission (Termux card above) first.</string>
     <string name="termux_no_answer">Termux did not answer — paste the allow-external-apps command (Termux card above) into Termux once.</string>
     <string name="tg_files_t">Files</string>
-    <string name="tg_files_d">Documents/Verdroid（workspace_*）、私有草稿文件、show_image</string>
+    <string name="tg_files_d">Documents/Verdroid (workspace_*), private scratch files, show_image</string>
     <string name="tg_web_t">Web</string>
     <string name="tg_web_d">Search, fetch, headless Chromium (web_*, selenium_*); beta: logged-in pages (cookie_*, stored encrypted), incl. Reddit via cookie_open</string>
     <string name="tg_twitter_t">X (Twitter)</string>
